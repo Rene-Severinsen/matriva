@@ -1,6 +1,8 @@
 import {
+  addressSearchResponseSchema,
   healthResponseSchema,
   homeBootstrapResponseSchema,
+  type AddressSearchResponse,
   type HealthResponse,
   type HomeBootstrapResponse
 } from "@matriva/shared";
@@ -14,6 +16,7 @@ export type MatrivaApiClient = {
   readonly baseUrl: string;
   health: () => Promise<HealthResponse>;
   getBootstrap: () => Promise<HomeBootstrapResponse>;
+  searchAddresses: (query: string) => Promise<AddressSearchResponse>;
 };
 
 export function createMatrivaApiClient(
@@ -43,6 +46,20 @@ export function createMatrivaApiClient(
       }
 
       return homeBootstrapResponseSchema.parse(await response.json());
+    },
+    async searchAddresses(query) {
+      const searchParams = new URLSearchParams({ q: query });
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/addresses/search?${searchParams.toString()}`
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `Address search request failed with status ${response.status}`
+        );
+      }
+
+      return addressSearchResponseSchema.parse(await response.json());
     }
   };
 }

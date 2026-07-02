@@ -1,12 +1,80 @@
+import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
+import type { ServerResponse } from "node:http";
 
 import {
+  addressSearchQuerySchema,
+  addressSearchResponseSchema,
+  apiErrorSchema,
   healthResponseSchema,
   homeBootstrapResponseSchema
 } from "@matriva/shared";
 
 const port = Number.parseInt(process.env.PORT ?? "4000", 10);
 const host = process.env.HOST ?? "127.0.0.1";
+const dawaAddressSearchUrl = "https://api.dataforsyningen.dk/adresser";
+const dawaTimeoutMs = 2500;
+
+type DawaAddress = {
+  id?: unknown;
+  adressebetegnelse?: unknown;
+  etage?: unknown;
+  dør?: unknown;
+  adgangsadresse?: {
+    id?: unknown;
+    vejstykke?: {
+      navn?: unknown;
+      adresseringsnavn?: unknown;
+    };
+    husnr?: unknown;
+    postnummer?: {
+      nr?: unknown;
+      navn?: unknown;
+    };
+  };
+};
+
+function writeJson(response: ServerResponse, status: number, body: unknown) {
+  response.writeHead(status, { "content-type": "application/json" });
+  response.end(JSON.stringify(body));
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function createAddressSuggestionId(): `addr_${string}` {
+  return `addr_${randomBytes(10).toString("hex")}`;
+}
+
+async function fetchDawaAddresses(query: string): Promise<DawaAddress[]> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), dawaTimeoutMs);
+  const url = new URL(dawaAddressSearchUrl);
+  url.searchParams.set("q", query);
+  url.searchParams.set("per_side", "5");
+
+  try {
+    const dawaResponse = await fetch(url, { signal: controller.signal });
+
+    if (!dawaResponse.ok) {
+      throw new Error(`DAWA request failed with status ${dawaResponse.status}`);
+    }
+
+    const payload: unknown = await dawaResponse.json();
+
+    if (!Array.isArray(payload)) {
+      throw new Error("DAWA response was not an array");
+    }
+
+    return payload.filter(
+      (item): item is DawaAddress =>
+        typeof item === "object" && item !== null && !Array.isArray(item)
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 const server = createServer((request, response) => {
   if (request.method === "GET" && request.url === "/health") {
@@ -16,8 +84,7 @@ const server = createServer((request, response) => {
       timestamp: new Date().toISOString()
     });
 
-    response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify(body));
+    writeJson(response, 200, body);
     return;
   }
 
@@ -83,13 +150,85 @@ const server = createServer((request, response) => {
       skeleton: true
     });
 
-    response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify(body));
+    writeJson(response, 200, body);
     return;
   }
 
-  response.writeHead(404, { "content-type": "application/json" });
-  response.end(JSON.stringify({ error: "not_found" }));
+  if (request.method === "GET" && request.url?.startsWith("/v1/addresses/search")) {
+    void (async () => {
+      const url = new URL(request.url ?? "/", `http://${host}:${port}`);
+      const parsedQuery = addressSearchQuerySchema.safeParse({
+        q: url.searchParams.get("q") ?? ""
+      });
+
+      if (!parsedQuery.success) {
+        writeJson(
+          response,
+          400,
+          apiErrorSchema.parse({
+            code: "address_search_query_invalid",
+            message: "Address search query must be at least 2 characters."
+          })
+        );
+        return;
+      }
+
+      try {
+        const dawaAddresses = await fetchDawaAddresses(parsedQuery.data.q);
+        const suggestions = dawaAddresses.flatMap((address) => {
+          const sourceAddressId = optionalString(address.id);
+
+          if (!sourceAddressId) {
+            return [];
+          }
+
+          return [
+            {
+              id: createAddressSuggestionId(),
+              source: "DAWA",
+              sourceAddressId,
+              sourceAccessAddressId: optionalString(
+                address.adgangsadresse?.id
+              ),
+              label:
+                optionalString(address.adressebetegnelse) ?? sourceAddressId,
+              roadName:
+                optionalString(address.adgangsadresse?.vejstykke?.navn) ??
+                optionalString(
+                  address.adgangsadresse?.vejstykke?.adresseringsnavn
+                ),
+              houseNumber: optionalString(address.adgangsadresse?.husnr),
+              floor: optionalString(address.etage),
+              door: optionalString(address.dør),
+              postalCode: optionalString(address.adgangsadresse?.postnummer?.nr),
+              city: optionalString(address.adgangsadresse?.postnummer?.navn)
+            }
+          ];
+        });
+
+        const body = addressSearchResponseSchema.parse({
+          query: parsedQuery.data.q,
+          source: "DAWA",
+          suggestions,
+          generatedAt: new Date().toISOString()
+        });
+
+        writeJson(response, 200, body);
+      } catch {
+        writeJson(
+          response,
+          502,
+          apiErrorSchema.parse({
+            code: "address_search_source_unavailable",
+            message: "Address search is temporarily unavailable."
+          })
+        );
+      }
+    })();
+    return;
+  }
+
+  writeJson(response, 404, { error: "not_found" });
 });
 
 server.listen(port, host, () => {

@@ -55,6 +55,7 @@ The API exposes:
 ```text
 GET http://localhost:4000/health
 GET http://localhost:4000/v1/bootstrap
+GET http://localhost:4000/v1/addresses/search?q=Rådhuspladsen 1
 ```
 
 `GET /v1/bootstrap` is a development-only skeleton contract for validating the first shared domain/API shape: user summary, house summary, entitlements, and backend-driven Home cards. It is not a production feature, does not create seed data, does not use a database, and does not implement authentication.
@@ -69,7 +70,10 @@ const client = createMatrivaApiClient({
 });
 
 const bootstrap = await client.getBootstrap();
+const addresses = await client.searchAddresses("Rådhuspladsen 1");
 ```
+
+`GET /v1/addresses/search` is the backend-owned address search contract. The mobile app must call the Matriva API, not DAWA/Dataforsyningen directly. The API currently uses DAWA/Dataforsyningen (`https://api.dataforsyningen.dk/adresser?q=`) as the address source and returns normalized `AddressSuggestion` objects with Matriva-owned `addr_<opaque>` suggestion IDs. BBR/Datafordeler lookup is not implemented yet.
 
 Run the mobile app:
 

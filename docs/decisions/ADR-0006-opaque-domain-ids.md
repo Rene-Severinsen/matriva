@@ -22,6 +22,7 @@ The format is a short domain prefix followed by a random opaque suffix:
 * `task_<opaque>`
 * `doc_<opaque>`
 * `sub_<opaque>`
+* `addr_<opaque>`
 
 Clients must not parse IDs.
 

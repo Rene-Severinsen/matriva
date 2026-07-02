@@ -10,6 +10,7 @@ export type HomeCardId = Brand<string, "HomeCardId">;
 export type TaskId = Brand<string, "TaskId">;
 export type DocumentId = Brand<string, "DocumentId">;
 export type SubscriptionId = Brand<string, "SubscriptionId">;
+export type AddressSuggestionId = Brand<string, "AddressSuggestionId">;
 
 const opaqueSuffixPattern = "[a-z0-9][a-z0-9_-]{7,63}";
 
@@ -43,6 +44,11 @@ export const subscriptionIdSchema = z
   .regex(new RegExp(`^sub_${opaqueSuffixPattern}$`))
   .transform((value): SubscriptionId => value as SubscriptionId);
 
+export const addressSuggestionIdSchema = z
+  .string()
+  .regex(new RegExp(`^addr_${opaqueSuffixPattern}$`))
+  .transform((value): AddressSuggestionId => value as AddressSuggestionId);
+
 export const userSummarySchema = z.object({
   id: userIdSchema,
   displayName: z.string().min(1).nullable(),
@@ -62,6 +68,41 @@ export const addressInputSchema = z.object({
 });
 
 export type AddressInput = z.infer<typeof addressInputSchema>;
+
+export const addressSourceSchema = z.enum(["DAWA"]);
+
+export type AddressSource = z.infer<typeof addressSourceSchema>;
+
+export const addressSearchQuerySchema = z.object({
+  q: z.string().trim().min(2).max(120)
+});
+
+export type AddressSearchQuery = z.infer<typeof addressSearchQuerySchema>;
+
+export const addressSuggestionSchema = z.object({
+  id: addressSuggestionIdSchema,
+  source: addressSourceSchema,
+  sourceAddressId: z.string().min(1),
+  sourceAccessAddressId: z.string().min(1).optional(),
+  label: z.string().min(1),
+  roadName: z.string().min(1).optional(),
+  houseNumber: z.string().min(1).optional(),
+  floor: z.string().min(1).optional(),
+  door: z.string().min(1).optional(),
+  postalCode: z.string().regex(/^\d{4}$/).optional(),
+  city: z.string().min(1).optional()
+});
+
+export type AddressSuggestion = z.infer<typeof addressSuggestionSchema>;
+
+export const addressSearchResponseSchema = z.object({
+  query: addressSearchQuerySchema.shape.q,
+  source: addressSourceSchema,
+  suggestions: z.array(addressSuggestionSchema),
+  generatedAt: z.string().datetime()
+});
+
+export type AddressSearchResponse = z.infer<typeof addressSearchResponseSchema>;
 
 export const houseSummarySchema = z.object({
   id: houseIdSchema,

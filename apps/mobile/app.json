@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Matriva",
+    "slug": "matriva",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "dk.matriva.app"
+    },
+    "android": {
+      "package": "dk.matriva.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#F7F4EF"
+      }
+    },
+    "extra": {
+      "apiBaseUrl": "http://localhost:4000"
+    }
+  }
+}

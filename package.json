@@ -1,10 +1,27 @@
 {
   "name": "matriva",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Matriva 2.0 clean-sheet monorepo.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev:mobile": "npm run build:packages && npm run start -w @matriva/mobile",
+    "dev:api": "npm run build -w @matriva/shared && npm run dev -w @matriva/api",
+    "build": "npm run build:packages && npm run build -w @matriva/api",
+    "build:packages": "npm run build -w @matriva/shared && npm run build -w @matriva/api-client",
+    "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
+    "lint": "npm run build:packages && npm run lint --workspaces --if-present",
+    "check:no-firebase": "node tools/check-no-firebase.mjs",
+    "check:secrets": "node tools/check-no-secrets.mjs",
+    "check": "npm run check:no-firebase && npm run check:secrets && npm run typecheck && npm run lint"
   },
-  "private": true
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3"
+  }
 }

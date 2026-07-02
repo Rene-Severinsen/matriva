@@ -1,0 +1,20 @@
+{
+  "name": "@matriva/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --experimental-strip-types src/server.ts",
+    "start": "node dist/server.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@matriva/shared": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "typescript": "6.0.3"
+  }
+}

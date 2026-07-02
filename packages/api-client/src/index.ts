@@ -1,4 +1,9 @@
-import { healthResponseSchema, type HealthResponse } from "@matriva/shared";
+import {
+  healthResponseSchema,
+  homeBootstrapResponseSchema,
+  type HealthResponse,
+  type HomeBootstrapResponse
+} from "@matriva/shared";
 
 export type MatrivaApiClientOptions = {
   baseUrl: string;
@@ -8,6 +13,7 @@ export type MatrivaApiClientOptions = {
 export type MatrivaApiClient = {
   readonly baseUrl: string;
   health: () => Promise<HealthResponse>;
+  getBootstrap: () => Promise<HomeBootstrapResponse>;
 };
 
 export function createMatrivaApiClient(
@@ -26,6 +32,17 @@ export function createMatrivaApiClient(
       }
 
       return healthResponseSchema.parse(await response.json());
+    },
+    async getBootstrap() {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/bootstrap`);
+
+      if (!response.ok) {
+        throw new Error(
+          `Bootstrap request failed with status ${response.status}`
+        );
+      }
+
+      return homeBootstrapResponseSchema.parse(await response.json());
     }
   };
 }

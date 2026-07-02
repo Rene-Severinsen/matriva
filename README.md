@@ -54,6 +54,21 @@ The API exposes:
 
 ```text
 GET http://localhost:4000/health
+GET http://localhost:4000/v1/bootstrap
+```
+
+`GET /v1/bootstrap` is a development-only skeleton contract for validating the first shared domain/API shape: user summary, house summary, entitlements, and backend-driven Home cards. It is not a production feature, does not create seed data, does not use a database, and does not implement authentication.
+
+The typed client can be used locally from `@matriva/api-client`:
+
+```ts
+import { createMatrivaApiClient } from "@matriva/api-client";
+
+const client = createMatrivaApiClient({
+  baseUrl: "http://127.0.0.1:4000"
+});
+
+const bootstrap = await client.getBootstrap();
 ```
 
 Run the mobile app:

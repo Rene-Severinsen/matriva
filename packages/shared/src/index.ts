@@ -11,6 +11,7 @@ export type TaskId = Brand<string, "TaskId">;
 export type DocumentId = Brand<string, "DocumentId">;
 export type SubscriptionId = Brand<string, "SubscriptionId">;
 export type AddressSuggestionId = Brand<string, "AddressSuggestionId">;
+export type HouseDraftId = Brand<string, "HouseDraftId">;
 
 const opaqueSuffixPattern = "[a-z0-9][a-z0-9_-]{7,63}";
 
@@ -48,6 +49,11 @@ export const addressSuggestionIdSchema = z
   .string()
   .regex(new RegExp(`^addr_${opaqueSuffixPattern}$`))
   .transform((value): AddressSuggestionId => value as AddressSuggestionId);
+
+export const houseDraftIdSchema = z
+  .string()
+  .regex(new RegExp(`^house_draft_${opaqueSuffixPattern}$`))
+  .transform((value): HouseDraftId => value as HouseDraftId);
 
 export const userSummarySchema = z.object({
   id: userIdSchema,
@@ -95,6 +101,15 @@ export const addressSuggestionSchema = z.object({
 
 export type AddressSuggestion = z.infer<typeof addressSuggestionSchema>;
 
+export const selectedAddressInputSchema = z.object({
+  source: addressSourceSchema,
+  sourceAddressId: z.string().min(1),
+  sourceAccessAddressId: z.string().min(1).optional(),
+  label: z.string().min(1)
+});
+
+export type SelectedAddressInput = z.infer<typeof selectedAddressInputSchema>;
+
 export const addressSearchResponseSchema = z.object({
   query: addressSearchQuerySchema.shape.q,
   source: addressSourceSchema,
@@ -103,6 +118,52 @@ export const addressSearchResponseSchema = z.object({
 });
 
 export type AddressSearchResponse = z.infer<typeof addressSearchResponseSchema>;
+
+export const houseDraftStatusSchema = z.enum(["draft"]);
+
+export type HouseDraftStatus = z.infer<typeof houseDraftStatusSchema>;
+
+export const houseSourceReferenceSchema = z.object({
+  source: addressSourceSchema,
+  sourceAddressId: z.string().min(1),
+  sourceAccessAddressId: z.string().min(1).optional()
+});
+
+export type HouseSourceReference = z.infer<typeof houseSourceReferenceSchema>;
+
+export const houseProfileBasisSchema = z.object({
+  displayName: z.string().min(1),
+  addressLabel: z.string().min(1),
+  postalCode: z.string().regex(/^\d{4}$/).optional(),
+  city: z.string().min(1).optional(),
+  propertyType: z
+    .enum([
+      "DETACHED_HOUSE",
+      "TOWNHOUSE",
+      "APARTMENT",
+      "SUMMER_HOUSE",
+      "UNKNOWN"
+    ])
+    .optional(),
+  heatingType: z.string().min(1).optional(),
+  roofType: z.string().min(1).optional(),
+  buildYear: z.number().int().min(1700).max(2200).optional(),
+  livingAreaM2: z.number().int().positive().optional()
+});
+
+export type HouseProfileBasis = z.infer<typeof houseProfileBasisSchema>;
+
+export const houseDraftSchema = z.object({
+  id: houseDraftIdSchema,
+  status: houseDraftStatusSchema,
+  selectedAddress: selectedAddressInputSchema,
+  profile: houseProfileBasisSchema,
+  sourceReferences: z.array(houseSourceReferenceSchema).min(1),
+  createdAt: z.string().datetime(),
+  skeleton: z.literal(true)
+});
+
+export type HouseDraft = z.infer<typeof houseDraftSchema>;
 
 export const houseSummarySchema = z.object({
   id: houseIdSchema,
@@ -181,6 +242,15 @@ export const homeCardSchema = z.object({
 });
 
 export type HomeCard = z.infer<typeof homeCardSchema>;
+
+export const houseDraftResponseSchema = z.object({
+  houseDraft: houseDraftSchema,
+  cards: z.array(homeCardSchema),
+  generatedAt: z.string().datetime(),
+  skeleton: z.literal(true)
+});
+
+export type HouseDraftResponse = z.infer<typeof houseDraftResponseSchema>;
 
 export const featureKeySchema = z.enum([
   "documents.maxCount",

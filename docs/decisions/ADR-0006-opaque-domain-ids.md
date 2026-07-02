@@ -23,6 +23,7 @@ The format is a short domain prefix followed by a random opaque suffix:
 * `doc_<opaque>`
 * `sub_<opaque>`
 * `addr_<opaque>`
+* `house_draft_<opaque>`
 
 Clients must not parse IDs.
 

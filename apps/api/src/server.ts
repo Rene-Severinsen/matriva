@@ -1,13 +1,15 @@
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
-import type { ServerResponse } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 
 import {
   addressSearchQuerySchema,
   addressSearchResponseSchema,
   apiErrorSchema,
   healthResponseSchema,
-  homeBootstrapResponseSchema
+  houseDraftResponseSchema,
+  homeBootstrapResponseSchema,
+  selectedAddressInputSchema
 } from "@matriva/shared";
 
 const port = Number.parseInt(process.env.PORT ?? "4000", 10);
@@ -45,6 +47,41 @@ function optionalString(value: unknown): string | undefined {
 
 function createAddressSuggestionId(): `addr_${string}` {
   return `addr_${randomBytes(10).toString("hex")}`;
+}
+
+function createHouseDraftId(): `house_draft_${string}` {
+  return `house_draft_${randomBytes(10).toString("hex")}`;
+}
+
+function createHomeCardId(): `card_${string}` {
+  return `card_${randomBytes(10).toString("hex")}`;
+}
+
+function extractPostalCodeAndCity(label: string) {
+  const match = /,\s*(\d{4})\s+([^,]+)$/.exec(label);
+
+  if (!match) {
+    return {};
+  }
+
+  return {
+    postalCode: match[1],
+    city: match[2]?.trim()
+  };
+}
+
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  if (chunks.length === 0) {
+    return {};
+  }
+
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
 async function fetchDawaAddresses(query: string): Promise<DawaAddress[]> {
@@ -221,6 +258,141 @@ const server = createServer((request, response) => {
           apiErrorSchema.parse({
             code: "address_search_source_unavailable",
             message: "Address search is temporarily unavailable."
+          })
+        );
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/v1/house-drafts") {
+    void (async () => {
+      try {
+        const selectedAddress = await readJsonBody(request);
+        const parsedAddress =
+          selectedAddressInputSchema.safeParse(selectedAddress);
+
+        if (!parsedAddress.success || parsedAddress.data.source !== "DAWA") {
+          writeJson(
+            response,
+            400,
+            apiErrorSchema.parse({
+              code: "house_draft_selected_address_invalid",
+              message:
+                "House draft requires a selected DAWA address with sourceAddressId and label."
+            })
+          );
+          return;
+        }
+
+        const now = new Date().toISOString();
+        const validityEnd = new Date(
+          Date.now() + 1000 * 60 * 60 * 24 * 14
+        ).toISOString();
+        const { postalCode, city } = extractPostalCodeAndCity(
+          parsedAddress.data.label
+        );
+
+        const body = houseDraftResponseSchema.parse({
+          houseDraft: {
+            id: createHouseDraftId(),
+            status: "draft",
+            selectedAddress: parsedAddress.data,
+            profile: {
+              displayName: parsedAddress.data.label,
+              addressLabel: parsedAddress.data.label,
+              postalCode,
+              city,
+              propertyType: "UNKNOWN"
+            },
+            sourceReferences: [
+              {
+                source: parsedAddress.data.source,
+                sourceAddressId: parsedAddress.data.sourceAddressId,
+                sourceAccessAddressId:
+                  parsedAddress.data.sourceAccessAddressId
+              }
+            ],
+            createdAt: now,
+            skeleton: true
+          },
+          cards: [
+            {
+              id: createHomeCardId(),
+              type: "MISSING_DOCUMENT",
+              title: "Skeleton: find husets vigtigste dokumenter",
+              shortExplanation:
+                "Development-only card for validating the house draft contract.",
+              severity: "notice",
+              action: {
+                label: "No action",
+                target: { kind: "none" }
+              },
+              validFrom: now,
+              validTo: validityEnd,
+              audience: {
+                countryCode: "DK",
+                propertyTypes: ["UNKNOWN"]
+              },
+              minAppVersion: "0.1.0",
+              fallbackText:
+                "Matriva will later help collect relevant house documentation."
+            },
+            {
+              id: createHomeCardId(),
+              type: "SEASONAL_RECOMMENDATION",
+              title: "Skeleton: første sæsonråd",
+              shortExplanation:
+                "Development-only recommendation placeholder. Not production advice.",
+              severity: "info",
+              action: {
+                label: "No action",
+                target: { kind: "none" }
+              },
+              validFrom: now,
+              validTo: validityEnd,
+              audience: {
+                countryCode: "DK",
+                propertyTypes: ["UNKNOWN"]
+              },
+              minAppVersion: "0.1.0",
+              fallbackText:
+                "Matriva will later provide backend-driven seasonal guidance."
+            },
+            {
+              id: createHomeCardId(),
+              type: "TASK_REMINDER",
+              title: "Skeleton: første vedligeholdelsesopgave",
+              shortExplanation:
+                "Development-only task reminder placeholder. No task has been created.",
+              severity: "info",
+              action: {
+                label: "No action",
+                target: { kind: "none" }
+              },
+              validFrom: now,
+              validTo: validityEnd,
+              audience: {
+                countryCode: "DK",
+                propertyTypes: ["UNKNOWN"]
+              },
+              minAppVersion: "0.1.0",
+              fallbackText:
+                "Matriva will later generate maintenance tasks from backend rules."
+            }
+          ],
+          generatedAt: now,
+          skeleton: true
+        });
+
+        writeJson(response, 201, body);
+      } catch {
+        writeJson(
+          response,
+          400,
+          apiErrorSchema.parse({
+            code: "house_draft_request_invalid",
+            message: "House draft request body must be valid JSON."
           })
         );
       }

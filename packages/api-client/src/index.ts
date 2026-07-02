@@ -1,10 +1,13 @@
 import {
   addressSearchResponseSchema,
   healthResponseSchema,
+  houseDraftResponseSchema,
   homeBootstrapResponseSchema,
   type AddressSearchResponse,
   type HealthResponse,
-  type HomeBootstrapResponse
+  type HouseDraftResponse,
+  type HomeBootstrapResponse,
+  type SelectedAddressInput
 } from "@matriva/shared";
 
 export type MatrivaApiClientOptions = {
@@ -17,6 +20,7 @@ export type MatrivaApiClient = {
   health: () => Promise<HealthResponse>;
   getBootstrap: () => Promise<HomeBootstrapResponse>;
   searchAddresses: (query: string) => Promise<AddressSearchResponse>;
+  createHouseDraft: (input: SelectedAddressInput) => Promise<HouseDraftResponse>;
 };
 
 export function createMatrivaApiClient(
@@ -60,6 +64,23 @@ export function createMatrivaApiClient(
       }
 
       return addressSearchResponseSchema.parse(await response.json());
+    },
+    async createHouseDraft(input) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/house-drafts`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(input)
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `House draft request failed with status ${response.status}`
+        );
+      }
+
+      return houseDraftResponseSchema.parse(await response.json());
     }
   };
 }

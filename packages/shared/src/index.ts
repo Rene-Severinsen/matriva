@@ -252,6 +252,101 @@ export const houseDraftResponseSchema = z.object({
 
 export type HouseDraftResponse = z.infer<typeof houseDraftResponseSchema>;
 
+export const houseDraftOverviewPreviewDataConfidenceSchema =
+  z.literal("not_verified");
+
+export type HouseDraftOverviewPreviewDataConfidence = z.infer<
+  typeof houseDraftOverviewPreviewDataConfidenceSchema
+>;
+
+export const houseDraftOverviewPreviewSectionKindSchema = z.enum([
+  "overview",
+  "documents",
+  "maintenance",
+  "next_actions"
+]);
+
+export type HouseDraftOverviewPreviewSectionKind = z.infer<
+  typeof houseDraftOverviewPreviewSectionKindSchema
+>;
+
+export const houseDraftOverviewPreviewCardSchema = z.object({
+  id: z.string().regex(/^overview_card_[a-z0-9][a-z0-9_-]{7,63}$/),
+  title: z.string().min(1),
+  body: z.string().min(1),
+  statusLabel: z.string().min(1).optional(),
+  cta: z
+    .object({
+      label: z.string().min(1),
+      enabled: z.literal(false),
+      reason: z.string().min(1)
+    })
+    .optional()
+});
+
+export type HouseDraftOverviewPreviewCard = z.infer<
+  typeof houseDraftOverviewPreviewCardSchema
+>;
+
+export const houseDraftOverviewPreviewSectionSchema = z.object({
+  kind: houseDraftOverviewPreviewSectionKindSchema,
+  title: z.string().min(1),
+  intro: z.string().min(1).optional(),
+  cards: z.array(houseDraftOverviewPreviewCardSchema).min(1)
+});
+
+export type HouseDraftOverviewPreviewSection = z.infer<
+  typeof houseDraftOverviewPreviewSectionSchema
+>;
+
+export const houseDraftOverviewPreviewResponseSchema = z
+  .object({
+    version: z.literal("house_draft_overview_preview.v1"),
+    houseDraftId: houseDraftIdSchema,
+    draftStatus: houseDraftStatusSchema,
+    dataConfidence: houseDraftOverviewPreviewDataConfidenceSchema,
+    title: z.literal("Mit hus"),
+    subtitle: z.string().min(1),
+    warningTitle: z.literal("Ikke verificerede boligdata"),
+    warningBody: z.string().min(1),
+    sections: z
+      .array(houseDraftOverviewPreviewSectionSchema)
+      .length(4)
+      .superRefine((sections, context) => {
+        const expectedKinds: HouseDraftOverviewPreviewSectionKind[] = [
+          "overview",
+          "documents",
+          "maintenance",
+          "next_actions"
+        ];
+        const kinds = new Set(sections.map((section) => section.kind));
+
+        for (const kind of expectedKinds) {
+          if (!kinds.has(kind)) {
+            context.addIssue({
+              code: "custom",
+              message: `overview preview must include ${kind} section`
+            });
+          }
+        }
+      }),
+    generatedAt: z.string().datetime(),
+    skeleton: z.literal(true)
+  })
+  .superRefine((preview, context) => {
+    if (preview.dataConfidence !== "not_verified") {
+      context.addIssue({
+        code: "custom",
+        path: ["dataConfidence"],
+        message: "house draft overview preview data must not be verified"
+      });
+    }
+  });
+
+export type HouseDraftOverviewPreviewResponse = z.infer<
+  typeof houseDraftOverviewPreviewResponseSchema
+>;
+
 export const houseEnrichmentStatusSchema = z.enum([
   "skeleton",
   "verified",

@@ -177,6 +177,53 @@ function assertHouseDraft(body, selectedAddress) {
   );
 }
 
+function assertOverviewPreview(body, houseDraftId) {
+  assert(
+    body?.version === "house_draft_overview_preview.v1",
+    "Overview preview must use the v1 response version."
+  );
+  assert(
+    body?.houseDraftId === houseDraftId,
+    "Overview preview must echo the requested houseDraftId."
+  );
+  assert(body?.draftStatus === "draft", "Overview preview draftStatus must be draft.");
+  assert(
+    body?.dataConfidence === "not_verified",
+    "Overview preview dataConfidence must be not_verified."
+  );
+  assert(
+    body?.warningTitle === "Ikke verificerede boligdata",
+    "Overview preview must preserve non-verified data warning copy."
+  );
+  assert(Array.isArray(body?.sections), "Overview preview sections must be an array.");
+
+  const sectionKinds = new Set(body.sections.map((section) => section?.kind));
+  for (const kind of ["overview", "documents", "maintenance", "next_actions"]) {
+    assert(sectionKinds.has(kind), `Overview preview must include ${kind} section.`);
+  }
+
+  for (const section of body.sections) {
+    assert(Array.isArray(section?.cards), "Overview preview section cards must be arrays.");
+    assert(section.cards.length > 0, "Overview preview sections must include cards.");
+
+    for (const card of section.cards) {
+      assert(
+        typeof card?.title === "string" && card.title.length > 0,
+        "Overview preview cards must include title."
+      );
+      assert(
+        typeof card?.body === "string" && card.body.length > 0,
+        "Overview preview cards must include body."
+      );
+      if (card?.cta) {
+        assert(card.cta.enabled === false, "Overview preview CTAs must be disabled.");
+      }
+    }
+  }
+
+  assertIsoDate(body?.generatedAt, "Overview preview generatedAt");
+}
+
 function assertEnrichment(body) {
   const enrichment = body?.enrichment;
 
@@ -248,6 +295,12 @@ async function runSmoke(child) {
   });
 
   assertHouseDraft(houseDraft, selectedAddress);
+
+  const overviewPreview = await fetchJson(
+    `/v1/house-drafts/${houseDraft.houseDraft.id}/overview-preview`
+  );
+
+  assertOverviewPreview(overviewPreview, houseDraft.houseDraft.id);
 
   const enrichment = await fetchJson("/v1/house-drafts/enrich", {
     method: "POST",

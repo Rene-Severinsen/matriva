@@ -4,6 +4,7 @@ import { createMatrivaApiClient } from "@matriva/api-client";
 import {
   type AddressSuggestion,
   type EnrichHouseDraftResponse,
+  type HouseDraftOverviewPreviewResponse,
   type HouseDraftResponse,
   type SelectedAddressInput
 } from "@matriva/shared";
@@ -56,6 +57,11 @@ export function useAddressOnboardingPreview() {
     useState<AddressSuggestion | null>(null);
   const [draftResponse, setDraftResponse] =
     useState<HouseDraftResponse | null>(null);
+  const [overviewPreviewResponse, setOverviewPreviewResponse] =
+    useState<HouseDraftOverviewPreviewResponse | null>(null);
+  const [overviewPreviewError, setOverviewPreviewError] = useState<
+    string | null
+  >(null);
   const [enrichmentResponse, setEnrichmentResponse] =
     useState<EnrichHouseDraftResponse | null>(null);
   const [enrichmentError, setEnrichmentError] = useState<string | null>(null);
@@ -77,6 +83,8 @@ export function useAddressOnboardingPreview() {
   function updateQuery(nextQuery: string) {
     setQuery(nextQuery);
     setError(null);
+    setOverviewPreviewResponse(null);
+    setOverviewPreviewError(null);
     setEnrichmentResponse(null);
     setEnrichmentError(null);
   }
@@ -84,6 +92,8 @@ export function useAddressOnboardingPreview() {
   function selectAddress(suggestion: AddressSuggestion) {
     setSelectedAddress(suggestion);
     setDraftResponse(null);
+    setOverviewPreviewResponse(null);
+    setOverviewPreviewError(null);
     setError(null);
     setEnrichmentResponse(null);
     setEnrichmentError(null);
@@ -96,6 +106,8 @@ export function useAddressOnboardingPreview() {
       setSuggestions([]);
       setSelectedAddress(null);
       setDraftResponse(null);
+      setOverviewPreviewResponse(null);
+      setOverviewPreviewError(null);
       setEnrichmentResponse(null);
       setEnrichmentError(null);
       return;
@@ -105,6 +117,8 @@ export function useAddressOnboardingPreview() {
     setError(null);
     setDraftResponse(null);
     setSelectedAddress(null);
+    setOverviewPreviewResponse(null);
+    setOverviewPreviewError(null);
     setEnrichmentResponse(null);
     setEnrichmentError(null);
 
@@ -129,15 +143,28 @@ export function useAddressOnboardingPreview() {
 
     setLoadingAction("create");
     setError(null);
+    setOverviewPreviewResponse(null);
+    setOverviewPreviewError(null);
     setEnrichmentResponse(null);
     setEnrichmentError(null);
 
     try {
-      setDraftResponse(
-        await apiClient.createHouseDraft(selectedAddressInput(selectedAddress))
+      const draft = await apiClient.createHouseDraft(
+        selectedAddressInput(selectedAddress)
       );
+      setDraftResponse(draft);
+
+      try {
+        setOverviewPreviewResponse(
+          await apiClient.getHouseDraftOverviewPreview(draft.houseDraft.id)
+        );
+      } catch (caughtError) {
+        setOverviewPreviewError(userFacingError(caughtError));
+      }
     } catch (caughtError) {
       setDraftResponse(null);
+      setOverviewPreviewResponse(null);
+      setOverviewPreviewError(null);
       setError(userFacingError(caughtError));
     } finally {
       setLoadingAction(null);
@@ -176,6 +203,8 @@ export function useAddressOnboardingPreview() {
     suggestions,
     selectedAddress,
     draftResponse,
+    overviewPreviewResponse,
+    overviewPreviewError,
     enrichmentResponse,
     enrichmentError,
     hasSearched,

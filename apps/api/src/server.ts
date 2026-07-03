@@ -10,6 +10,7 @@ import {
   enrichHouseDraftResponseSchema,
   healthResponseSchema,
   houseDraftIdSchema,
+  houseDraftOverviewPreviewResponseSchema,
   houseDraftResponseSchema,
   homeBootstrapResponseSchema,
   selectedAddressInputSchema
@@ -73,6 +74,10 @@ function createHouseDraftId(): `house_draft_${string}` {
 
 function createHomeCardId(): `card_${string}` {
   return `card_${randomBytes(10).toString("hex")}`;
+}
+
+function createOverviewPreviewCardId(): `overview_card_${string}` {
+  return `overview_card_${randomBytes(10).toString("hex")}`;
 }
 
 function extractPostalCodeAndCity(label: string) {
@@ -415,6 +420,119 @@ const server = createServer((request, response) => {
         );
       }
     })();
+    return;
+  }
+
+  const overviewPreviewMatch = /^\/v1\/house-drafts\/([^/]+)\/overview-preview$/.exec(
+    request.url ?? ""
+  );
+
+  if (request.method === "GET" && overviewPreviewMatch) {
+    const parsedHouseDraftId = houseDraftIdSchema.safeParse(
+      overviewPreviewMatch[1]
+    );
+
+    if (!parsedHouseDraftId.success) {
+      writeJson(
+        response,
+        400,
+        apiErrorSchema.parse({
+          code: "house_draft_overview_preview_id_invalid",
+          message: "Overview preview requires a valid house_draft_ ID."
+        })
+      );
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const body = houseDraftOverviewPreviewResponseSchema.parse({
+      version: "house_draft_overview_preview.v1",
+      houseDraftId: parsedHouseDraftId.data,
+      draftStatus: "draft",
+      dataConfidence: "not_verified",
+      title: "Mit hus",
+      subtitle: "Overblik",
+      warningTitle: "Ikke verificerede boligdata",
+      warningBody:
+        "Dette er et første preview baseret på dit house draft. Matriva har endnu ikke verificeret boligdata mod live BBR/Datafordeler.",
+      sections: [
+        {
+          kind: "overview",
+          title: "Overblik",
+          intro:
+            "Et roligt startpunkt for huset, indtil verificerede boligdata er klar.",
+          cards: [
+            {
+              id: createOverviewPreviewCardId(),
+              title: "Første husprofil",
+              body:
+                "Matriva har oprettet et midlertidigt draft, så du kan se produktets struktur uden verificerede boligdata.",
+              statusLabel: "Ikke verificeret"
+            }
+          ]
+        },
+        {
+          kind: "documents",
+          title: "Dokumenter",
+          intro:
+            "Dokumentområdet er synligt som preview, men upload og arkiv er ikke aktiveret endnu.",
+          cards: [
+            {
+              id: createOverviewPreviewCardId(),
+              title: "Dokumentarkiv kommer senere",
+              body:
+                "Her vil Matriva samle relevante dokumenter, når dokumentfunktionen bliver tilføjet.",
+              statusLabel: "Kommer senere",
+              cta: {
+                label: "Upload dokument",
+                enabled: false,
+                reason: "Dokumentupload er ikke implementeret i dette preview."
+              }
+            }
+          ]
+        },
+        {
+          kind: "maintenance",
+          title: "Vedligehold",
+          intro:
+            "Vedligehold vises som backend-styret preview uden oprettede opgaver.",
+          cards: [
+            {
+              id: createOverviewPreviewCardId(),
+              title: "Vedligeholdsplan kommer senere",
+              body:
+                "Når verificerede data og regler er klar, kan backend foreslå relevante vedligeholdspunkter.",
+              statusLabel: "Ingen opgaver oprettet",
+              cta: {
+                label: "Opret opgave",
+                enabled: false,
+                reason:
+                  "Vedligeholdelsesopgaver er ikke implementeret i dette preview."
+              }
+            }
+          ]
+        },
+        {
+          kind: "next_actions",
+          title: "Mangler / næste handling",
+          intro:
+            "Næste handlinger hjælper med at vise, hvad der mangler før et rigtigt husoverblik.",
+          cards: [
+            {
+              id: createOverviewPreviewCardId(),
+              title: "Afvent verificering af boligdata",
+              body:
+                "Det næste rigtige skridt er en backend-ejet verificering, før Matriva må præsentere boligdata som korrekte.",
+              statusLabel: "Ikke verificeret"
+            }
+          ]
+        }
+      ],
+      generatedAt: now,
+      skeleton: true
+    });
+
+    writeJson(response, 200, body);
     return;
   }
 

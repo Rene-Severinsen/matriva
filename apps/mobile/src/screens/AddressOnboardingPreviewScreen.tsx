@@ -11,6 +11,7 @@ import { AddressSuggestionList } from "../components/AddressSuggestionList";
 import { HomeCardPreviewList } from "../components/HomeCardPreviewList";
 import { HouseEnrichmentSummary } from "../components/HouseEnrichmentSummary";
 import { HouseDraftSummary } from "../components/HouseDraftSummary";
+import { HouseOverviewPreview } from "../components/HouseOverviewPreview";
 import { InlineMessage } from "../components/InlineMessage";
 import { useAddressOnboardingPreview } from "../hooks/useAddressOnboardingPreview";
 
@@ -90,6 +91,18 @@ export function AddressOnboardingPreviewScreen() {
             <HouseDraftSummary
               houseDraft={onboarding.draftResponse.houseDraft}
             />
+            {onboarding.overviewPreviewError ? (
+              <InlineMessage
+                title="Kunne ikke hente Mit hus preview"
+                message={onboarding.overviewPreviewError}
+                tone="error"
+              />
+            ) : null}
+            {onboarding.overviewPreviewResponse ? (
+              <HouseOverviewPreview
+                preview={onboarding.overviewPreviewResponse}
+              />
+            ) : null}
             <View style={styles.enrichmentPanel}>
               <Text style={styles.sectionTitle}>Boligdata preview</Text>
               <Text style={styles.meta}>

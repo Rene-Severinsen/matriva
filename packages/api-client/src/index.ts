@@ -2,12 +2,15 @@ import {
   addressSearchResponseSchema,
   enrichHouseDraftResponseSchema,
   healthResponseSchema,
+  houseDraftOverviewPreviewResponseSchema,
   houseDraftResponseSchema,
   homeBootstrapResponseSchema,
   type AddressSearchResponse,
   type EnrichHouseDraftRequest,
   type EnrichHouseDraftResponse,
   type HealthResponse,
+  type HouseDraftId,
+  type HouseDraftOverviewPreviewResponse,
   type HouseDraftResponse,
   type HomeBootstrapResponse,
   type SelectedAddressInput
@@ -25,6 +28,9 @@ export type MatrivaApiClient = {
   getBootstrap: () => Promise<HomeBootstrapResponse>;
   searchAddresses: (query: string) => Promise<AddressSearchResponse>;
   createHouseDraft: (input: SelectedAddressInput) => Promise<HouseDraftResponse>;
+  getHouseDraftOverviewPreview: (
+    houseDraftId: HouseDraftId
+  ) => Promise<HouseDraftOverviewPreviewResponse>;
   enrichHouseDraft: (
     input: EnrichHouseDraftRequest
   ) => Promise<EnrichHouseDraftResponse>;
@@ -93,6 +99,21 @@ export function createMatrivaApiClient(
       }
 
       return houseDraftResponseSchema.parse(await response.json());
+    },
+    async getHouseDraftOverviewPreview(houseDraftId) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/house-drafts/${houseDraftId}/overview-preview`
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `House draft overview preview request failed with status ${response.status}`
+        );
+      }
+
+      return houseDraftOverviewPreviewResponseSchema.parse(
+        await response.json()
+      );
     },
     async enrichHouseDraft(input) {
       const response = await fetcher(

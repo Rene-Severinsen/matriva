@@ -56,6 +56,12 @@ By default the API binds to `127.0.0.1:4000`. To make it reachable from a physic
 HOST=0.0.0.0 PORT=4000 npm run dev:api
 ```
 
+Smoke-check API dev startup and `GET /health` without adding it to the full check pipeline:
+
+```sh
+npm run smoke:api:dev
+```
+
 Run the mobile onboarding preview:
 
 ```sh

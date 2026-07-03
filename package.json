@@ -16,6 +16,7 @@
     "lint": "npm run build:packages && npm run lint --workspaces --if-present",
     "check:no-firebase": "node tools/check-no-firebase.mjs",
     "check:secrets": "node tools/check-no-secrets.mjs",
+    "smoke:api:dev": "node tools/smoke-api-dev.mjs",
     "check": "npm run check:no-firebase && npm run check:secrets && npm run typecheck && npm run lint"
   },
   "engines": {

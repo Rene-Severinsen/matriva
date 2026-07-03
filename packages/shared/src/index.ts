@@ -270,11 +270,109 @@ export type HouseDraftOverviewPreviewSectionKind = z.infer<
   typeof houseDraftOverviewPreviewSectionKindSchema
 >;
 
+export const houseDraftOverviewPreviewMaintenanceSourceSchema = z.enum([
+  "user_created",
+  "matriva_recommended"
+]);
+
+export type HouseDraftOverviewPreviewMaintenanceSource = z.infer<
+  typeof houseDraftOverviewPreviewMaintenanceSourceSchema
+>;
+
+export const houseDraftOverviewPreviewMaintenanceStatusSchema = z.enum([
+  "suggested",
+  "coming_up",
+  "due",
+  "overdue",
+  "done",
+  "disabled_preview"
+]);
+
+export type HouseDraftOverviewPreviewMaintenanceStatus = z.infer<
+  typeof houseDraftOverviewPreviewMaintenanceStatusSchema
+>;
+
+export const houseDraftOverviewPreviewMaintenanceTimingTypeSchema = z.enum([
+  "specific_deadline",
+  "seasonal_window",
+  "none"
+]);
+
+export type HouseDraftOverviewPreviewMaintenanceTimingType = z.infer<
+  typeof houseDraftOverviewPreviewMaintenanceTimingTypeSchema
+>;
+
+export const houseDraftOverviewPreviewMaintenanceSeasonSchema = z.enum([
+  "spring",
+  "summer",
+  "autumn",
+  "winter",
+  "all_year"
+]);
+
+export type HouseDraftOverviewPreviewMaintenanceSeason = z.infer<
+  typeof houseDraftOverviewPreviewMaintenanceSeasonSchema
+>;
+
+export const houseDraftOverviewPreviewMaintenanceSchema = z
+  .object({
+    source: houseDraftOverviewPreviewMaintenanceSourceSchema,
+    status: houseDraftOverviewPreviewMaintenanceStatusSchema,
+    timingType: houseDraftOverviewPreviewMaintenanceTimingTypeSchema,
+    dueDate: z.string().date().optional(),
+    season: houseDraftOverviewPreviewMaintenanceSeasonSchema.optional(),
+    daysUntilDue: z.number().int().nonnegative().optional(),
+    daysOverdue: z.number().int().positive().optional()
+  })
+  .superRefine((maintenance, context) => {
+    if (maintenance.timingType === "seasonal_window") {
+      if (!maintenance.season) {
+        context.addIssue({
+          code: "custom",
+          path: ["season"],
+          message: "seasonal maintenance preview cards must include season"
+        });
+      }
+
+      if (maintenance.dueDate) {
+        context.addIssue({
+          code: "custom",
+          path: ["dueDate"],
+          message: "seasonal maintenance preview cards must not require dueDate"
+        });
+      }
+    }
+
+    if (maintenance.timingType === "specific_deadline" && !maintenance.dueDate) {
+      context.addIssue({
+        code: "custom",
+        path: ["dueDate"],
+        message: "specific deadline maintenance preview cards must include dueDate"
+      });
+    }
+
+    if (
+      maintenance.daysOverdue !== undefined &&
+      maintenance.status !== "overdue"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["daysOverdue"],
+        message: "daysOverdue is only allowed for overdue maintenance previews"
+      });
+    }
+  });
+
+export type HouseDraftOverviewPreviewMaintenance = z.infer<
+  typeof houseDraftOverviewPreviewMaintenanceSchema
+>;
+
 export const houseDraftOverviewPreviewCardSchema = z.object({
   id: z.string().regex(/^overview_card_[a-z0-9][a-z0-9_-]{7,63}$/),
   title: z.string().min(1),
   body: z.string().min(1),
   statusLabel: z.string().min(1).optional(),
+  maintenance: houseDraftOverviewPreviewMaintenanceSchema.optional(),
   cta: z
     .object({
       label: z.string().min(1),

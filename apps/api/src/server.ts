@@ -80,6 +80,12 @@ function createOverviewPreviewCardId(): `overview_card_${string}` {
   return `overview_card_${randomBytes(10).toString("hex")}`;
 }
 
+function createDateOnlyDaysFromNow(daysFromNow: number): string {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + daysFromNow);
+  return date.toISOString().slice(0, 10);
+}
+
 function extractPostalCodeAndCity(label: string) {
   const match = /,\s*(\d{4})\s+([^,]+)$/.exec(label);
 
@@ -495,19 +501,65 @@ const server = createServer((request, response) => {
           kind: "maintenance",
           title: "Vedligehold",
           intro:
-            "Vedligehold vises som backend-styret preview uden oprettede opgaver.",
+            "Vedligehold hjælper dig med at holde styr på egne opgaver og relevante anbefalinger for boligen.",
           cards: [
             {
               id: createOverviewPreviewCardId(),
-              title: "Vedligeholdsplan kommer senere",
+              title: "Skift filter i ventilation",
               body:
-                "Når verificerede data og regler er klar, kan backend foreslå relevante vedligeholdspunkter.",
-              statusLabel: "Ingen opgaver oprettet",
+                "Eksempel på en opgave du selv kan oprette med deadline.",
+              statusLabel: "Forfalder om 12 dage",
+              maintenance: {
+                source: "user_created",
+                status: "coming_up",
+                timingType: "specific_deadline",
+                dueDate: createDateOnlyDaysFromNow(12),
+                daysUntilDue: 12
+              },
               cta: {
-                label: "Opret opgave",
+                label: "Ikke aktiv endnu",
                 enabled: false,
                 reason:
-                  "Vedligeholdelsesopgaver er ikke implementeret i dette preview."
+                  "Opgavehandlinger kobles på, når vedligeholdelsesmodulet bygges."
+              }
+            },
+            {
+              id: createOverviewPreviewCardId(),
+              title: "Rens tagrender",
+              body:
+                "Anbefalet vedligeholdelsespunkt med konkret deadline.",
+              statusLabel: "Overskredet med 8 dage",
+              maintenance: {
+                source: "matriva_recommended",
+                status: "overdue",
+                timingType: "specific_deadline",
+                dueDate: createDateOnlyDaysFromNow(-8),
+                daysOverdue: 8
+              },
+              cta: {
+                label: "Ikke aktiv endnu",
+                enabled: false,
+                reason:
+                  "Opgavehandlinger kobles på, når vedligeholdelsesmodulet bygges."
+              }
+            },
+            {
+              id: createOverviewPreviewCardId(),
+              title: "Tjek udendørs træværk",
+              body:
+                "Anbefalet vedligeholdelsespunkt for sæsonen.",
+              statusLabel: "Relevant i efteråret",
+              maintenance: {
+                source: "matriva_recommended",
+                status: "suggested",
+                timingType: "seasonal_window",
+                season: "autumn"
+              },
+              cta: {
+                label: "Ikke aktiv endnu",
+                enabled: false,
+                reason:
+                  "Opgavehandlinger kobles på, når vedligeholdelsesmodulet bygges."
               }
             }
           ]

@@ -221,6 +221,82 @@ function assertOverviewPreview(body, houseDraftId) {
     }
   }
 
+  const maintenanceSection = body.sections.find(
+    (section) => section?.kind === "maintenance"
+  );
+  assert(maintenanceSection, "Overview preview must include maintenance section.");
+
+  const maintenanceCards = maintenanceSection.cards.filter(
+    (card) => card?.maintenance
+  );
+  assert(
+    maintenanceCards.length >= 3,
+    "Overview preview maintenance section must include rich maintenance preview cards."
+  );
+  assert(
+    maintenanceCards.some(
+      (card) => card.maintenance.source === "user_created"
+    ),
+    "Maintenance preview must model user-created tasks."
+  );
+  assert(
+    maintenanceCards.some(
+      (card) => card.maintenance.source === "matriva_recommended"
+    ),
+    "Maintenance preview must model Matriva-recommended tasks."
+  );
+  assert(
+    maintenanceCards.some(
+      (card) =>
+        card.maintenance.timingType === "specific_deadline" &&
+        typeof card.maintenance.dueDate === "string"
+    ),
+    "Maintenance preview must include a specific-deadline task."
+  );
+  assert(
+    maintenanceCards.some(
+      (card) =>
+        card.maintenance.timingType === "seasonal_window" &&
+        typeof card.maintenance.season === "string" &&
+        card.maintenance.dueDate === undefined
+    ),
+    "Maintenance preview must include a season-only task without dueDate."
+  );
+  assert(
+    maintenanceCards.some(
+      (card) =>
+        card.maintenance.status === "overdue" &&
+        typeof card.maintenance.daysOverdue === "number"
+    ),
+    "Maintenance preview must include overdue-style messaging."
+  );
+
+  for (const card of maintenanceCards) {
+    assert(card.cta?.enabled === false, "Maintenance preview actions must be disabled.");
+    assert(
+      !card.isPersistedTask,
+      "Maintenance preview cards must not be marked as persisted tasks."
+    );
+
+    if (card.maintenance.timingType === "seasonal_window") {
+      assert(
+        typeof card.maintenance.season === "string",
+        "Seasonal maintenance previews must include season."
+      );
+      assert(
+        card.maintenance.dueDate === undefined,
+        "Seasonal maintenance previews must not require dueDate."
+      );
+    }
+
+    if (card.maintenance.daysOverdue !== undefined) {
+      assert(
+        card.maintenance.status === "overdue",
+        "daysOverdue must only be used for overdue maintenance previews."
+      );
+    }
+  }
+
   assertIsoDate(body?.generatedAt, "Overview preview generatedAt");
 }
 

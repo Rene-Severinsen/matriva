@@ -1,18 +1,29 @@
 import {
   addressSearchResponseSchema,
   enrichHouseDraftResponseSchema,
+  maintenanceTaskResponseSchema,
+  maintenanceTasksResponseSchema,
+  savedHouseResponseSchema,
+  savedHousesResponseSchema,
   healthResponseSchema,
   houseDraftOverviewPreviewResponseSchema,
   houseDraftResponseSchema,
   homeBootstrapResponseSchema,
   type AddressSearchResponse,
+  type CreateMaintenanceTaskRequest,
+  type CreateSavedHouseRequest,
   type EnrichHouseDraftRequest,
   type EnrichHouseDraftResponse,
   type HealthResponse,
   type HouseDraftId,
   type HouseDraftOverviewPreviewResponse,
   type HouseDraftResponse,
+  type HouseId,
   type HomeBootstrapResponse,
+  type MaintenanceTaskResponse,
+  type MaintenanceTasksResponse,
+  type SavedHouseResponse,
+  type SavedHousesResponse,
   type SelectedAddressInput
 } from "@matriva/shared";
 
@@ -34,6 +45,18 @@ export type MatrivaApiClient = {
   enrichHouseDraft: (
     input: EnrichHouseDraftRequest
   ) => Promise<EnrichHouseDraftResponse>;
+  listHouses: () => Promise<SavedHousesResponse>;
+  createSavedHouse: (
+    input: CreateSavedHouseRequest
+  ) => Promise<SavedHouseResponse>;
+  getHouse: (houseId: HouseId) => Promise<SavedHouseResponse>;
+  listMaintenanceTasks: (
+    houseId: HouseId
+  ) => Promise<MaintenanceTasksResponse>;
+  createMaintenanceTask: (
+    houseId: HouseId,
+    input: CreateMaintenanceTaskRequest
+  ) => Promise<MaintenanceTaskResponse>;
 };
 
 export function createMatrivaApiClient(
@@ -41,6 +64,31 @@ export function createMatrivaApiClient(
 ): MatrivaApiClient {
   const normalizedBaseUrl = options.baseUrl.replace(/\/$/, "");
   const fetcher = options.fetchImpl ?? fetch;
+
+  async function parseApiResponse(response: Response, fallbackMessage: string) {
+    if (response.ok) {
+      return response.json();
+    }
+
+    let message = fallbackMessage;
+
+    try {
+      const payload = await response.json();
+
+      if (
+        typeof payload === "object" &&
+        payload !== null &&
+        "message" in payload &&
+        typeof payload.message === "string"
+      ) {
+        message = payload.message;
+      }
+    } catch {
+      // Keep the route-specific fallback when the API response is not JSON.
+    }
+
+    throw new Error(message);
+  }
 
   async function getHealth() {
     const response = await fetcher(`${normalizedBaseUrl}/health`);
@@ -61,13 +109,9 @@ export function createMatrivaApiClient(
     async getBootstrap() {
       const response = await fetcher(`${normalizedBaseUrl}/v1/bootstrap`);
 
-      if (!response.ok) {
-        throw new Error(
-          `Bootstrap request failed with status ${response.status}`
-        );
-      }
-
-      return homeBootstrapResponseSchema.parse(await response.json());
+      return homeBootstrapResponseSchema.parse(
+        await parseApiResponse(response, "Could not load home data.")
+      );
     },
     async searchAddresses(query) {
       const searchParams = new URLSearchParams({ q: query });
@@ -75,13 +119,9 @@ export function createMatrivaApiClient(
         `${normalizedBaseUrl}/v1/addresses/search?${searchParams.toString()}`
       );
 
-      if (!response.ok) {
-        throw new Error(
-          `Address search request failed with status ${response.status}`
-        );
-      }
-
-      return addressSearchResponseSchema.parse(await response.json());
+      return addressSearchResponseSchema.parse(
+        await parseApiResponse(response, "Could not search addresses.")
+      );
     },
     async createHouseDraft(input) {
       const response = await fetcher(`${normalizedBaseUrl}/v1/house-drafts`, {
@@ -92,27 +132,17 @@ export function createMatrivaApiClient(
         body: JSON.stringify(input)
       });
 
-      if (!response.ok) {
-        throw new Error(
-          `House draft request failed with status ${response.status}`
-        );
-      }
-
-      return houseDraftResponseSchema.parse(await response.json());
+      return houseDraftResponseSchema.parse(
+        await parseApiResponse(response, "Could not create house draft.")
+      );
     },
     async getHouseDraftOverviewPreview(houseDraftId) {
       const response = await fetcher(
         `${normalizedBaseUrl}/v1/house-drafts/${houseDraftId}/overview-preview`
       );
 
-      if (!response.ok) {
-        throw new Error(
-          `House draft overview preview request failed with status ${response.status}`
-        );
-      }
-
       return houseDraftOverviewPreviewResponseSchema.parse(
-        await response.json()
+        await parseApiResponse(response, "Could not load house overview.")
       );
     },
     async enrichHouseDraft(input) {
@@ -127,13 +157,61 @@ export function createMatrivaApiClient(
         }
       );
 
-      if (!response.ok) {
-        throw new Error(
-          `House draft enrichment request failed with status ${response.status}`
-        );
-      }
+      return enrichHouseDraftResponseSchema.parse(
+        await parseApiResponse(response, "Could not load house data.")
+      );
+    },
+    async listHouses() {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/houses`);
 
-      return enrichHouseDraftResponseSchema.parse(await response.json());
+      return savedHousesResponseSchema.parse(
+        await parseApiResponse(response, "Could not load saved houses.")
+      );
+    },
+    async createSavedHouse(input) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/houses`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(input)
+      });
+
+      return savedHouseResponseSchema.parse(
+        await parseApiResponse(response, "Could not save house.")
+      );
+    },
+    async getHouse(houseId) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/houses/${houseId}`);
+
+      return savedHouseResponseSchema.parse(
+        await parseApiResponse(response, "Could not load house.")
+      );
+    },
+    async listMaintenanceTasks(houseId) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-tasks`
+      );
+
+      return maintenanceTasksResponseSchema.parse(
+        await parseApiResponse(response, "Could not load maintenance tasks.")
+      );
+    },
+    async createMaintenanceTask(houseId, input) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-tasks`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify(input)
+        }
+      );
+
+      return maintenanceTaskResponseSchema.parse(
+        await parseApiResponse(response, "Could not create maintenance task.")
+      );
     }
   };
 }

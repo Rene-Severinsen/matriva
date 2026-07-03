@@ -252,13 +252,84 @@ export const houseDraftResponseSchema = z.object({
 
 export type HouseDraftResponse = z.infer<typeof houseDraftResponseSchema>;
 
-export const houseEnrichmentSourceSchema = z.object({
-  source: z.literal("BBR_DATAFORDELER"),
-  sourceAccessAddressId: z.string().min(1).optional(),
-  sourceAddressId: z.string().min(1).optional(),
-  fetchedAt: z.string().datetime().optional(),
-  skeleton: z.boolean()
-});
+export const houseEnrichmentStatusSchema = z.enum([
+  "skeleton",
+  "verified",
+  "failed",
+  "partial"
+]);
+
+export type HouseEnrichmentStatus = z.infer<
+  typeof houseEnrichmentStatusSchema
+>;
+
+export const houseEnrichmentSourceKindSchema = z.literal("BBR_DATAFORDELER");
+
+export type HouseEnrichmentSourceKind = z.infer<
+  typeof houseEnrichmentSourceKindSchema
+>;
+
+export const houseEnrichmentVerificationStatusSchema = z.enum([
+  "not_verified",
+  "verified",
+  "unavailable"
+]);
+
+export type HouseEnrichmentVerificationStatus = z.infer<
+  typeof houseEnrichmentVerificationStatusSchema
+>;
+
+export const houseEnrichmentIntegrationStatusSchema = z.enum([
+  "credentials_missing",
+  "credentials_configured_not_implemented",
+  "unsupported_auth_mode",
+  "live_ready"
+]);
+
+export type HouseEnrichmentIntegrationStatus = z.infer<
+  typeof houseEnrichmentIntegrationStatusSchema
+>;
+
+export const houseEnrichmentSourceSchema = z
+  .object({
+    source: houseEnrichmentSourceKindSchema,
+    label: z.literal("BBR/Datafordeler"),
+    sourceAccessAddressId: z.string().min(1).optional(),
+    sourceAddressId: z.string().min(1).optional(),
+    verificationStatus: houseEnrichmentVerificationStatusSchema,
+    integrationStatus: houseEnrichmentIntegrationStatusSchema,
+    fetchedAt: z.string().datetime().optional(),
+    skeleton: z.boolean()
+  })
+  .superRefine((source, context) => {
+    if (source.verificationStatus !== "verified") {
+      return;
+    }
+
+    if (source.skeleton) {
+      context.addIssue({
+        code: "custom",
+        path: ["skeleton"],
+        message: "verified source must not be marked as skeleton"
+      });
+    }
+
+    if (source.integrationStatus !== "live_ready") {
+      context.addIssue({
+        code: "custom",
+        path: ["integrationStatus"],
+        message: "verified source requires live_ready integration status"
+      });
+    }
+
+    if (!source.fetchedAt) {
+      context.addIssue({
+        code: "custom",
+        path: ["fetchedAt"],
+        message: "verified source requires fetchedAt"
+      });
+    }
+  });
 
 export type HouseEnrichmentSource = z.infer<
   typeof houseEnrichmentSourceSchema
@@ -308,16 +379,109 @@ export const bbrUnitSummarySchema = z.object({
 
 export type BbrUnitSummary = z.infer<typeof bbrUnitSummarySchema>;
 
-export const houseEnrichmentSchema = z.object({
-  status: bbrEnrichmentStatusSchema,
-  source: houseEnrichmentSourceSchema,
-  property: bbrPropertySummarySchema.optional(),
-  buildings: z.array(bbrBuildingSummarySchema),
-  units: z.array(bbrUnitSummarySchema),
-  warnings: z.array(z.string().min(1)),
-  generatedAt: z.string().datetime(),
-  skeleton: z.boolean()
+export const houseEnrichmentWarningCodeSchema = z.enum([
+  "skeleton_not_verified",
+  "credentials_missing",
+  "credentials_configured_not_implemented",
+  "unsupported_auth_mode"
+]);
+
+export type HouseEnrichmentWarningCode = z.infer<
+  typeof houseEnrichmentWarningCodeSchema
+>;
+
+export const houseEnrichmentWarningSchema = z.object({
+  code: houseEnrichmentWarningCodeSchema,
+  message: z.string().min(1)
 });
+
+export type HouseEnrichmentWarning = z.infer<
+  typeof houseEnrichmentWarningSchema
+>;
+
+export const houseEnrichmentSchema = z
+  .object({
+    status: houseEnrichmentStatusSchema,
+    source: houseEnrichmentSourceSchema,
+    property: bbrPropertySummarySchema.optional(),
+    buildings: z.array(bbrBuildingSummarySchema),
+    units: z.array(bbrUnitSummarySchema),
+    warnings: z.array(z.string().min(1)),
+    warningDetails: z.array(houseEnrichmentWarningSchema),
+    generatedAt: z.string().datetime(),
+    skeleton: z.boolean()
+  })
+  .superRefine((enrichment, context) => {
+    if (enrichment.skeleton) {
+      if (enrichment.status !== "skeleton") {
+        context.addIssue({
+          code: "custom",
+          path: ["status"],
+          message: "skeleton enrichment must use skeleton status"
+        });
+      }
+
+      if (!enrichment.source.skeleton) {
+        context.addIssue({
+          code: "custom",
+          path: ["source", "skeleton"],
+          message: "skeleton enrichment requires skeleton source"
+        });
+      }
+
+      if (enrichment.source.verificationStatus !== "not_verified") {
+        context.addIssue({
+          code: "custom",
+          path: ["source", "verificationStatus"],
+          message: "skeleton enrichment source must be not_verified"
+        });
+      }
+
+      if (enrichment.source.integrationStatus === "live_ready") {
+        context.addIssue({
+          code: "custom",
+          path: ["source", "integrationStatus"],
+          message: "skeleton enrichment source must not be live_ready"
+        });
+      }
+
+      if (enrichment.source.fetchedAt) {
+        context.addIssue({
+          code: "custom",
+          path: ["source", "fetchedAt"],
+          message: "skeleton enrichment source must not include fetchedAt"
+        });
+      }
+    }
+
+    if (enrichment.status !== "verified") {
+      return;
+    }
+
+    if (enrichment.skeleton) {
+      context.addIssue({
+        code: "custom",
+        path: ["skeleton"],
+        message: "verified enrichment must not be marked as skeleton"
+      });
+    }
+
+    if (enrichment.source.verificationStatus !== "verified") {
+      context.addIssue({
+        code: "custom",
+        path: ["source", "verificationStatus"],
+        message: "verified enrichment requires verified source"
+      });
+    }
+
+    if (enrichment.source.integrationStatus !== "live_ready") {
+      context.addIssue({
+        code: "custom",
+        path: ["source", "integrationStatus"],
+        message: "verified enrichment requires live_ready integration status"
+      });
+    }
+  });
 
 export type HouseEnrichment = z.infer<typeof houseEnrichmentSchema>;
 

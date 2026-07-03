@@ -26,6 +26,8 @@ The API helper may expose only safe status and availability information. It must
 
 Skeleton and preview data must be clearly marked as not verified.
 
+The enrichment contract must use Matriva-owned status fields for skeleton, verification, integration availability, generation time, and warnings. It must not expose Datafordeler/BBR request IDs, response shapes, raw upstream codes, credentials, or internal environment values to the mobile app.
+
 Verified BBR data may only be marked as verified after live integration, mapping, source timestamp handling, caching, and audit support are implemented.
 
 No live BBR mapping is implemented in this task.

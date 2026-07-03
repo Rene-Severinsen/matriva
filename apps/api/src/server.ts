@@ -448,13 +448,25 @@ const server = createServer((request, response) => {
         const datafordelerStatus = getDatafordelerConfigStatus();
         const datafordelerWarning =
           datafordelerStatus.authMode === "unsupported"
-            ? "Datafordeler auth mode is unsupported. Returning development skeleton enrichment."
+            ? {
+                code: "unsupported_auth_mode",
+                message:
+                  "BBR/Datafordeler enrichment is unavailable for this API configuration."
+              }
             : (datafordelerStatus.authMode === "api_key" ||
                   datafordelerStatus.authMode === "oauth") &&
                 datafordelerStatus.baseUrlConfigured &&
                 datafordelerStatus.apiKeyConfigured
-              ? "Datafordeler credentials are configured, but live BBR enrichment is not implemented yet."
-              : "Datafordeler credentials are missing or incomplete. Returning development skeleton enrichment.";
+              ? {
+                  code: "credentials_configured_not_implemented",
+                  message:
+                    "BBR/Datafordeler credentials are configured, but live enrichment is not implemented yet."
+                }
+              : {
+                  code: "credentials_missing",
+                  message:
+                    "BBR/Datafordeler enrichment is unavailable until API credentials are configured."
+                };
 
         // TODO: Replace this skeleton branch with a server-side Datafordeler adapter.
         const body = enrichHouseDraftResponseSchema.parse({
@@ -463,20 +475,30 @@ const server = createServer((request, response) => {
             status: "skeleton",
             source: {
               source: "BBR_DATAFORDELER",
+              label: "BBR/Datafordeler",
               sourceAccessAddressId:
                 parsedRequest.data.selectedAddress.sourceAccessAddressId,
               sourceAddressId: parsedRequest.data.selectedAddress.sourceAddressId,
+              verificationStatus: "not_verified",
+              integrationStatus: datafordelerWarning.code,
               skeleton: true
             },
             property: {
-              propertyType: "UNKNOWN",
-              rawCodeNotes: [datafordelerStatus.reason]
+              propertyType: "UNKNOWN"
             },
             buildings: [],
             units: [],
             warnings: [
-              datafordelerWarning,
+              datafordelerWarning.message,
               "Skeleton response must not be treated as verified BBR data."
+            ],
+            warningDetails: [
+              datafordelerWarning,
+              {
+                code: "skeleton_not_verified",
+                message:
+                  "Skeleton response must not be treated as verified BBR data."
+              }
             ],
             generatedAt: now,
             skeleton: true

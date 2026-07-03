@@ -14,6 +14,10 @@ import { createMatrivaApiClient } from "@matriva/api-client";
 import { MATRIVA_FOUNDATION_VERSION } from "@matriva/shared";
 
 const localApiBaseUrl = "http://127.0.0.1:4000";
+const configuredApiBaseUrl =
+  process.env.EXPO_PUBLIC_MATRIVA_API_BASE_URL?.trim();
+const apiBaseUrl = configuredApiBaseUrl || localApiBaseUrl;
+const usesLocalFallback = !configuredApiBaseUrl;
 
 type SmokeAction =
   | "Check API"
@@ -29,7 +33,7 @@ export default function App() {
   const apiClient = useMemo(
     () =>
       createMatrivaApiClient({
-        baseUrl: localApiBaseUrl
+        baseUrl: apiBaseUrl
       }),
     []
   );
@@ -70,6 +74,11 @@ export default function App() {
         <View style={styles.infoPanel}>
           <Text style={styles.label}>API base URL</Text>
           <Text style={styles.mono}>{apiClient.baseUrl}</Text>
+          <Text style={styles.meta}>
+            {usesLocalFallback
+              ? "Using local fallback. Set EXPO_PUBLIC_MATRIVA_API_BASE_URL to override."
+              : "Using EXPO_PUBLIC_MATRIVA_API_BASE_URL."}
+          </Text>
           <Text style={styles.meta}>
             Shared version {MATRIVA_FOUNDATION_VERSION}
           </Text>

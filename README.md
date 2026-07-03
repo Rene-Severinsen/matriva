@@ -56,6 +56,26 @@ Run the mobile developer smoke view:
 npm run dev:mobile
 ```
 
+The mobile smoke view reads the API base URL from Expo public env:
+
+```sh
+EXPO_PUBLIC_MATRIVA_API_BASE_URL=http://127.0.0.1:4000 npm run dev:mobile
+```
+
+`apps/mobile/.env.example` documents the local default:
+
+```text
+EXPO_PUBLIC_MATRIVA_API_BASE_URL=http://127.0.0.1:4000
+```
+
+Do not put secrets in `EXPO_PUBLIC_` variables. Expo public env values are bundled into the mobile app. This setting is only development configuration for the temporary smoke view.
+
+Local URL notes:
+
+* iOS simulator: usually `http://127.0.0.1:4000` or `http://localhost:4000`
+* Android emulator: usually `http://10.0.2.2:4000`
+* Physical device: use the Mac's LAN IP, for example `http://192.168.x.x:4000`
+
 The API exposes:
 
 ```text
@@ -92,7 +112,7 @@ const draft = await client.createHouseDraft({
 
 The mobile app currently shows a temporary developer-only API smoke view. It can call health, bootstrap, address search, and house draft endpoints through `@matriva/api-client`. This is not V1 product UI, not onboarding UI, and should be removed or replaced before real app screens are built.
 
-Local API URL caveat: the smoke view defaults to `http://127.0.0.1:4000`. This works for local desktop/simulator setups where the device can reach the host loopback. Android emulators and physical devices may need a host-reachable URL such as `http://10.0.2.2:4000` or a LAN IP.
+If `EXPO_PUBLIC_MATRIVA_API_BASE_URL` is not set, the smoke view falls back to `http://127.0.0.1:4000` and shows that fallback in the app.
 
 ## Quality Checks
 

@@ -50,6 +50,12 @@ Run the API:
 npm run dev:api
 ```
 
+By default the API binds to `127.0.0.1:4000`. To make it reachable from a physical device on your local network, bind to all interfaces:
+
+```sh
+HOST=0.0.0.0 PORT=4000 npm run dev:api
+```
+
 Run the mobile developer smoke view:
 
 ```sh
@@ -74,7 +80,7 @@ Local URL notes:
 
 * iOS simulator: usually `http://127.0.0.1:4000` or `http://localhost:4000`
 * Android emulator: usually `http://10.0.2.2:4000`
-* Physical device: use the Mac's LAN IP, for example `http://192.168.x.x:4000`
+* Physical device: start the API with `HOST=0.0.0.0`, then use the Mac's LAN IP, for example `http://192.168.x.x:4000`
 
 The API exposes:
 

@@ -41,6 +41,19 @@ function writeJson(response: ServerResponse, status: number, body: unknown) {
   response.end(JSON.stringify(body));
 }
 
+function devUrlsForHost(bindHost: string, bindPort: number) {
+  const localUrl = `http://127.0.0.1:${bindPort}`;
+  const androidEmulatorUrl = `http://10.0.2.2:${bindPort}`;
+
+  return {
+    bind: `http://${bindHost}:${bindPort}`,
+    local: localUrl,
+    iosSimulator: localUrl,
+    androidEmulator: androidEmulatorUrl,
+    physicalDevice: `http://<mac-lan-ip>:${bindPort}`
+  };
+}
+
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
@@ -404,5 +417,11 @@ const server = createServer((request, response) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`Matriva API listening on http://${host}:${port}`);
+  const urls = devUrlsForHost(host, port);
+
+  console.log(`Matriva API listening on ${urls.bind}`);
+  console.log(`Local health: ${urls.local}/health`);
+  console.log(`iOS simulator: ${urls.iosSimulator}`);
+  console.log(`Android emulator: ${urls.androidEmulator}`);
+  console.log(`Physical device: ${urls.physicalDevice} when HOST=0.0.0.0`);
 });

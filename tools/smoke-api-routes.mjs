@@ -9,6 +9,9 @@ const pollIntervalMs = 250;
 const requestTimeoutMs = 4_000;
 const outputLimit = 8_000;
 const addressQuery = "Rådhuspladsen 1";
+const databaseUrl =
+  process.env.DATABASE_URL ??
+  "postgresql://matriva:matriva_dev_password@127.0.0.1:56432/matriva_dev";
 
 let capturedOutput = "";
 
@@ -49,6 +52,7 @@ function startApi() {
     detached: process.platform !== "win32",
     env: {
       ...process.env,
+      DATABASE_URL: databaseUrl,
       HOST: host,
       PORT: port
     },
@@ -107,6 +111,33 @@ async function fetchJson(path, options = {}) {
   }
 }
 
+async function fetchJsonWithStatus(path, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+
+  try {
+    const response = await fetch(`${baseUrl}${path}`, {
+      ...options,
+      signal: controller.signal
+    });
+    let body;
+
+    try {
+      body = await response.json();
+    } catch (error) {
+      throw new Error(`${path} returned invalid JSON: ${error.message}`);
+    }
+
+    return {
+      status: response.status,
+      ok: response.ok,
+      body
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
@@ -129,6 +160,13 @@ function assertBootstrap(body) {
   assert(body?.user && typeof body.user.id === "string", "/v1/bootstrap user is missing.");
   assert(Array.isArray(body?.cards), "/v1/bootstrap cards must be an array.");
   assertIsoDate(body?.generatedAt, "/v1/bootstrap generatedAt");
+}
+
+function assertCurrentDevUser(body) {
+  assert(body?.user?.id?.startsWith("usr_"), "DevUser must include a usr_ ID.");
+  assert(body.user.email === "rene@joinit.dk", "DevUser email must match the dev boundary.");
+  assertIsoDate(body.user.createdAt, "DevUser createdAt");
+  assertIsoDate(body.user.updatedAt, "DevUser updatedAt");
 }
 
 function toSelectedAddress(suggestion) {
@@ -175,6 +213,55 @@ function assertHouseDraft(body, selectedAddress) {
     body.houseDraft.selectedAddress?.sourceAddressId === selectedAddress.sourceAddressId,
     "House draft selectedAddress must match the address-search sourceAddressId."
   );
+}
+
+function assertSavedHouse(body, selectedAddress, ownerUserId) {
+  assert(body?.house?.id?.startsWith("house_"), "Saved house must include a house_ ID.");
+  assert(
+    body.house.ownerUserId === ownerUserId,
+    "Saved house must belong to the current DevUser."
+  );
+  assert(
+    body.house.addressLabel === selectedAddress.label,
+    "Saved house address label must come from the selected address."
+  );
+  assert(
+    body.house.dawaAddressId === selectedAddress.sourceAddressId,
+    "Saved house must persist the DAWA address ID."
+  );
+  assert(body.house.status === "saved", "Saved house status must be saved.");
+  assert(
+    body.house.dataConfidence === "not_verified",
+    "Saved house dataConfidence must start as not_verified."
+  );
+  assertIsoDate(body.house.createdAt, "Saved house createdAt");
+  assertIsoDate(body.house.updatedAt, "Saved house updatedAt");
+}
+
+function assertMaintenanceTask(body, houseId, expectedStatus = "planned") {
+  assert(body?.task?.id?.startsWith("task_"), "Maintenance task must include a task_ ID.");
+  assert(body.task.houseId === houseId, "Maintenance task must belong to the saved house.");
+  assert(body.task.title === "Skift filter i ventilation", "Maintenance task title must persist.");
+  assert(body.task.source === "user_created", "Maintenance task source must persist.");
+  assert(body.task.status === expectedStatus, "Maintenance task status must match.");
+  assert(
+    body.task.timing?.type === "specific_deadline",
+    "Maintenance task timing type must persist."
+  );
+  assert(
+    typeof body.task.timing.daysUntilDue === "number",
+    "Maintenance task response must derive daysUntilDue."
+  );
+  assert(
+    body.task.timing.daysOverdue === undefined,
+    "Maintenance task response must not derive daysOverdue for non-overdue tasks."
+  );
+  assertIsoDate(body.task.createdAt, "Maintenance task createdAt");
+  assertIsoDate(body.task.updatedAt, "Maintenance task updatedAt");
+
+  if (expectedStatus === "done") {
+    assertIsoDate(body.task.completedAt, "Maintenance task completedAt");
+  }
 }
 
 function assertOverviewPreview(body, houseDraftId) {
@@ -318,6 +405,12 @@ function assertEnrichment(body) {
   );
 }
 
+function dateOnlyDaysFromNow(daysFromNow) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + daysFromNow);
+  return date.toISOString().slice(0, 10);
+}
+
 async function waitForHealth(child) {
   const startedAt = Date.now();
   let lastError;
@@ -350,6 +443,9 @@ async function runSmoke(child) {
   const bootstrap = await fetchJson("/v1/bootstrap");
   assertBootstrap(bootstrap);
 
+  const currentDevUser = await fetchJson("/v1/dev-user");
+  assertCurrentDevUser(currentDevUser);
+
   const searchParams = new URLSearchParams({ q: addressQuery });
   let addressSearch;
 
@@ -371,6 +467,99 @@ async function runSmoke(child) {
   });
 
   assertHouseDraft(houseDraft, selectedAddress);
+
+  const savedHouse = await fetchJson("/v1/houses", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      houseDraftId: houseDraft.houseDraft.id,
+      selectedAddress
+    })
+  });
+
+  assertSavedHouse(savedHouse, selectedAddress, currentDevUser.user.id);
+
+  const savedHouses = await fetchJson("/v1/houses");
+  assert(
+    savedHouses.houses.some((house) => house.id === savedHouse.house.id),
+    "Saved houses list must include the newly created house."
+  );
+
+  const oneSavedHouse = await fetchJson(`/v1/houses/${savedHouse.house.id}`);
+  assertSavedHouse(oneSavedHouse, selectedAddress, currentDevUser.user.id);
+
+  const notOwnedHouse = await fetchJsonWithStatus("/v1/houses/house_aaaaaaaa");
+  assert(
+    notOwnedHouse.status === 404 && notOwnedHouse.body?.code === "house_not_found",
+    "Saved house ownership boundary must reject houses outside the current DevUser."
+  );
+
+  const maintenanceTask = await fetchJson(
+    `/v1/houses/${savedHouse.house.id}/maintenance-tasks`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        title: "Skift filter i ventilation",
+        description: "Brugeroprettet opgave fra persisted smoke.",
+        timing: {
+          type: "specific_deadline",
+          dueDate: dateOnlyDaysFromNow(9)
+        }
+      })
+    }
+  );
+
+  assertMaintenanceTask(maintenanceTask, savedHouse.house.id);
+
+  const maintenanceTasks = await fetchJson(
+    `/v1/houses/${savedHouse.house.id}/maintenance-tasks`
+  );
+  assert(
+    maintenanceTasks.tasks.some((task) => task.id === maintenanceTask.task.id),
+    "Maintenance task list must include the newly created task."
+  );
+
+  const doneTask = await fetchJson(
+    `/v1/houses/${savedHouse.house.id}/maintenance-tasks/${maintenanceTask.task.id}/status`,
+    {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        status: "done"
+      })
+    }
+  );
+
+  assertMaintenanceTask(doneTask, savedHouse.house.id, "done");
+
+  const invalidTiming = await fetchJsonWithStatus(
+    `/v1/houses/${savedHouse.house.id}/maintenance-tasks`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        title: "Invalid timing",
+        timing: {
+          type: "none",
+          dueDate: dateOnlyDaysFromNow(1)
+        }
+      })
+    }
+  );
+  assert(
+    invalidTiming.status === 400 &&
+      invalidTiming.body?.code === "maintenance_task_request_invalid",
+    "Invalid maintenance timing must be rejected."
+  );
 
   const overviewPreview = await fetchJson(
     `/v1/house-drafts/${houseDraft.houseDraft.id}/overview-preview`

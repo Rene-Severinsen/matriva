@@ -3,7 +3,11 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const host = "127.0.0.1";
 const port = "4100";
-const healthUrl = `http://${host}:${port}/health`;
+const baseUrl = `http://${host}:${port}`;
+const healthUrl = `${baseUrl}/health`;
+const databaseUrl =
+  process.env.DATABASE_URL ??
+  "postgresql://matriva:matriva_dev_password@127.0.0.1:56432/matriva_dev";
 const startupTimeoutMs = 20_000;
 const pollIntervalMs = 250;
 const requestTimeoutMs = 1_000;
@@ -48,6 +52,7 @@ function startApi() {
     detached: process.platform !== "win32",
     env: {
       ...process.env,
+      DATABASE_URL: databaseUrl,
       HOST: host,
       PORT: port
     },
@@ -105,6 +110,38 @@ async function readHealth() {
   }
 }
 
+async function readCurrentDevUser() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+
+  try {
+    const response = await fetch(`${baseUrl}/v1/dev-user`, {
+      signal: controller.signal
+    });
+
+    if (response.status !== 200) {
+      throw new Error(
+        `Expected HTTP 200 from /v1/dev-user, got ${response.status}.`
+      );
+    }
+
+    const body = await response.json();
+
+    if (
+      !body?.user?.id?.startsWith("usr_") ||
+      body.user.email !== "rene@joinit.dk" ||
+      Number.isNaN(Date.parse(body.user.createdAt)) ||
+      Number.isNaN(Date.parse(body.user.updatedAt))
+    ) {
+      throw new Error("DevUser response did not match the expected JSON shape.");
+    }
+
+    return body;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function waitForHealth(child) {
   const startedAt = Date.now();
   let lastError;
@@ -133,7 +170,8 @@ const child = startApi();
 
 try {
   await waitForHealth(child);
-  console.log(`API dev smoke passed: GET ${healthUrl}`);
+  await readCurrentDevUser();
+  console.log(`API dev smoke passed: GET ${healthUrl}, GET ${baseUrl}/v1/dev-user`);
 } catch (error) {
   console.error(`API dev smoke failed: ${error.message}`);
   printCapturedOutput();

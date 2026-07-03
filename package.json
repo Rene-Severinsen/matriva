@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "dev:mobile": "npm run build:packages && npm run start -w @matriva/mobile",
-    "dev:api": "npm run build -w @matriva/shared && npm run dev -w @matriva/api",
+    "dev:api": "npm run build -w @matriva/shared && DATABASE_URL=${DATABASE_URL:-postgresql://matriva:matriva_dev_password@127.0.0.1:56432/matriva_dev} npm run dev -w @matriva/api",
     "build": "npm run build:packages && npm run build -w @matriva/api",
     "build:packages": "npm run build -w @matriva/shared && npm run build -w @matriva/api-client",
     "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",

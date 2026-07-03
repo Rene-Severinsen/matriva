@@ -6,17 +6,38 @@ import {
   addressSearchQuerySchema,
   addressSearchResponseSchema,
   apiErrorSchema,
+  createMaintenanceTaskRequestSchema,
+  createSavedHouseRequestSchema,
+  currentDevUserResponseSchema,
   enrichHouseDraftRequestSchema,
   enrichHouseDraftResponseSchema,
   healthResponseSchema,
   houseDraftIdSchema,
   houseDraftOverviewPreviewResponseSchema,
   houseDraftResponseSchema,
+  houseIdSchema,
   homeBootstrapResponseSchema,
-  selectedAddressInputSchema
+  maintenanceTaskResponseSchema,
+  maintenanceTasksResponseSchema,
+  savedHouseResponseSchema,
+  savedHousesResponseSchema,
+  selectedAddressInputSchema,
+  taskIdSchema,
+  updateMaintenanceTaskStatusRequestSchema
 } from "@matriva/shared";
 
 import { getDatafordelerConfigStatus } from "./config/datafordeler.ts";
+import {
+  ApiError,
+  createMaintenanceTaskForHouse,
+  createSavedHouse,
+  ensureCurrentDevUser,
+  getSavedHouse,
+  listMaintenanceTasksForHouse,
+  listSavedHouses,
+  migrateDatabase,
+  updateMaintenanceTaskStatus
+} from "./db.ts";
 
 const port = Number.parseInt(process.env.PORT ?? "4000", 10);
 const host = process.env.HOST ?? "127.0.0.1";
@@ -45,6 +66,36 @@ type DawaAddress = {
 function writeJson(response: ServerResponse, status: number, body: unknown) {
   response.writeHead(status, { "content-type": "application/json" });
   response.end(JSON.stringify(body));
+}
+
+function writeApiError(
+  response: ServerResponse,
+  status: number,
+  code: string,
+  message: string
+) {
+  writeJson(
+    response,
+    status,
+    apiErrorSchema.parse({
+      code,
+      message
+    })
+  );
+}
+
+function writeUnknownApiError(response: ServerResponse, error: unknown) {
+  if (error instanceof ApiError) {
+    writeApiError(response, error.status, error.code, error.message);
+    return;
+  }
+
+  writeApiError(
+    response,
+    500,
+    "api_internal_error",
+    "The Matriva API could not complete the request."
+  );
 }
 
 function devUrlsForHost(bindHost: string, bindPort: number) {
@@ -217,6 +268,232 @@ const server = createServer((request, response) => {
     });
 
     writeJson(response, 200, body);
+    return;
+  }
+
+  if (request.method === "GET" && request.url === "/v1/dev-user") {
+    void (async () => {
+      try {
+        const user = await ensureCurrentDevUser();
+        writeJson(
+          response,
+          200,
+          currentDevUserResponseSchema.parse({ user })
+        );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "GET" && request.url === "/v1/houses") {
+    void (async () => {
+      try {
+        const houses = await listSavedHouses();
+        writeJson(
+          response,
+          200,
+          savedHousesResponseSchema.parse({
+            houses,
+            generatedAt: new Date().toISOString()
+          })
+        );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/v1/houses") {
+    void (async () => {
+      try {
+        const payload = await readJsonBody(request);
+        const parsedRequest = createSavedHouseRequestSchema.safeParse(payload);
+
+        if (
+          !parsedRequest.success ||
+          parsedRequest.data.selectedAddress.source !== "DAWA"
+        ) {
+          writeApiError(
+            response,
+            400,
+            "saved_house_request_invalid",
+            "Saved house creation requires selected DAWA address data."
+          );
+          return;
+        }
+
+        const house = await createSavedHouse(parsedRequest.data.selectedAddress);
+        writeJson(
+          response,
+          201,
+          savedHouseResponseSchema.parse({ house })
+        );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const houseMatch = /^\/v1\/houses\/([^/]+)$/.exec(request.url ?? "");
+
+  if (request.method === "GET" && houseMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(houseMatch[1]);
+
+      if (!parsedHouseId.success) {
+        writeApiError(
+          response,
+          400,
+          "saved_house_id_invalid",
+          "Saved house lookup requires a valid house_ ID."
+        );
+        return;
+      }
+
+      try {
+        const house = await getSavedHouse(parsedHouseId.data);
+        writeJson(response, 200, savedHouseResponseSchema.parse({ house }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const houseMaintenanceTasksMatch =
+    /^\/v1\/houses\/([^/]+)\/maintenance-tasks$/.exec(request.url ?? "");
+
+  if (request.method === "GET" && houseMaintenanceTasksMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(
+        houseMaintenanceTasksMatch[1]
+      );
+
+      if (!parsedHouseId.success) {
+        writeApiError(
+          response,
+          400,
+          "maintenance_task_house_id_invalid",
+          "Maintenance task routes require a valid house_ ID."
+        );
+        return;
+      }
+
+      try {
+        const tasks = await listMaintenanceTasksForHouse(parsedHouseId.data);
+        writeJson(
+          response,
+          200,
+          maintenanceTasksResponseSchema.parse({
+            tasks,
+            generatedAt: new Date().toISOString()
+          })
+        );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "POST" && houseMaintenanceTasksMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(
+        houseMaintenanceTasksMatch[1]
+      );
+
+      if (!parsedHouseId.success) {
+        writeApiError(
+          response,
+          400,
+          "maintenance_task_house_id_invalid",
+          "Maintenance task creation requires a valid house_ ID."
+        );
+        return;
+      }
+
+      try {
+        const payload = await readJsonBody(request);
+        const parsedRequest =
+          createMaintenanceTaskRequestSchema.safeParse(payload);
+
+        if (!parsedRequest.success) {
+          writeApiError(
+            response,
+            400,
+            "maintenance_task_request_invalid",
+            "Maintenance task creation requires valid title, source, status, and timing data."
+          );
+          return;
+        }
+
+        const task = await createMaintenanceTaskForHouse(
+          parsedHouseId.data,
+          parsedRequest.data
+        );
+        writeJson(
+          response,
+          201,
+          maintenanceTaskResponseSchema.parse({ task })
+        );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const maintenanceTaskStatusMatch =
+    /^\/v1\/houses\/([^/]+)\/maintenance-tasks\/([^/]+)\/status$/.exec(
+      request.url ?? ""
+    );
+
+  if (request.method === "PATCH" && maintenanceTaskStatusMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(
+        maintenanceTaskStatusMatch[1]
+      );
+      const parsedTaskId = taskIdSchema.safeParse(maintenanceTaskStatusMatch[2]);
+
+      if (!parsedHouseId.success || !parsedTaskId.success) {
+        writeApiError(
+          response,
+          400,
+          "maintenance_task_status_route_invalid",
+          "Maintenance task status updates require valid house_ and task_ IDs."
+        );
+        return;
+      }
+
+      try {
+        const payload = await readJsonBody(request);
+        const parsedRequest =
+          updateMaintenanceTaskStatusRequestSchema.safeParse(payload);
+
+        if (!parsedRequest.success) {
+          writeApiError(
+            response,
+            400,
+            "maintenance_task_status_request_invalid",
+            "Maintenance task status update requires a valid status."
+          );
+          return;
+        }
+
+        const task = await updateMaintenanceTaskStatus(
+          parsedHouseId.data,
+          parsedTaskId.data,
+          parsedRequest.data.status
+        );
+        writeJson(response, 200, maintenanceTaskResponseSchema.parse({ task }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
     return;
   }
 
@@ -723,12 +1000,20 @@ const server = createServer((request, response) => {
   writeJson(response, 404, { error: "not_found" });
 });
 
-server.listen(port, host, () => {
-  const urls = devUrlsForHost(host, port);
+try {
+  await migrateDatabase();
 
-  console.log(`Matriva API listening on ${urls.bind}`);
-  console.log(`Local health: ${urls.local}/health`);
-  console.log(`iOS simulator: ${urls.iosSimulator}`);
-  console.log(`Android emulator: ${urls.androidEmulator}`);
-  console.log(`Physical device: ${urls.physicalDevice} when HOST=0.0.0.0`);
-});
+  server.listen(port, host, () => {
+    const urls = devUrlsForHost(host, port);
+
+    console.log(`Matriva API listening on ${urls.bind}`);
+    console.log(`Local health: ${urls.local}/health`);
+    console.log(`iOS simulator: ${urls.iosSimulator}`);
+    console.log(`Android emulator: ${urls.androidEmulator}`);
+    console.log(`Physical device: ${urls.physicalDevice} when HOST=0.0.0.0`);
+  });
+} catch (error) {
+  console.error("Matriva API failed to start.");
+  console.error(error);
+  process.exitCode = 1;
+}

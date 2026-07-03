@@ -418,6 +418,173 @@ export const maintenanceTaskSchema = z
 
 export type MaintenanceTask = z.infer<typeof maintenanceTaskSchema>;
 
+export const devUserSchema = z.object({
+  id: userIdSchema,
+  email: z.string().email(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+
+export type DevUser = z.infer<typeof devUserSchema>;
+
+export const currentDevUserResponseSchema = z.object({
+  user: devUserSchema
+});
+
+export type CurrentDevUserResponse = z.infer<
+  typeof currentDevUserResponseSchema
+>;
+
+export const savedHouseStatusSchema = z.enum(["saved"]);
+
+export type SavedHouseStatus = z.infer<typeof savedHouseStatusSchema>;
+
+export const savedHouseDataConfidenceSchema = z.enum(["not_verified"]);
+
+export type SavedHouseDataConfidence = z.infer<
+  typeof savedHouseDataConfidenceSchema
+>;
+
+export const savedHouseSchema = z.object({
+  id: houseIdSchema,
+  ownerUserId: userIdSchema,
+  addressLabel: z.string().min(1),
+  dawaAddressId: z.string().min(1).optional(),
+  status: savedHouseStatusSchema,
+  dataConfidence: savedHouseDataConfidenceSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+
+export type SavedHouse = z.infer<typeof savedHouseSchema>;
+
+export const createSavedHouseRequestSchema = z.object({
+  houseDraftId: houseDraftIdSchema.optional(),
+  selectedAddress: selectedAddressInputSchema
+});
+
+export type CreateSavedHouseRequest = z.infer<
+  typeof createSavedHouseRequestSchema
+>;
+
+export const savedHouseResponseSchema = z.object({
+  house: savedHouseSchema
+});
+
+export type SavedHouseResponse = z.infer<typeof savedHouseResponseSchema>;
+
+export const savedHousesResponseSchema = z.object({
+  houses: z.array(savedHouseSchema),
+  generatedAt: z.string().datetime()
+});
+
+export type SavedHousesResponse = z.infer<typeof savedHousesResponseSchema>;
+
+export const createMaintenanceTaskTimingSchema = z
+  .object({
+    type: maintenanceTimingTypeSchema,
+    dueDate: z.string().date().optional(),
+    season: maintenanceSeasonSchema.optional()
+  })
+  .superRefine((timing, context) => {
+    if (timing.type === "seasonal_window") {
+      if (!timing.season) {
+        context.addIssue({
+          code: "custom",
+          path: ["season"],
+          message: "seasonal maintenance tasks must include season"
+        });
+      }
+
+      if (timing.dueDate) {
+        context.addIssue({
+          code: "custom",
+          path: ["dueDate"],
+          message: "seasonal maintenance tasks must not include dueDate"
+        });
+      }
+    }
+
+    if (timing.type === "specific_deadline" && !timing.dueDate) {
+      context.addIssue({
+        code: "custom",
+        path: ["dueDate"],
+        message: "specific deadline maintenance tasks should include dueDate"
+      });
+    }
+
+    if (timing.type === "none") {
+      if (timing.dueDate) {
+        context.addIssue({
+          code: "custom",
+          path: ["dueDate"],
+          message: "maintenance tasks without timing must not include dueDate"
+        });
+      }
+
+      if (timing.season) {
+        context.addIssue({
+          code: "custom",
+          path: ["season"],
+          message: "maintenance tasks without timing must not include season"
+        });
+      }
+    }
+  });
+
+export type CreateMaintenanceTaskTiming = z.infer<
+  typeof createMaintenanceTaskTimingSchema
+>;
+
+export const createMaintenanceTaskRequestSchema = z
+  .object({
+    title: z.string().trim().min(1),
+    description: z.string().trim().min(1).optional(),
+    source: maintenanceTaskSourceSchema.optional(),
+    status: maintenanceTaskStatusSchema.optional(),
+    timing: createMaintenanceTaskTimingSchema,
+    recommendation: recommendedMaintenanceTaskMetadataSchema.optional()
+  })
+  .superRefine((task, context) => {
+    if (task.recommendation && task.source !== "matriva_recommended") {
+      context.addIssue({
+        code: "custom",
+        path: ["recommendation"],
+        message:
+          "recommendation metadata is only allowed for Matriva-recommended maintenance tasks"
+      });
+    }
+  });
+
+export type CreateMaintenanceTaskRequest = z.infer<
+  typeof createMaintenanceTaskRequestSchema
+>;
+
+export const maintenanceTaskResponseSchema = z.object({
+  task: maintenanceTaskSchema
+});
+
+export type MaintenanceTaskResponse = z.infer<
+  typeof maintenanceTaskResponseSchema
+>;
+
+export const maintenanceTasksResponseSchema = z.object({
+  tasks: z.array(maintenanceTaskSchema),
+  generatedAt: z.string().datetime()
+});
+
+export type MaintenanceTasksResponse = z.infer<
+  typeof maintenanceTasksResponseSchema
+>;
+
+export const updateMaintenanceTaskStatusRequestSchema = z.object({
+  status: maintenanceTaskStatusSchema
+});
+
+export type UpdateMaintenanceTaskStatusRequest = z.infer<
+  typeof updateMaintenanceTaskStatusRequestSchema
+>;
+
 export const houseDraftOverviewPreviewSectionKindSchema = z.enum([
   "overview",
   "documents",

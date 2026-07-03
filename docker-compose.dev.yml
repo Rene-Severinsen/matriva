@@ -1,0 +1,21 @@
+services:
+  matriva-postgres-dev:
+    image: postgres:16
+    container_name: matriva-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: matriva_dev
+      POSTGRES_USER: matriva
+      POSTGRES_PASSWORD: matriva_dev_password
+    ports:
+      - "56432:5432"
+    volumes:
+      - matriva-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U matriva -d matriva_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  matriva-postgres-data:

@@ -6,7 +6,10 @@ import {
   addressSearchQuerySchema,
   addressSearchResponseSchema,
   apiErrorSchema,
+  enrichHouseDraftRequestSchema,
+  enrichHouseDraftResponseSchema,
   healthResponseSchema,
+  houseDraftIdSchema,
   houseDraftResponseSchema,
   homeBootstrapResponseSchema,
   selectedAddressInputSchema
@@ -68,6 +71,14 @@ function createHouseDraftId(): `house_draft_${string}` {
 
 function createHomeCardId(): `card_${string}` {
   return `card_${randomBytes(10).toString("hex")}`;
+}
+
+function hasDatafordelerCredentials() {
+  return Boolean(
+    process.env.DATAFORDELER_USERNAME &&
+      process.env.DATAFORDELER_PASSWORD &&
+      process.env.DATAFORDELER_BASE_URL
+  );
 }
 
 function extractPostalCodeAndCity(label: string) {
@@ -406,6 +417,113 @@ const server = createServer((request, response) => {
           apiErrorSchema.parse({
             code: "house_draft_request_invalid",
             message: "House draft request body must be valid JSON."
+          })
+        );
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/v1/house-drafts/enrich") {
+    void (async () => {
+      try {
+        const payload = await readJsonBody(request);
+        const parsedRequest = enrichHouseDraftRequestSchema.safeParse(payload);
+
+        if (
+          !parsedRequest.success ||
+          parsedRequest.data.selectedAddress.source !== "DAWA" ||
+          !houseDraftIdSchema.safeParse(parsedRequest.data.houseDraftId).success
+        ) {
+          writeJson(
+            response,
+            400,
+            apiErrorSchema.parse({
+              code: "house_draft_enrichment_request_invalid",
+              message:
+                "House draft enrichment requires a house_draft_ ID and selected DAWA address references."
+            })
+          );
+          return;
+        }
+
+        const now = new Date().toISOString();
+        const validityEnd = new Date(
+          Date.now() + 1000 * 60 * 60 * 24 * 14
+        ).toISOString();
+        const credentialsAvailable = hasDatafordelerCredentials();
+
+        // TODO: Replace this skeleton branch with a server-side Datafordeler adapter.
+        const body = enrichHouseDraftResponseSchema.parse({
+          houseDraftId: parsedRequest.data.houseDraftId,
+          enrichment: {
+            status: "skeleton",
+            source: {
+              source: "BBR_DATAFORDELER",
+              sourceAccessAddressId:
+                parsedRequest.data.selectedAddress.sourceAccessAddressId,
+              sourceAddressId: parsedRequest.data.selectedAddress.sourceAddressId,
+              skeleton: true
+            },
+            property: {
+              propertyType: "UNKNOWN",
+              rawCodeNotes: [
+                credentialsAvailable
+                  ? "Live Datafordeler adapter is not implemented yet."
+                  : "Datafordeler credentials are missing in local development."
+              ]
+            },
+            buildings: [],
+            units: [],
+            warnings: [
+              credentialsAvailable
+                ? "Datafordeler credentials are configured, but live BBR enrichment is not implemented yet."
+                : "Datafordeler credentials are missing. Returning development skeleton enrichment.",
+              "Skeleton response must not be treated as verified BBR data."
+            ],
+            generatedAt: now,
+            skeleton: true
+          },
+          profilePreview: {
+            displayName: parsedRequest.data.selectedAddress.label,
+            addressLabel: parsedRequest.data.selectedAddress.label,
+            propertyType: "UNKNOWN"
+          },
+          cards: [
+            {
+              id: createHomeCardId(),
+              type: "SYSTEM_NOTICE",
+              title: "Skeleton: boligdata kan forbedre planen senere",
+              shortExplanation:
+                "Development-only card for validating the BBR/Datafordeler enrichment contract.",
+              severity: "info",
+              action: {
+                label: "No action",
+                target: { kind: "none" }
+              },
+              validFrom: now,
+              validTo: validityEnd,
+              audience: {
+                countryCode: "DK",
+                propertyTypes: ["UNKNOWN"]
+              },
+              minAppVersion: "0.1.0",
+              fallbackText:
+                "Matriva will later use backend-owned BBR enrichment to make maintenance cards more relevant."
+            }
+          ],
+          generatedAt: now,
+          skeleton: true
+        });
+
+        writeJson(response, 200, body);
+      } catch {
+        writeJson(
+          response,
+          400,
+          apiErrorSchema.parse({
+            code: "house_draft_enrichment_body_invalid",
+            message: "House draft enrichment body must be valid JSON."
           })
         );
       }

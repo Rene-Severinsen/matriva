@@ -1,9 +1,12 @@
 import {
   addressSearchResponseSchema,
+  enrichHouseDraftResponseSchema,
   healthResponseSchema,
   houseDraftResponseSchema,
   homeBootstrapResponseSchema,
   type AddressSearchResponse,
+  type EnrichHouseDraftRequest,
+  type EnrichHouseDraftResponse,
   type HealthResponse,
   type HouseDraftResponse,
   type HomeBootstrapResponse,
@@ -22,6 +25,9 @@ export type MatrivaApiClient = {
   getBootstrap: () => Promise<HomeBootstrapResponse>;
   searchAddresses: (query: string) => Promise<AddressSearchResponse>;
   createHouseDraft: (input: SelectedAddressInput) => Promise<HouseDraftResponse>;
+  enrichHouseDraft: (
+    input: EnrichHouseDraftRequest
+  ) => Promise<EnrichHouseDraftResponse>;
 };
 
 export function createMatrivaApiClient(
@@ -87,6 +93,26 @@ export function createMatrivaApiClient(
       }
 
       return houseDraftResponseSchema.parse(await response.json());
+    },
+    async enrichHouseDraft(input) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/house-drafts/enrich`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify(input)
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `House draft enrichment request failed with status ${response.status}`
+        );
+      }
+
+      return enrichHouseDraftResponseSchema.parse(await response.json());
     }
   };
 }

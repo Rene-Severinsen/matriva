@@ -9,6 +9,7 @@ import {
 } from "../components/AddressSearchForm";
 import { AddressSuggestionList } from "../components/AddressSuggestionList";
 import { HomeCardPreviewList } from "../components/HomeCardPreviewList";
+import { HouseEnrichmentSummary } from "../components/HouseEnrichmentSummary";
 import { HouseDraftSummary } from "../components/HouseDraftSummary";
 import { InlineMessage } from "../components/InlineMessage";
 import { useAddressOnboardingPreview } from "../hooks/useAddressOnboardingPreview";
@@ -89,6 +90,36 @@ export function AddressOnboardingPreviewScreen() {
             <HouseDraftSummary
               houseDraft={onboarding.draftResponse.houseDraft}
             />
+            <View style={styles.enrichmentPanel}>
+              <Text style={styles.sectionTitle}>Boligdata preview</Text>
+              <Text style={styles.meta}>
+                Henter senere boligdata via backend. Ingen live BBR endnu.
+              </Text>
+            </View>
+            <PrimaryButton
+              label="Hent boligdata preview"
+              loading={onboarding.isEnriching}
+              disabled={!onboarding.canEnrich}
+              onPress={() => void onboarding.enrichFirstHouseDraft()}
+            />
+            {onboarding.enrichmentError ? (
+              <InlineMessage
+                title="Kunne ikke hente boligdata preview"
+                message={onboarding.enrichmentError}
+                tone="error"
+              />
+            ) : null}
+            {onboarding.enrichmentResponse ? (
+              <>
+                <HouseEnrichmentSummary
+                  response={onboarding.enrichmentResponse}
+                />
+                <HomeCardPreviewList
+                  title="Boligdata preview-kort"
+                  cards={onboarding.enrichmentResponse.cards}
+                />
+              </>
+            ) : null}
             <HomeCardPreviewList cards={onboarding.draftResponse.cards} />
           </View>
         ) : null}
@@ -139,6 +170,14 @@ const styles = StyleSheet.create({
   },
   section: {
     rowGap: 12
+  },
+  enrichmentPanel: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#D7D0C4",
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 14,
+    rowGap: 6
   },
   sectionTitle: {
     color: "#17211D",

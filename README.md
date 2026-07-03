@@ -89,6 +89,7 @@ GET http://localhost:4000/health
 GET http://localhost:4000/v1/bootstrap
 GET http://localhost:4000/v1/addresses/search?q=Rådhuspladsen 1
 POST http://localhost:4000/v1/house-drafts
+POST http://localhost:4000/v1/house-drafts/enrich
 ```
 
 `GET /v1/bootstrap` is a development-only skeleton contract for validating the first shared domain/API shape: user summary, house summary, entitlements, and backend-driven Home cards. It is not a production feature, does not create seed data, does not use a database, and does not implement authentication.
@@ -110,15 +111,32 @@ const draft = await client.createHouseDraft({
   sourceAccessAddressId: "dawa-access-address-id",
   label: "Rådhuspladsen 1, 1550 København V"
 });
+
+const enrichment = await client.enrichHouseDraft({
+  houseDraftId: draft.houseDraft.id,
+  selectedAddress: draft.houseDraft.selectedAddress
+});
 ```
 
-`GET /v1/addresses/search` is the backend-owned address search contract. The mobile app must call the Matriva API, not DAWA/Dataforsyningen directly. The API currently uses DAWA/Dataforsyningen (`https://api.dataforsyningen.dk/adresser?q=`) as the address source and returns normalized `AddressSuggestion` objects with Matriva-owned `addr_<opaque>` suggestion IDs. BBR/Datafordeler lookup is not implemented yet.
+`GET /v1/addresses/search` is the backend-owned address search contract. The mobile app must call the Matriva API, not DAWA/Dataforsyningen directly. The API currently uses DAWA/Dataforsyningen (`https://api.dataforsyningen.dk/adresser?q=`) as the address source and returns normalized `AddressSuggestion` objects with Matriva-owned `addr_<opaque>` suggestion IDs. Live BBR/Datafordeler lookup is not implemented yet.
 
 `POST /v1/house-drafts` is a development-only skeleton contract for validating the next onboarding step after a user selects a DAWA address. The request must send DAWA source references (`source`, `sourceAddressId`, optional `sourceAccessAddressId`, and `label`), not the request-local `addr_<opaque>` suggestion ID. The response returns a `house_draft_<opaque>` draft and skeleton backend-driven Home cards. It does not use a database, does not implement auth, and does not fetch BBR/Datafordeler data yet.
 
+`POST /v1/house-drafts/enrich` is a development-only skeleton contract for future BBR/Datafordeler enrichment of a selected DAWA address. BBR/Datafordeler enrichment is backend-owned: the mobile app must call the Matriva API and must not call Datafordeler directly. The endpoint may return a skeleton response when local Datafordeler credentials are missing or while the live adapter is not implemented. It does not use a database, does not implement auth, and does not persist enrichment data.
+
+Example local skeleton request:
+
+```sh
+curl -X POST http://127.0.0.1:4000/v1/house-drafts/enrich \
+  -H "content-type: application/json" \
+  -d '{"houseDraftId":"house_draft_demo12345","selectedAddress":{"source":"DAWA","sourceAddressId":"dawa-address-id","sourceAccessAddressId":"dawa-access-address-id","label":"Rådhuspladsen 1, 1550 København V"}}'
+```
+
+Future server-side Datafordeler integration may use these env var names: `DATAFORDELER_USERNAME`, `DATAFORDELER_PASSWORD`, and `DATAFORDELER_BASE_URL`. Do not commit credential values to the repository.
+
 The mobile app currently shows a temporary onboarding preview for the first narrow product flow: search for an address, choose a DAWA-backed suggestion returned by Matriva API, create a skeleton house draft, and show the first backend-driven skeleton cards. It uses `@matriva/api-client`; the mobile app must not call DAWA/Dataforsyningen directly.
 
-This preview is not finished V1 product UI. Auth, database persistence, BBR/Datafordeler enrichment, billing, push, and document upload are not implemented yet.
+This preview is not finished V1 product UI. Auth, database persistence, live BBR/Datafordeler enrichment, billing, push, and document upload are not implemented yet.
 
 If `EXPO_PUBLIC_MATRIVA_API_BASE_URL` is not set, the onboarding preview falls back to `http://127.0.0.1:4000` and shows that fallback in the app.
 

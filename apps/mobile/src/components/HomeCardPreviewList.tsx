@@ -3,13 +3,17 @@ import { StyleSheet, Text, View } from "react-native";
 import { type HomeCard } from "@matriva/shared";
 
 type HomeCardPreviewListProps = {
+  title?: string;
   cards: HomeCard[];
 };
 
-export function HomeCardPreviewList({ cards }: HomeCardPreviewListProps) {
+export function HomeCardPreviewList({
+  title = "Første backend-kort",
+  cards
+}: HomeCardPreviewListProps) {
   return (
     <View style={styles.cardsSection}>
-      <Text style={styles.sectionTitle}>Første backend-kort</Text>
+      <Text style={styles.sectionTitle}>{title}</Text>
       {cards.map((card) => (
         <HomeCardPreview card={card} key={card.id} />
       ))}

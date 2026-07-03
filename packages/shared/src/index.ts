@@ -252,6 +252,97 @@ export const houseDraftResponseSchema = z.object({
 
 export type HouseDraftResponse = z.infer<typeof houseDraftResponseSchema>;
 
+export const houseEnrichmentSourceSchema = z.object({
+  source: z.literal("BBR_DATAFORDELER"),
+  sourceAccessAddressId: z.string().min(1).optional(),
+  sourceAddressId: z.string().min(1).optional(),
+  fetchedAt: z.string().datetime().optional(),
+  skeleton: z.boolean()
+});
+
+export type HouseEnrichmentSource = z.infer<
+  typeof houseEnrichmentSourceSchema
+>;
+
+export const bbrEnrichmentStatusSchema = z.enum([
+  "not_requested",
+  "skeleton",
+  "available",
+  "unavailable",
+  "error"
+]);
+
+export type BbrEnrichmentStatus = z.infer<typeof bbrEnrichmentStatusSchema>;
+
+export const bbrPropertySummarySchema = z.object({
+  propertyType: houseProfileBasisSchema.shape.propertyType.optional(),
+  buildYear: houseProfileBasisSchema.shape.buildYear.optional(),
+  livingAreaM2: houseProfileBasisSchema.shape.livingAreaM2.optional(),
+  heatedAreaM2: z.number().int().positive().optional(),
+  heatingType: z.string().min(1).optional(),
+  roofType: z.string().min(1).optional(),
+  externalWallMaterial: z.string().min(1).optional(),
+  usageCode: z.string().min(1).optional(),
+  rawCodeNotes: z.array(z.string().min(1)).optional()
+});
+
+export type BbrPropertySummary = z.infer<typeof bbrPropertySummarySchema>;
+
+export const bbrBuildingSummarySchema = z.object({
+  buildingId: z.string().min(1).optional(),
+  buildingNumber: z.string().min(1).optional(),
+  buildYear: houseProfileBasisSchema.shape.buildYear.optional(),
+  areaM2: z.number().int().positive().optional(),
+  usage: z.string().min(1).optional(),
+  heatingType: z.string().min(1).optional(),
+  roofType: z.string().min(1).optional()
+});
+
+export type BbrBuildingSummary = z.infer<typeof bbrBuildingSummarySchema>;
+
+export const bbrUnitSummarySchema = z.object({
+  unitId: z.string().min(1).optional(),
+  unitUsage: z.string().min(1).optional(),
+  livingAreaM2: houseProfileBasisSchema.shape.livingAreaM2.optional()
+});
+
+export type BbrUnitSummary = z.infer<typeof bbrUnitSummarySchema>;
+
+export const houseEnrichmentSchema = z.object({
+  status: bbrEnrichmentStatusSchema,
+  source: houseEnrichmentSourceSchema,
+  property: bbrPropertySummarySchema.optional(),
+  buildings: z.array(bbrBuildingSummarySchema),
+  units: z.array(bbrUnitSummarySchema),
+  warnings: z.array(z.string().min(1)),
+  generatedAt: z.string().datetime(),
+  skeleton: z.boolean()
+});
+
+export type HouseEnrichment = z.infer<typeof houseEnrichmentSchema>;
+
+export const enrichHouseDraftRequestSchema = z.object({
+  houseDraftId: houseDraftIdSchema,
+  selectedAddress: selectedAddressInputSchema
+});
+
+export type EnrichHouseDraftRequest = z.infer<
+  typeof enrichHouseDraftRequestSchema
+>;
+
+export const enrichHouseDraftResponseSchema = z.object({
+  houseDraftId: houseDraftIdSchema,
+  enrichment: houseEnrichmentSchema,
+  profilePreview: houseProfileBasisSchema.optional(),
+  cards: z.array(homeCardSchema),
+  generatedAt: z.string().datetime(),
+  skeleton: z.boolean()
+});
+
+export type EnrichHouseDraftResponse = z.infer<
+  typeof enrichHouseDraftResponseSchema
+>;
+
 export const featureKeySchema = z.enum([
   "documents.maxCount",
   "documents.maxStorageMb",

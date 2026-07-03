@@ -3,13 +3,14 @@ import { useMemo, useState } from "react";
 import { createMatrivaApiClient } from "@matriva/api-client";
 import {
   type AddressSuggestion,
+  type EnrichHouseDraftResponse,
   type HouseDraftResponse,
   type SelectedAddressInput
 } from "@matriva/shared";
 
 import { matrivaApiConfig } from "../config/api";
 
-type LoadingAction = "search" | "create";
+type LoadingAction = "search" | "create" | "enrich";
 
 function selectedAddressInput(
   suggestion: AddressSuggestion
@@ -55,6 +56,9 @@ export function useAddressOnboardingPreview() {
     useState<AddressSuggestion | null>(null);
   const [draftResponse, setDraftResponse] =
     useState<HouseDraftResponse | null>(null);
+  const [enrichmentResponse, setEnrichmentResponse] =
+    useState<EnrichHouseDraftResponse | null>(null);
+  const [enrichmentError, setEnrichmentError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [loadingAction, setLoadingAction] = useState<LoadingAction | null>(
     null
@@ -63,20 +67,26 @@ export function useAddressOnboardingPreview() {
 
   const isSearching = loadingAction === "search";
   const isCreating = loadingAction === "create";
+  const isEnriching = loadingAction === "enrich";
   const isBusy = loadingAction !== null;
   const trimmedQuery = query.trim();
   const canSearch = trimmedQuery.length >= 2 && !isBusy;
   const canCreate = selectedAddress !== null && !isBusy;
+  const canEnrich = draftResponse !== null && !isBusy;
 
   function updateQuery(nextQuery: string) {
     setQuery(nextQuery);
     setError(null);
+    setEnrichmentResponse(null);
+    setEnrichmentError(null);
   }
 
   function selectAddress(suggestion: AddressSuggestion) {
     setSelectedAddress(suggestion);
     setDraftResponse(null);
     setError(null);
+    setEnrichmentResponse(null);
+    setEnrichmentError(null);
   }
 
   async function searchAddressSuggestions() {
@@ -86,6 +96,8 @@ export function useAddressOnboardingPreview() {
       setSuggestions([]);
       setSelectedAddress(null);
       setDraftResponse(null);
+      setEnrichmentResponse(null);
+      setEnrichmentError(null);
       return;
     }
 
@@ -93,6 +105,8 @@ export function useAddressOnboardingPreview() {
     setError(null);
     setDraftResponse(null);
     setSelectedAddress(null);
+    setEnrichmentResponse(null);
+    setEnrichmentError(null);
 
     try {
       const response = await apiClient.searchAddresses(trimmedQuery);
@@ -115,6 +129,8 @@ export function useAddressOnboardingPreview() {
 
     setLoadingAction("create");
     setError(null);
+    setEnrichmentResponse(null);
+    setEnrichmentError(null);
 
     try {
       setDraftResponse(
@@ -128,6 +144,31 @@ export function useAddressOnboardingPreview() {
     }
   }
 
+  async function enrichFirstHouseDraft() {
+    if (!draftResponse) {
+      setError("Opret et house draft, før du henter boligdata preview.");
+      return;
+    }
+
+    setLoadingAction("enrich");
+    setError(null);
+    setEnrichmentError(null);
+
+    try {
+      setEnrichmentResponse(
+        await apiClient.enrichHouseDraft({
+          houseDraftId: draftResponse.houseDraft.id,
+          selectedAddress: draftResponse.houseDraft.selectedAddress
+        })
+      );
+    } catch (caughtError) {
+      setEnrichmentResponse(null);
+      setEnrichmentError(userFacingError(caughtError));
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
   return {
     apiBaseUrl: apiClient.baseUrl,
     usesLocalFallback: matrivaApiConfig.usesLocalFallback,
@@ -135,16 +176,21 @@ export function useAddressOnboardingPreview() {
     suggestions,
     selectedAddress,
     draftResponse,
+    enrichmentResponse,
+    enrichmentError,
     hasSearched,
     error,
     isSearching,
     isCreating,
+    isEnriching,
     isBusy,
     canSearch,
     canCreate,
+    canEnrich,
     updateQuery,
     selectAddress,
     searchAddressSuggestions,
-    createFirstHouseDraft
+    createFirstHouseDraft,
+    enrichFirstHouseDraft
   };
 }

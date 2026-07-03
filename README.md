@@ -74,7 +74,17 @@ EXPO_PUBLIC_MATRIVA_API_BASE_URL=http://127.0.0.1:4000 npm run dev:mobile
 EXPO_PUBLIC_MATRIVA_API_BASE_URL=http://127.0.0.1:4000
 ```
 
-Do not put secrets in `EXPO_PUBLIC_` variables. Expo public env values are bundled into the mobile app. This setting is only development configuration for the temporary onboarding preview.
+Do not put secrets in `EXPO_PUBLIC_` variables. Expo public env values are bundled into the mobile app. `EXPO_PUBLIC_*` must never be used for private upstream credentials. This setting is only development configuration for the temporary onboarding preview.
+
+Future server-side Datafordeler integration uses these API runtime env var names:
+
+```text
+DATAFORDELER_API_KEY
+DATAFORDELER_BASE_URL
+DATAFORDELER_AUTH_MODE
+```
+
+Credential values may only live in local developer env or hosting secret configuration. Never commit secrets to code, docs, tests, fixtures, logs, or generated output.
 
 Local URL notes:
 
@@ -131,8 +141,6 @@ curl -X POST http://127.0.0.1:4000/v1/house-drafts/enrich \
   -H "content-type: application/json" \
   -d '{"houseDraftId":"house_draft_demo12345","selectedAddress":{"source":"DAWA","sourceAddressId":"dawa-address-id","sourceAccessAddressId":"dawa-access-address-id","label":"Rådhuspladsen 1, 1550 København V"}}'
 ```
-
-Future server-side Datafordeler integration may use these env var names: `DATAFORDELER_USERNAME`, `DATAFORDELER_PASSWORD`, and `DATAFORDELER_BASE_URL`. Do not commit credential values to the repository.
 
 The mobile app currently shows a temporary onboarding preview for the first narrow product flow: search for an address, choose a DAWA-backed suggestion returned by Matriva API, create a skeleton house draft, and show the first backend-driven skeleton cards. It uses `@matriva/api-client`; the mobile app must not call DAWA/Dataforsyningen directly.
 

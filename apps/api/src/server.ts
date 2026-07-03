@@ -15,6 +15,8 @@ import {
   selectedAddressInputSchema
 } from "@matriva/shared";
 
+import { getDatafordelerConfigStatus } from "./config/datafordeler.js";
+
 const port = Number.parseInt(process.env.PORT ?? "4000", 10);
 const host = process.env.HOST ?? "127.0.0.1";
 const dawaAddressSearchUrl = "https://api.dataforsyningen.dk/adresser";
@@ -71,14 +73,6 @@ function createHouseDraftId(): `house_draft_${string}` {
 
 function createHomeCardId(): `card_${string}` {
   return `card_${randomBytes(10).toString("hex")}`;
-}
-
-function hasDatafordelerCredentials() {
-  return Boolean(
-    process.env.DATAFORDELER_USERNAME &&
-      process.env.DATAFORDELER_PASSWORD &&
-      process.env.DATAFORDELER_BASE_URL
-  );
 }
 
 function extractPostalCodeAndCity(label: string) {
@@ -451,7 +445,16 @@ const server = createServer((request, response) => {
         const validityEnd = new Date(
           Date.now() + 1000 * 60 * 60 * 24 * 14
         ).toISOString();
-        const credentialsAvailable = hasDatafordelerCredentials();
+        const datafordelerStatus = getDatafordelerConfigStatus();
+        const datafordelerWarning =
+          datafordelerStatus.authMode === "unsupported"
+            ? "Datafordeler auth mode is unsupported. Returning development skeleton enrichment."
+            : (datafordelerStatus.authMode === "api_key" ||
+                  datafordelerStatus.authMode === "oauth") &&
+                datafordelerStatus.baseUrlConfigured &&
+                datafordelerStatus.apiKeyConfigured
+              ? "Datafordeler credentials are configured, but live BBR enrichment is not implemented yet."
+              : "Datafordeler credentials are missing or incomplete. Returning development skeleton enrichment.";
 
         // TODO: Replace this skeleton branch with a server-side Datafordeler adapter.
         const body = enrichHouseDraftResponseSchema.parse({
@@ -467,18 +470,12 @@ const server = createServer((request, response) => {
             },
             property: {
               propertyType: "UNKNOWN",
-              rawCodeNotes: [
-                credentialsAvailable
-                  ? "Live Datafordeler adapter is not implemented yet."
-                  : "Datafordeler credentials are missing in local development."
-              ]
+              rawCodeNotes: [datafordelerStatus.reason]
             },
             buildings: [],
             units: [],
             warnings: [
-              credentialsAvailable
-                ? "Datafordeler credentials are configured, but live BBR enrichment is not implemented yet."
-                : "Datafordeler credentials are missing. Returning development skeleton enrichment.",
+              datafordelerWarning,
               "Skeleton response must not be treated as verified BBR data."
             ],
             generatedAt: now,

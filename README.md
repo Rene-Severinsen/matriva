@@ -50,6 +50,12 @@ Run the API:
 npm run dev:api
 ```
 
+Run the mobile developer smoke view:
+
+```sh
+npm run dev:mobile
+```
+
 The API exposes:
 
 ```text
@@ -84,11 +90,9 @@ const draft = await client.createHouseDraft({
 
 `POST /v1/house-drafts` is a development-only skeleton contract for validating the next onboarding step after a user selects a DAWA address. The request must send DAWA source references (`source`, `sourceAddressId`, optional `sourceAccessAddressId`, and `label`), not the request-local `addr_<opaque>` suggestion ID. The response returns a `house_draft_<opaque>` draft and skeleton backend-driven Home cards. It does not use a database, does not implement auth, and does not fetch BBR/Datafordeler data yet.
 
-Run the mobile app:
+The mobile app currently shows a temporary developer-only API smoke view. It can call health, bootstrap, address search, and house draft endpoints through `@matriva/api-client`. This is not V1 product UI, not onboarding UI, and should be removed or replaced before real app screens are built.
 
-```sh
-npm run dev:mobile
-```
+Local API URL caveat: the smoke view defaults to `http://127.0.0.1:4000`. This works for local desktop/simulator setups where the device can reach the host loopback. Android emulators and physical devices may need a host-reachable URL such as `http://10.0.2.2:4000` or a LAN IP.
 
 ## Quality Checks
 

@@ -17,6 +17,7 @@ export type MatrivaApiClientOptions = {
 
 export type MatrivaApiClient = {
   readonly baseUrl: string;
+  getHealth: () => Promise<HealthResponse>;
   health: () => Promise<HealthResponse>;
   getBootstrap: () => Promise<HomeBootstrapResponse>;
   searchAddresses: (query: string) => Promise<AddressSearchResponse>;
@@ -29,16 +30,21 @@ export function createMatrivaApiClient(
   const normalizedBaseUrl = options.baseUrl.replace(/\/$/, "");
   const fetcher = options.fetchImpl ?? fetch;
 
+  async function getHealth() {
+    const response = await fetcher(`${normalizedBaseUrl}/health`);
+
+    if (!response.ok) {
+      throw new Error(`Health request failed with status ${response.status}`);
+    }
+
+    return healthResponseSchema.parse(await response.json());
+  }
+
   return {
     baseUrl: normalizedBaseUrl,
+    getHealth,
     async health() {
-      const response = await fetcher(`${normalizedBaseUrl}/health`);
-
-      if (!response.ok) {
-        throw new Error(`Health request failed with status ${response.status}`);
-      }
-
-      return healthResponseSchema.parse(await response.json());
+      return getHealth();
     },
     async getBootstrap() {
       const response = await fetcher(`${normalizedBaseUrl}/v1/bootstrap`);

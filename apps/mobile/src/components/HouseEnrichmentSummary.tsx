@@ -10,6 +10,16 @@ export function HouseEnrichmentSummary({
   response
 }: HouseEnrichmentSummaryProps) {
   const { enrichment, profilePreview } = response;
+  const warnings =
+    enrichment.warningDetails.length > 0
+      ? enrichment.warningDetails.map((warning) => warning.message)
+      : enrichment.warnings;
+  const sourceStatus =
+    enrichment.source.verificationStatus === "verified"
+      ? "Verificeret"
+      : enrichment.source.verificationStatus === "unavailable"
+        ? "Ikke tilgængelig"
+        : "Ikke verificeret";
   const profileRows = profilePreview
     ? [
         ["Adresse", profilePreview.addressLabel],
@@ -23,21 +33,22 @@ export function HouseEnrichmentSummary({
 
   return (
     <View style={styles.panel}>
-      <Text style={styles.previewLabel}>Development preview</Text>
-      <Text style={styles.sectionTitle}>Boligdata preview</Text>
+      <Text style={styles.previewLabel}>Teknisk preview</Text>
+      <Text style={styles.sectionTitle}>Ikke verificerede boligdata</Text>
       <Text style={styles.bodySmall}>
-        Dette er en backend-owned skeleton response og ikke verificerede
-        BBR-data.
+        Dette er en teknisk skeleton-preview fra Matriva API. Det er ikke live
+        BBR-data og må ikke læses som verificerede boligoplysninger.
       </Text>
       <Text style={styles.meta}>
-        Status: {enrichment.status}
-        {enrichment.skeleton ? " · skeleton response" : ""}
+        Status: {sourceStatus}
+        {enrichment.skeleton ? " · skeleton" : ""}
       </Text>
-      <Text style={styles.meta}>Kilde: BBR/Datafordeler</Text>
+      <Text style={styles.meta}>Kilde-label: {enrichment.source.label}</Text>
+      <Text style={styles.meta}>Preview-status: {enrichment.status}</Text>
 
       {profileRows.length > 0 ? (
         <View style={styles.detailGroup}>
-          <Text style={styles.detailTitle}>Profile preview</Text>
+          <Text style={styles.detailTitle}>Profil-preview</Text>
           {profileRows.map(([label, value]) => (
             <Text style={styles.meta} key={label}>
               {label}: {value}
@@ -46,10 +57,10 @@ export function HouseEnrichmentSummary({
         </View>
       ) : null}
 
-      {enrichment.warnings.length > 0 ? (
+      {warnings.length > 0 ? (
         <View style={styles.detailGroup}>
-          <Text style={styles.detailTitle}>Warnings</Text>
-          {enrichment.warnings.map((warning, index) => (
+          <Text style={styles.detailTitle}>Advarsler</Text>
+          {warnings.map((warning, index) => (
             <Text style={styles.warningText} key={`${warning}-${index}`}>
               {warning}
             </Text>

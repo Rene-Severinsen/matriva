@@ -93,7 +93,8 @@ export function AddressOnboardingPreviewScreen() {
             <View style={styles.enrichmentPanel}>
               <Text style={styles.sectionTitle}>Boligdata preview</Text>
               <Text style={styles.meta}>
-                Henter senere boligdata via backend. Ingen live BBR endnu.
+                Henter en teknisk skeleton-preview via Matriva API. Ingen live
+                BBR-data vises her.
               </Text>
             </View>
             <PrimaryButton
@@ -115,7 +116,8 @@ export function AddressOnboardingPreviewScreen() {
                   response={onboarding.enrichmentResponse}
                 />
                 <HomeCardPreviewList
-                  title="Boligdata preview-kort"
+                  title="Ikke verificerede preview-kort"
+                  metaLabel="Skeleton-preview"
                   cards={onboarding.enrichmentResponse.cards}
                 />
               </>

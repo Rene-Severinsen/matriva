@@ -4,18 +4,20 @@ import { type HomeCard } from "@matriva/shared";
 
 type HomeCardPreviewListProps = {
   title?: string;
+  metaLabel?: string;
   cards: HomeCard[];
 };
 
 export function HomeCardPreviewList({
   title = "Første backend-kort",
+  metaLabel = "Teknisk skeleton-kort",
   cards
 }: HomeCardPreviewListProps) {
   return (
     <View style={styles.cardsSection}>
       <Text style={styles.sectionTitle}>{title}</Text>
       {cards.map((card) => (
-        <HomeCardPreview card={card} key={card.id} />
+        <HomeCardPreview card={card} key={card.id} metaLabel={metaLabel} />
       ))}
     </View>
   );
@@ -23,13 +25,14 @@ export function HomeCardPreviewList({
 
 type HomeCardPreviewProps = {
   card: HomeCard;
+  metaLabel: string;
 };
 
-function HomeCardPreview({ card }: HomeCardPreviewProps) {
+function HomeCardPreview({ card, metaLabel }: HomeCardPreviewProps) {
   return (
     <View style={styles.homeCard}>
       <Text style={styles.cardMeta}>
-        Skeleton card · {card.type} · {card.severity}
+        {metaLabel} · {card.type} · {card.severity}
       </Text>
       <Text style={styles.cardTitle}>{card.title}</Text>
       <Text style={styles.bodySmall}>{card.shortExplanation}</Text>

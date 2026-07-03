@@ -259,6 +259,165 @@ export type HouseDraftOverviewPreviewDataConfidence = z.infer<
   typeof houseDraftOverviewPreviewDataConfidenceSchema
 >;
 
+export const maintenanceTaskSourceSchema = z.enum([
+  "user_created",
+  "matriva_recommended"
+]);
+
+export type MaintenanceTaskSource = z.infer<
+  typeof maintenanceTaskSourceSchema
+>;
+
+export const maintenanceTaskStatusSchema = z.enum([
+  "suggested",
+  "planned",
+  "due",
+  "overdue",
+  "done",
+  "dismissed",
+  "rescheduled"
+]);
+
+export type MaintenanceTaskStatus = z.infer<
+  typeof maintenanceTaskStatusSchema
+>;
+
+export const maintenanceTimingTypeSchema = z.enum([
+  "specific_deadline",
+  "seasonal_window",
+  "none"
+]);
+
+export type MaintenanceTimingType = z.infer<
+  typeof maintenanceTimingTypeSchema
+>;
+
+export const maintenanceSeasonSchema = z.enum([
+  "spring",
+  "summer",
+  "autumn",
+  "winter",
+  "all_year"
+]);
+
+export type MaintenanceSeason = z.infer<typeof maintenanceSeasonSchema>;
+
+export const maintenanceTaskTimingSchema = z
+  .object({
+    type: maintenanceTimingTypeSchema,
+    dueDate: z.string().date().optional(),
+    season: maintenanceSeasonSchema.optional(),
+    daysUntilDue: z.number().int().nonnegative().optional(),
+    daysOverdue: z.number().int().positive().optional()
+  })
+  .superRefine((timing, context) => {
+    if (timing.type === "seasonal_window") {
+      if (!timing.season) {
+        context.addIssue({
+          code: "custom",
+          path: ["season"],
+          message: "seasonal maintenance tasks must include season"
+        });
+      }
+
+      if (timing.dueDate) {
+        context.addIssue({
+          code: "custom",
+          path: ["dueDate"],
+          message: "seasonal maintenance tasks must not include dueDate"
+        });
+      }
+    }
+
+    if (timing.type === "specific_deadline" && !timing.dueDate) {
+      context.addIssue({
+        code: "custom",
+        path: ["dueDate"],
+        message: "specific deadline maintenance tasks should include dueDate"
+      });
+    }
+
+    if (timing.type === "none") {
+      if (timing.dueDate) {
+        context.addIssue({
+          code: "custom",
+          path: ["dueDate"],
+          message: "maintenance tasks without timing must not include dueDate"
+        });
+      }
+
+      if (timing.season) {
+        context.addIssue({
+          code: "custom",
+          path: ["season"],
+          message: "maintenance tasks without timing must not include season"
+        });
+      }
+    }
+  });
+
+export type MaintenanceTaskTiming = z.infer<
+  typeof maintenanceTaskTimingSchema
+>;
+
+export const recommendedMaintenanceTaskMetadataSchema = z.object({
+  recommendationKey: z.string().min(1),
+  componentKey: z.string().min(1).optional(),
+  housingTypeKey: z.string().min(1).optional(),
+  season: maintenanceSeasonSchema.optional(),
+  reason: z.string().min(1).optional()
+});
+
+export type RecommendedMaintenanceTaskMetadata = z.infer<
+  typeof recommendedMaintenanceTaskMetadataSchema
+>;
+
+export const maintenanceTaskSchema = z
+  .object({
+    id: taskIdSchema,
+    houseId: houseIdSchema,
+    title: z.string().min(1),
+    description: z.string().min(1).optional(),
+    source: maintenanceTaskSourceSchema,
+    status: maintenanceTaskStatusSchema,
+    timing: maintenanceTaskTimingSchema,
+    recommendation: recommendedMaintenanceTaskMetadataSchema.optional(),
+    createdAt: z.string().datetime().optional(),
+    updatedAt: z.string().datetime().optional(),
+    completedAt: z.string().datetime().optional()
+  })
+  .superRefine((task, context) => {
+    if (
+      task.timing.daysOverdue !== undefined &&
+      task.status !== "overdue"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["timing", "daysOverdue"],
+        message: "daysOverdue is only allowed for overdue maintenance tasks"
+      });
+    }
+
+    if (task.completedAt && task.status !== "done") {
+      context.addIssue({
+        code: "custom",
+        path: ["completedAt"],
+        message: "completedAt is only allowed for done maintenance tasks"
+      });
+    }
+
+    if (task.recommendation && task.source !== "matriva_recommended") {
+      context.addIssue({
+        code: "custom",
+        path: ["recommendation"],
+        message:
+          "recommendation metadata is only allowed for Matriva-recommended maintenance tasks"
+      });
+    }
+  });
+
+export type MaintenanceTask = z.infer<typeof maintenanceTaskSchema>;
+
 export const houseDraftOverviewPreviewSectionKindSchema = z.enum([
   "overview",
   "documents",
@@ -270,10 +429,8 @@ export type HouseDraftOverviewPreviewSectionKind = z.infer<
   typeof houseDraftOverviewPreviewSectionKindSchema
 >;
 
-export const houseDraftOverviewPreviewMaintenanceSourceSchema = z.enum([
-  "user_created",
-  "matriva_recommended"
-]);
+export const houseDraftOverviewPreviewMaintenanceSourceSchema =
+  maintenanceTaskSourceSchema;
 
 export type HouseDraftOverviewPreviewMaintenanceSource = z.infer<
   typeof houseDraftOverviewPreviewMaintenanceSourceSchema
@@ -292,23 +449,15 @@ export type HouseDraftOverviewPreviewMaintenanceStatus = z.infer<
   typeof houseDraftOverviewPreviewMaintenanceStatusSchema
 >;
 
-export const houseDraftOverviewPreviewMaintenanceTimingTypeSchema = z.enum([
-  "specific_deadline",
-  "seasonal_window",
-  "none"
-]);
+export const houseDraftOverviewPreviewMaintenanceTimingTypeSchema =
+  maintenanceTimingTypeSchema;
 
 export type HouseDraftOverviewPreviewMaintenanceTimingType = z.infer<
   typeof houseDraftOverviewPreviewMaintenanceTimingTypeSchema
 >;
 
-export const houseDraftOverviewPreviewMaintenanceSeasonSchema = z.enum([
-  "spring",
-  "summer",
-  "autumn",
-  "winter",
-  "all_year"
-]);
+export const houseDraftOverviewPreviewMaintenanceSeasonSchema =
+  maintenanceSeasonSchema;
 
 export type HouseDraftOverviewPreviewMaintenanceSeason = z.infer<
   typeof houseDraftOverviewPreviewMaintenanceSeasonSchema

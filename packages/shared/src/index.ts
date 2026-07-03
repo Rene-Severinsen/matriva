@@ -335,16 +335,6 @@ export type HouseEnrichmentSource = z.infer<
   typeof houseEnrichmentSourceSchema
 >;
 
-export const bbrEnrichmentStatusSchema = z.enum([
-  "not_requested",
-  "skeleton",
-  "available",
-  "unavailable",
-  "error"
-]);
-
-export type BbrEnrichmentStatus = z.infer<typeof bbrEnrichmentStatusSchema>;
-
 export const bbrPropertySummarySchema = z.object({
   propertyType: houseProfileBasisSchema.shape.propertyType.optional(),
   buildYear: houseProfileBasisSchema.shape.buildYear.optional(),

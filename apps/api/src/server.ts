@@ -15,7 +15,7 @@ import {
   selectedAddressInputSchema
 } from "@matriva/shared";
 
-import { getDatafordelerConfigStatus } from "./config/datafordeler.js";
+import { getDatafordelerConfigStatus } from "./config/datafordeler.ts";
 
 const port = Number.parseInt(process.env.PORT ?? "4000", 10);
 const host = process.env.HOST ?? "127.0.0.1";

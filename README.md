@@ -56,13 +56,13 @@ By default the API binds to `127.0.0.1:4000`. To make it reachable from a physic
 HOST=0.0.0.0 PORT=4000 npm run dev:api
 ```
 
-Run the mobile developer smoke view:
+Run the mobile onboarding preview:
 
 ```sh
 npm run dev:mobile
 ```
 
-The mobile smoke view reads the API base URL from Expo public env:
+The mobile onboarding preview reads the API base URL from Expo public env:
 
 ```sh
 EXPO_PUBLIC_MATRIVA_API_BASE_URL=http://127.0.0.1:4000 npm run dev:mobile
@@ -74,7 +74,7 @@ EXPO_PUBLIC_MATRIVA_API_BASE_URL=http://127.0.0.1:4000 npm run dev:mobile
 EXPO_PUBLIC_MATRIVA_API_BASE_URL=http://127.0.0.1:4000
 ```
 
-Do not put secrets in `EXPO_PUBLIC_` variables. Expo public env values are bundled into the mobile app. This setting is only development configuration for the temporary smoke view.
+Do not put secrets in `EXPO_PUBLIC_` variables. Expo public env values are bundled into the mobile app. This setting is only development configuration for the temporary onboarding preview.
 
 Local URL notes:
 
@@ -116,9 +116,11 @@ const draft = await client.createHouseDraft({
 
 `POST /v1/house-drafts` is a development-only skeleton contract for validating the next onboarding step after a user selects a DAWA address. The request must send DAWA source references (`source`, `sourceAddressId`, optional `sourceAccessAddressId`, and `label`), not the request-local `addr_<opaque>` suggestion ID. The response returns a `house_draft_<opaque>` draft and skeleton backend-driven Home cards. It does not use a database, does not implement auth, and does not fetch BBR/Datafordeler data yet.
 
-The mobile app currently shows a temporary developer-only API smoke view. It can call health, bootstrap, address search, and house draft endpoints through `@matriva/api-client`. This is not V1 product UI, not onboarding UI, and should be removed or replaced before real app screens are built.
+The mobile app currently shows a temporary onboarding preview for the first narrow product flow: search for an address, choose a DAWA-backed suggestion returned by Matriva API, create a skeleton house draft, and show the first backend-driven skeleton cards. It uses `@matriva/api-client`; the mobile app must not call DAWA/Dataforsyningen directly.
 
-If `EXPO_PUBLIC_MATRIVA_API_BASE_URL` is not set, the smoke view falls back to `http://127.0.0.1:4000` and shows that fallback in the app.
+This preview is not finished V1 product UI. Auth, database persistence, BBR/Datafordeler enrichment, billing, push, and document upload are not implemented yet.
+
+If `EXPO_PUBLIC_MATRIVA_API_BASE_URL` is not set, the onboarding preview falls back to `http://127.0.0.1:4000` and shows that fallback in the app.
 
 ## Quality Checks
 

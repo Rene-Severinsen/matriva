@@ -62,6 +62,14 @@ Smoke-check API dev startup and `GET /health` without adding it to the full chec
 npm run smoke:api:dev
 ```
 
+Smoke-check the onboarding-preview API routes on a separate test port:
+
+```sh
+npm run smoke:api:routes
+```
+
+`smoke:api:dev` only verifies startup and `GET /health`. `smoke:api:routes` verifies the backend-owned onboarding-preview flow through `/health`, `/v1/bootstrap`, `/v1/addresses/search`, `/v1/house-drafts`, and `/v1/house-drafts/enrich`. It requires DAWA/address-search to be reachable through the Matriva API, but it does not call DAWA directly and does not perform live BBR/Datafordeler enrichment.
+
 Run the mobile onboarding preview:
 
 ```sh

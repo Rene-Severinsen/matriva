@@ -56,7 +56,7 @@ type MaintenanceTaskRow = {
   source: MaintenanceTask["source"];
   status: MaintenanceTaskStatus;
   timing_type: MaintenanceTaskTiming["type"];
-  due_date: string | Date | null;
+  due_date: string | null;
   season: MaintenanceTaskTiming["season"] | null;
   recommendation: RecommendedMaintenanceTaskMetadata | null;
   created_at: Date;
@@ -95,14 +95,6 @@ function createOpaqueId(prefix: "usr" | "house" | "task") {
 
 function isoDate(value: Date) {
   return value.toISOString();
-}
-
-function dateOnly(value: string | Date) {
-  if (value instanceof Date) {
-    return value.toISOString().slice(0, 10);
-  }
-
-  return value;
 }
 
 function daysBetweenDateOnly(dateOnlyValue: string, now = new Date()) {
@@ -169,7 +161,7 @@ function toMaintenanceTask(row: MaintenanceTaskRow): MaintenanceTask {
   const timing = addDerivedTiming(
     {
       type: row.timing_type,
-      ...(row.due_date ? { dueDate: dateOnly(row.due_date) } : {}),
+      ...(row.due_date ? { dueDate: row.due_date } : {}),
       ...(row.season ? { season: row.season } : {})
     },
     row.status
@@ -330,7 +322,20 @@ export async function createMaintenanceTaskForHouse(
         completed_at
       )
       values ($1, $2, $3, $4, $5, $6, $7, $8::date, $9, $10::jsonb, $11)
-      returning *
+      returning
+        id,
+        house_id,
+        title,
+        description,
+        source,
+        status,
+        timing_type,
+        to_char(due_date, 'YYYY-MM-DD') as due_date,
+        season,
+        recommendation,
+        created_at,
+        updated_at,
+        completed_at
     `,
     [
       createOpaqueId("task"),
@@ -354,7 +359,20 @@ export async function listMaintenanceTasksForHouse(houseId: string) {
   const house = await getSavedHouse(houseId);
   const result = await pool.query<MaintenanceTaskRow>(
     `
-      select *
+      select
+        id,
+        house_id,
+        title,
+        description,
+        source,
+        status,
+        timing_type,
+        to_char(due_date, 'YYYY-MM-DD') as due_date,
+        season,
+        recommendation,
+        created_at,
+        updated_at,
+        completed_at
       from maintenance_tasks
       where house_id = $1
       order by created_at desc
@@ -383,7 +401,20 @@ export async function updateMaintenanceTaskStatus(
         end,
         updated_at = now()
       where id = $1 and house_id = $2
-      returning *
+      returning
+        id,
+        house_id,
+        title,
+        description,
+        source,
+        status,
+        timing_type,
+        to_char(due_date, 'YYYY-MM-DD') as due_date,
+        season,
+        recommendation,
+        created_at,
+        updated_at,
+        completed_at
     `,
     [taskId, house.id, status]
   );

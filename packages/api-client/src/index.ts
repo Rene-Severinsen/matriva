@@ -24,7 +24,9 @@ import {
   type MaintenanceTasksResponse,
   type SavedHouseResponse,
   type SavedHousesResponse,
-  type SelectedAddressInput
+  type SelectedAddressInput,
+  type TaskId,
+  type UpdateMaintenanceTaskStatusRequest
 } from "@matriva/shared";
 
 export type MatrivaApiClientOptions = {
@@ -56,6 +58,11 @@ export type MatrivaApiClient = {
   createMaintenanceTask: (
     houseId: HouseId,
     input: CreateMaintenanceTaskRequest
+  ) => Promise<MaintenanceTaskResponse>;
+  updateMaintenanceTaskStatus: (
+    houseId: HouseId,
+    taskId: TaskId,
+    input: UpdateMaintenanceTaskStatusRequest
   ) => Promise<MaintenanceTaskResponse>;
 };
 
@@ -211,6 +218,22 @@ export function createMatrivaApiClient(
 
       return maintenanceTaskResponseSchema.parse(
         await parseApiResponse(response, "Could not create maintenance task.")
+      );
+    },
+    async updateMaintenanceTaskStatus(houseId, taskId, input) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-tasks/${taskId}/status`,
+        {
+          method: "PATCH",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify(input)
+        }
+      );
+
+      return maintenanceTaskResponseSchema.parse(
+        await parseApiResponse(response, "Could not update maintenance task.")
       );
     }
   };

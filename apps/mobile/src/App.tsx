@@ -2,6 +2,8 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -11,6 +13,9 @@ import {
   View
 } from "react-native";
 
+import DateTimePicker, {
+  type DateTimePickerEvent
+} from "@react-native-community/datetimepicker";
 import { createMatrivaApiClient } from "@matriva/api-client";
 import {
   type AddressSuggestion,
@@ -18,7 +23,8 @@ import {
   type HouseId,
   type MaintenanceTask,
   type SavedHouse,
-  type SelectedAddressInput
+  type SelectedAddressInput,
+  type TaskId
 } from "@matriva/shared";
 
 import { matrivaApiConfig } from "./config/api";
@@ -29,14 +35,15 @@ type LoadingAction = "app" | "address" | "house" | "task";
 type Tab = {
   key: TabKey;
   label: string;
+  icon: string;
 };
 
 const tabs: Tab[] = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "house", label: "Mit hus" },
-  { key: "maintenance", label: "Vedligehold" },
-  { key: "documents", label: "Dokumenter" },
-  { key: "more", label: "Mere" }
+  { key: "dashboard", icon: "▦", label: "Dashboard" },
+  { key: "house", icon: "⌂", label: "Mit hus" },
+  { key: "maintenance", icon: "✓", label: "Vedligehold" },
+  { key: "documents", icon: "▤", label: "Dokumenter" },
+  { key: "more", icon: "•••", label: "Mere" }
 ];
 
 function selectedAddressInput(
@@ -86,24 +93,30 @@ function formatSource(source: MaintenanceTask["source"]) {
   return source === "user_created" ? "Oprettet af dig" : "Anbefalet";
 }
 
+function isActiveMaintenanceTask(task: MaintenanceTask) {
+  return task.status !== "done" && task.status !== "dismissed";
+}
+
 function formatTiming(task: MaintenanceTask) {
   if (task.timing.type !== "specific_deadline" || !task.timing.dueDate) {
     return "Ingen deadline";
   }
 
+  const dueDate = formatDisplayDate(task.timing.dueDate);
+
   if (task.timing.daysOverdue) {
-    return `Deadline ${task.timing.dueDate} · ${task.timing.daysOverdue} dage overskredet`;
+    return `Deadline ${dueDate} · overskredet med ${task.timing.daysOverdue} dage`;
   }
 
   if (task.timing.daysUntilDue === 0) {
-    return `Deadline ${task.timing.dueDate} · i dag`;
+    return `Deadline ${dueDate} · i dag`;
   }
 
   if (task.timing.daysUntilDue !== undefined) {
-    return `Deadline ${task.timing.dueDate} · om ${task.timing.daysUntilDue} dage`;
+    return `Deadline ${dueDate} · om ${task.timing.daysUntilDue} dage`;
   }
 
-  return `Deadline ${task.timing.dueDate}`;
+  return `Deadline ${dueDate}`;
 }
 
 function visibleTaskDescription(task: MaintenanceTask) {
@@ -130,23 +143,100 @@ function validDateOnly(value: string) {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
+const danishMonthNames = [
+  "januar",
+  "februar",
+  "marts",
+  "april",
+  "maj",
+  "juni",
+  "juli",
+  "august",
+  "september",
+  "oktober",
+  "november",
+  "december"
+];
+
+function todayDateOnly() {
+  return dateOnlyFromDate(new Date());
+}
+
+function dateOnlyFromDate(date: Date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function datePartsFromDateOnly(dateOnly: string) {
+  const [yearPart = "0", monthPart = "1", dayPart = "1"] = dateOnly.split("-");
+  const year = Number(yearPart);
+  const month = Number(monthPart);
+  const day = Number(dayPart);
+
+  return {
+    day,
+    monthIndex: month - 1,
+    year
+  };
+}
+
+function dateFromDateOnly(dateOnly: string) {
+  const { day, monthIndex, year } = datePartsFromDateOnly(dateOnly);
+
+  return new Date(year, monthIndex, day);
+}
+
+function formatDisplayDate(dateOnly: string) {
+  if (!validDateOnly(dateOnly)) {
+    return "";
+  }
+
+  const { day, monthIndex, year } = datePartsFromDateOnly(dateOnly);
+  const displayDay = `${day}`.padStart(2, "0");
+  const displayMonth = `${monthIndex + 1}`.padStart(2, "0");
+
+  return `${displayDay}-${displayMonth}-${year}`;
+}
+
 function SectionHeader({
   title,
-  eyebrow
+  eyebrow,
+  subtitle
 }: {
   title: string;
   eyebrow?: string;
+  subtitle?: string;
 }) {
   return (
     <View style={styles.sectionHeader}>
       {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
       <Text style={styles.sectionTitle}>{title}</Text>
+      {subtitle ? <Text style={styles.sectionSubtitle}>{subtitle}</Text> : null}
     </View>
   );
 }
 
-function Card({ children }: { children: React.ReactNode }) {
-  return <View style={styles.card}>{children}</View>;
+function Card({
+  children,
+  variant = "default"
+}: {
+  children: React.ReactNode;
+  variant?: "default" | "soft" | "plain";
+}) {
+  return (
+    <View
+      style={[
+        styles.card,
+        variant === "soft" ? styles.softCard : null,
+        variant === "plain" ? styles.plainCard : null
+      ]}
+    >
+      {children}
+    </View>
+  );
 }
 
 function PrimaryButton({
@@ -202,6 +292,85 @@ function SecondaryButton({
   );
 }
 
+function DeadlineDatePicker({
+  visible,
+  selectedDate,
+  onClose,
+  onClear,
+  onSelect
+}: {
+  visible: boolean;
+  selectedDate: string;
+  onClose: () => void;
+  onClear: () => void;
+  onSelect: (dateOnly: string) => void;
+}) {
+  if (!visible) {
+    return null;
+  }
+
+  const pickerValue = dateFromDateOnly(selectedDate || todayDateOnly());
+  const isIos = Platform.OS === "ios";
+
+  function handleDateChange(event: DateTimePickerEvent, date?: Date) {
+    if (event.type === "dismissed") {
+      onClose();
+      return;
+    }
+
+    if (date) {
+      onSelect(dateOnlyFromDate(date));
+    }
+
+    if (!isIos) {
+      onClose();
+    }
+  }
+
+  return (
+    <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
+      <View style={styles.datePickerBackdrop}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={onClose}
+          style={styles.datePickerDismissArea}
+        />
+        <View style={styles.nativeDatePickerPanel}>
+          <View style={styles.datePickerHeader}>
+            <View>
+              <Text style={styles.cardTitle}>Vælg deadline</Text>
+              <Text style={styles.compactBodyText}>
+                {selectedDate ? formatDisplayDate(selectedDate) : "Ingen dato valgt"}
+              </Text>
+            </View>
+            {isIos ? <SecondaryButton label="Luk" onPress={onClose} /> : null}
+          </View>
+
+          <DateTimePicker
+            display={isIos ? "inline" : "default"}
+            locale="da-DK"
+            mode="date"
+            onChange={handleDateChange}
+            value={pickerValue}
+          />
+
+          {isIos ? (
+            <View style={styles.datePickerFooter}>
+              <SecondaryButton label="Fjern dato" disabled={!selectedDate} onPress={onClear} />
+              <PrimaryButton label="Vælg dato" onPress={onClose} />
+            </View>
+          ) : (
+            <View style={styles.datePickerFooter}>
+              <SecondaryButton label="Fjern dato" disabled={!selectedDate} onPress={onClear} />
+              <SecondaryButton label="Luk" onPress={onClose} />
+            </View>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function Pill({ children, tone = "default" }: { children: string; tone?: "default" | "warning" }) {
   return (
     <View style={[styles.pill, tone === "warning" ? styles.warningPill : null]}>
@@ -214,50 +383,187 @@ function Pill({ children, tone = "default" }: { children: string; tone?: "defaul
 
 function EmptyState({
   title,
-  body
+  body,
+  compact = false
 }: {
   title: string;
   body: string;
+  compact?: boolean;
 }) {
   return (
-    <Card>
+    <Card variant="soft">
       <Text style={styles.emptyTitle}>{title}</Text>
-      <Text style={styles.bodyText}>{body}</Text>
+      <Text style={compact ? styles.compactBodyText : styles.bodyText}>{body}</Text>
     </Card>
   );
 }
 
-function SummaryMetric({
+function HouseStatusCard({
+  house
+}: {
+  house: SavedHouse;
+}) {
+  return (
+    <Card variant="plain">
+      <View style={styles.houseHeroTop}>
+        <View style={styles.houseGlyph}>
+          <Text style={styles.houseGlyphText}>M</Text>
+        </View>
+        <View style={styles.houseHeroText}>
+          <Text style={styles.houseLabel}>Dit gemte hus</Text>
+          <Text style={styles.houseTitle}>{house.addressLabel}</Text>
+        </View>
+      </View>
+      <View style={styles.pillRow}>
+        <Pill>Gemt hus</Pill>
+        <Pill tone="warning">Boligdata er endnu ikke verificeret</Pill>
+      </View>
+    </Card>
+  );
+}
+
+function MaintenanceSummary({
+  activeTasks,
+  overdueTasks,
+  upcomingTasks,
+  onCreateTask,
+  onOpenTasks
+}: {
+  activeTasks: MaintenanceTask[];
+  overdueTasks: MaintenanceTask[];
+  upcomingTasks: MaintenanceTask[];
+  onCreateTask: () => void;
+  onOpenTasks: () => void;
+}) {
+  const taskPreview = overdueTasks[0] ?? upcomingTasks[0] ?? activeTasks[0] ?? null;
+  const taskPreviewDescription = taskPreview ? visibleTaskDescription(taskPreview) : null;
+
+  return (
+    <Card>
+      <View style={styles.summaryHeader}>
+        <View style={styles.summaryTitleGroup}>
+          <Text style={styles.cardTitle}>Vedligehold</Text>
+          <Text style={styles.compactBodyText}>
+            {activeTasks.length === 0
+              ? "Ingen aktive opgaver lige nu."
+              : overdueTasks.length > 0
+                ? `${overdueTasks.length} kræver opmærksomhed.`
+                : `${activeTasks.length} aktive opgaver.`
+            }
+          </Text>
+        </View>
+        <SecondaryButton label="Se opgaver" onPress={onOpenTasks} />
+      </View>
+
+      <View style={styles.summaryStats}>
+        <View style={styles.summaryStat}>
+          <Text style={styles.summaryStatValue}>{activeTasks.length}</Text>
+          <Text style={styles.summaryStatLabel}>Aktive</Text>
+        </View>
+        <View style={styles.summaryStat}>
+          <Text style={[styles.summaryStatValue, overdueTasks.length > 0 ? styles.warningText : null]}>
+            {overdueTasks.length}
+          </Text>
+          <Text style={styles.summaryStatLabel}>Overskredet</Text>
+        </View>
+        <View style={styles.summaryStat}>
+          <Text style={styles.summaryStatValue}>{upcomingTasks.length}</Text>
+          <Text style={styles.summaryStatLabel}>Næste 30 dage</Text>
+        </View>
+      </View>
+
+      {taskPreview ? (
+        <View style={styles.summaryTaskPreview}>
+          <View style={styles.cardHeaderRow}>
+            <View style={styles.taskTitleGroup}>
+              <Text style={styles.cardTitle}>{taskPreview.title}</Text>
+              <Text style={styles.taskTiming}>{formatTiming(taskPreview)}</Text>
+            </View>
+            <Pill
+              tone={
+                taskPreview.status === "overdue" || !!taskPreview.timing.daysOverdue
+                  ? "warning"
+                  : "default"
+              }
+            >
+              {formatStatus(taskPreview.status)}
+            </Pill>
+          </View>
+          {taskPreviewDescription ? (
+            <Text style={styles.compactBodyText}>{taskPreviewDescription}</Text>
+          ) : null}
+        </View>
+      ) : (
+        <View style={styles.summaryEmpty}>
+          <Text style={styles.emptyTitle}>Ingen opgaver kræver opmærksomhed</Text>
+          <Text style={styles.compactBodyText}>
+            Du kan oprette en opgave, når noget skal planlægges.
+          </Text>
+        </View>
+      )}
+
+      <View style={styles.summaryActions}>
+        <PrimaryButton label="Opret opgave" onPress={onCreateTask} />
+      </View>
+    </Card>
+  );
+}
+
+function InfoRow({
   label,
   value
 }: {
   label: string;
-  value: number | string;
+  value: string;
 }) {
   return (
-    <View style={styles.metric}>
-      <Text style={styles.metricValue}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
+    <View style={styles.infoRow}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{value}</Text>
     </View>
   );
 }
 
-function TaskCard({ task }: { task: MaintenanceTask }) {
+function TaskRow({
+  task,
+  completing,
+  onComplete
+}: {
+  task: MaintenanceTask;
+  completing: boolean;
+  onComplete: (task: MaintenanceTask) => void;
+}) {
   const isOverdue = task.status === "overdue" || !!task.timing.daysOverdue;
+  const showStatus = isOverdue || task.status === "due" || task.status === "suggested";
   const description = visibleTaskDescription(task);
 
   return (
-    <Card>
-      <View style={styles.cardHeaderRow}>
-        <Text style={styles.cardTitle}>{task.title}</Text>
-        <Pill tone={isOverdue ? "warning" : "default"}>{formatStatus(task.status)}</Pill>
-      </View>
-      {description ? <Text style={styles.bodyText}>{description}</Text> : null}
-      <View style={styles.metaWrap}>
+    <View style={styles.taskRow}>
+      <Pressable
+        accessibilityLabel={`Markér ${task.title} som udført`}
+        accessibilityRole="button"
+        disabled={completing}
+        onPress={() => onComplete(task)}
+        style={({ pressed }) => [
+          styles.completeControl,
+          pressed && !completing ? styles.completeControlPressed : null,
+          completing ? styles.disabled : null
+        ]}
+      >
+        {completing ? <ActivityIndicator color={theme.primary} size="small" /> : null}
+      </Pressable>
+      <View style={styles.taskRowBody}>
+        <Text style={styles.taskRowTitle}>{task.title}</Text>
+        <Text style={[styles.taskTiming, isOverdue ? styles.warningText : null]}>
+          {formatTiming(task)}
+        </Text>
+        {description ? <Text style={styles.compactBodyText}>{description}</Text> : null}
         <Text style={styles.metaText}>{formatSource(task.source)}</Text>
-        <Text style={styles.metaText}>{formatTiming(task)}</Text>
       </View>
-    </Card>
+      {showStatus ? (
+        <Pill tone={isOverdue ? "warning" : "default"}>{formatStatus(task.status)}</Pill>
+      ) : null}
+    </View>
   );
 }
 
@@ -361,23 +667,25 @@ function HouseOnboarding({
 function DashboardScreen({
   house,
   tasks,
-  onCreateHouse,
-  onCreateTask
+  onboarding,
+  onCreateTask,
+  onOpenTasks
 }: {
   house: SavedHouse | null;
   tasks: MaintenanceTask[];
-  onCreateHouse: () => void;
+  onboarding: React.ComponentProps<typeof HouseOnboarding>;
   onCreateTask: () => void;
+  onOpenTasks: () => void;
 }) {
   if (!house) {
     return (
       <View style={styles.stack}>
-        <SectionHeader title="Dit husoverblik" eyebrow="Matriva" />
-        <EmptyState
-          title="Du har ikke gemt et hus endnu"
-          body="Tilføj din adresse for at starte dit husoverblik."
+        <SectionHeader
+          title="Overblik"
+          eyebrow="Matriva"
+          subtitle="Tilføj din adresse for at starte dit husoverblik."
         />
-        <PrimaryButton label="Find dit hus" onPress={onCreateHouse} />
+        <HouseOnboarding {...onboarding} />
       </View>
     );
   }
@@ -388,40 +696,25 @@ function DashboardScreen({
   const upcomingTasks = tasks.filter(
     (task) => task.timing.daysUntilDue !== undefined && task.timing.daysUntilDue <= 30
   );
-  const activeTasks = tasks.filter((task) => task.status !== "done" && task.status !== "dismissed");
+  const activeTasks = tasks.filter(isActiveMaintenanceTask);
 
   return (
     <View style={styles.stack}>
-      <SectionHeader title="Dit husoverblik" eyebrow="Matriva" />
-      <Card>
-        <Text style={styles.cardTitle}>{house.addressLabel}</Text>
-        <View style={styles.pillRow}>
-          <Pill>Gemt hus</Pill>
-          <Pill tone="warning">Boligdata er endnu ikke verificeret</Pill>
-        </View>
-      </Card>
+      <SectionHeader
+        title="Overblik"
+        eyebrow="Matriva"
+        subtitle="Det vigtigste om dit hus lige nu."
+      />
 
-      <View style={styles.metricGrid}>
-        <SummaryMetric label="Aktive opgaver" value={activeTasks.length} />
-        <SummaryMetric label="Overskredet" value={overdueTasks.length} />
-        <SummaryMetric label="Næste 30 dage" value={upcomingTasks.length} />
-      </View>
+      <HouseStatusCard house={house} />
 
-      <View style={styles.stack}>
-        <SectionHeader title="Vedligehold" />
-        {overdueTasks.length > 0 ? (
-          overdueTasks.slice(0, 3).map((task) => <TaskCard key={task.id} task={task} />)
-        ) : (
-          <EmptyState
-            title="Ingen opgaver kræver opmærksomhed"
-            body="Du kan oprette en opgave, når noget skal planlægges."
-          />
-        )}
-      </View>
-
-      <View style={styles.quickActions}>
-        <PrimaryButton label="Opret opgave" onPress={onCreateTask} />
-      </View>
+      <MaintenanceSummary
+        activeTasks={activeTasks}
+        overdueTasks={overdueTasks}
+        upcomingTasks={upcomingTasks}
+        onCreateTask={onCreateTask}
+        onOpenTasks={onOpenTasks}
+      />
     </View>
   );
 }
@@ -439,33 +732,34 @@ function HouseScreen({
     return <HouseOnboarding {...onboarding} />;
   }
 
-  const activeTasks = tasks.filter((task) => task.status !== "done" && task.status !== "dismissed");
+  const activeTasks = tasks.filter(isActiveMaintenanceTask);
 
   return (
     <View style={styles.stack}>
-      <SectionHeader title="Mit hus" />
+      <SectionHeader
+        title="Mit hus"
+        subtitle="Profilen for det hus, Matriva holder øje med."
+      />
+
+      <HouseStatusCard house={house} />
+
       <Card>
-        <Text style={styles.cardTitle}>{house.addressLabel}</Text>
-        <View style={styles.pillRow}>
-          <Pill>Gemt</Pill>
-          <Pill tone="warning">Boligdata er endnu ikke verificeret</Pill>
-        </View>
-      </Card>
-      <Card>
-        <Text style={styles.label}>Boligstatus</Text>
-        <Text style={styles.bodyText}>Matriva har gemt huset, men boligdata er endnu ikke verificeret.</Text>
-      </Card>
-      <Card>
-        <Text style={styles.label}>Adresse</Text>
-        <Text style={styles.bodyText}>{house.addressLabel}</Text>
-      </Card>
-      <Card>
-        <Text style={styles.label}>Vedligehold</Text>
+        <Text style={styles.cardTitle}>Boligstatus</Text>
         <Text style={styles.bodyText}>
-          {activeTasks.length === 1
-            ? "1 aktiv opgave"
-            : `${activeTasks.length} aktive opgaver`}
+          Matriva har gemt huset. Boligdata er endnu ikke verificeret.
         </Text>
+        <View style={styles.infoList}>
+          <InfoRow label="Adresse" value={house.addressLabel} />
+          <InfoRow label="Datagrundlag" value="Afventer verificering" />
+          <InfoRow
+            label="Vedligehold"
+            value={
+              activeTasks.length === 1
+                ? "1 aktiv opgave"
+                : `${activeTasks.length} aktive opgaver`
+            }
+          />
+        </View>
       </Card>
     </View>
   );
@@ -475,6 +769,8 @@ function MaintenanceScreen({
   house,
   tasks,
   showForm,
+  showDeadlinePicker,
+  completingTaskId,
   title,
   description,
   deadline,
@@ -482,15 +778,21 @@ function MaintenanceScreen({
   isSaving,
   onShowForm,
   onCancelForm,
+  onShowDeadlinePicker,
+  onHideDeadlinePicker,
   onTitleChange,
   onDescriptionChange,
-  onDeadlineChange,
+  onDeadlineSelect,
+  onDeadlineClear,
+  onCompleteTask,
   onSave,
   onboarding
 }: {
   house: SavedHouse | null;
   tasks: MaintenanceTask[];
   showForm: boolean;
+  showDeadlinePicker: boolean;
+  completingTaskId: TaskId | null;
   title: string;
   description: string;
   deadline: string;
@@ -498,9 +800,13 @@ function MaintenanceScreen({
   isSaving: boolean;
   onShowForm: () => void;
   onCancelForm: () => void;
+  onShowDeadlinePicker: () => void;
+  onHideDeadlinePicker: () => void;
   onTitleChange: (title: string) => void;
   onDescriptionChange: (description: string) => void;
-  onDeadlineChange: (deadline: string) => void;
+  onDeadlineSelect: (deadline: string) => void;
+  onDeadlineClear: () => void;
+  onCompleteTask: (task: MaintenanceTask) => void;
   onSave: () => void;
   onboarding: React.ComponentProps<typeof HouseOnboarding>;
 }) {
@@ -517,16 +823,30 @@ function MaintenanceScreen({
     );
   }
 
+  const activeTasks = tasks.filter(isActiveMaintenanceTask);
+
   return (
     <View style={styles.stack}>
       <View style={styles.screenTitleRow}>
-        <SectionHeader title="Vedligehold" />
+        <SectionHeader
+          title="Vedligehold"
+          subtitle={
+            activeTasks.length === 1
+              ? "1 opgave for dit hus."
+              : `${activeTasks.length} opgaver for dit hus.`
+          }
+        />
         {!showForm ? <SecondaryButton label="Opret" onPress={onShowForm} /> : null}
       </View>
 
       {showForm ? (
-        <Card>
-          <Text style={styles.cardTitle}>Ny vedligeholdelsesopgave</Text>
+        <Card variant="plain">
+          <View style={styles.formHeader}>
+            <View>
+              <Text style={styles.cardTitle}>Ny vedligeholdelsesopgave</Text>
+              <Text style={styles.compactBodyText}>Tilføj titel, eventuel note og deadline.</Text>
+            </View>
+          </View>
           <View style={styles.formSection}>
             <Text style={styles.label}>Titel</Text>
             <TextInput
@@ -554,17 +874,37 @@ function MaintenanceScreen({
           </View>
           <View style={styles.formSection}>
             <Text style={styles.label}>Deadline</Text>
-            <TextInput
-              accessibilityLabel="Deadline"
-              autoCapitalize="none"
-              editable={!isSaving}
-              keyboardType="numbers-and-punctuation"
-              onChangeText={onDeadlineChange}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={theme.muted}
-              style={styles.input}
-              value={deadline}
-            />
+            <Pressable
+              accessibilityRole="button"
+              disabled={isSaving}
+              onPress={onShowDeadlinePicker}
+              style={({ pressed }) => [
+                styles.dateField,
+                pressed && !isSaving ? styles.dateFieldPressed : null,
+                isSaving ? styles.disabled : null
+              ]}
+            >
+              <View style={styles.dateFieldTextGroup}>
+                <Text style={deadline ? styles.dateFieldValue : styles.dateFieldPlaceholder}>
+                  {deadline ? formatDisplayDate(deadline) : "Vælg dato"}
+                </Text>
+              </View>
+              <Text style={styles.dateFieldIcon}>⌄</Text>
+            </Pressable>
+            {deadline ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={isSaving}
+                onPress={onDeadlineClear}
+                style={({ pressed }) => [
+                  styles.clearDateButton,
+                  pressed && !isSaving ? styles.clearDateButtonPressed : null,
+                  isSaving ? styles.disabled : null
+                ]}
+              >
+                <Text style={styles.clearDateText}>Fjern dato</Text>
+              </Pressable>
+            ) : null}
           </View>
           {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
           <View style={styles.buttonRow}>
@@ -574,13 +914,30 @@ function MaintenanceScreen({
         </Card>
       ) : null}
 
-      {tasks.length === 0 ? (
+      <DeadlineDatePicker
+        visible={showDeadlinePicker}
+        selectedDate={deadline}
+        onClose={onHideDeadlinePicker}
+        onClear={onDeadlineClear}
+        onSelect={onDeadlineSelect}
+      />
+
+      {activeTasks.length === 0 ? (
         <EmptyState
           title="Ingen opgaver endnu"
           body="Opret den første vedligeholdelsesopgave for dit hus."
         />
       ) : (
-        tasks.map((task) => <TaskCard key={task.id} task={task} />)
+        <View style={styles.taskList}>
+          {activeTasks.map((task) => (
+            <TaskRow
+              completing={completingTaskId === task.id}
+              key={task.id}
+              onComplete={onCompleteTask}
+              task={task}
+            />
+          ))}
+        </View>
       )}
     </View>
   );
@@ -636,6 +993,8 @@ export default function App() {
   const [hasAddressSearched, setHasAddressSearched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showTaskForm, setShowTaskForm] = useState(false);
+  const [showDeadlinePicker, setShowDeadlinePicker] = useState(false);
+  const [completingTaskId, setCompletingTaskId] = useState<TaskId | null>(null);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
   const [taskDeadline, setTaskDeadline] = useState("");
@@ -719,7 +1078,8 @@ export default function App() {
         houseDraftId: draft.houseDraft.id,
         selectedAddress: draft.houseDraft.selectedAddress
       });
-      setHouses([response.house, ...houses]);
+      const savedHouses = await apiClient.listHouses();
+      setHouses(savedHouses.houses);
       setSelectedHouseId(response.house.id);
       setQuery("");
       setSuggestions([]);
@@ -740,6 +1100,7 @@ export default function App() {
     setTaskDeadline("");
     setTaskFormError(null);
     setShowTaskForm(false);
+    setShowDeadlinePicker(false);
   }
 
   async function saveTask() {
@@ -758,7 +1119,7 @@ export default function App() {
     }
 
     if (trimmedDeadline && !validDateOnly(trimmedDeadline)) {
-      setTaskFormError("Deadline skal skrives som YYYY-MM-DD.");
+      setTaskFormError("Vælg en gyldig deadline.");
       return;
     }
 
@@ -784,6 +1145,27 @@ export default function App() {
       setTaskFormError(userFacingError(caughtError));
     } finally {
       setLoadingAction(null);
+    }
+  }
+
+  async function completeTask(task: MaintenanceTask) {
+    if (!selectedHouse) {
+      setError("Tilføj et hus, før du markerer opgaver som udført.");
+      return;
+    }
+
+    setCompletingTaskId(task.id);
+    setError(null);
+
+    try {
+      await apiClient.updateMaintenanceTaskStatus(selectedHouse.id, task.id, {
+        status: "done"
+      });
+      await loadTasks(selectedHouse.id);
+    } catch (caughtError) {
+      setError(userFacingError(caughtError));
+    } finally {
+      setCompletingTaskId(null);
     }
   }
 
@@ -819,10 +1201,14 @@ export default function App() {
         <DashboardScreen
           house={selectedHouse}
           tasks={tasks}
-          onCreateHouse={() => setActiveTab("house")}
+          onboarding={onboardingProps}
           onCreateTask={() => {
             setActiveTab("maintenance");
             setShowTaskForm(true);
+          }}
+          onOpenTasks={() => {
+            setActiveTab("maintenance");
+            setShowTaskForm(false);
           }}
         />
       );
@@ -838,6 +1224,8 @@ export default function App() {
           house={selectedHouse}
           tasks={tasks}
           showForm={showTaskForm}
+          showDeadlinePicker={showDeadlinePicker}
+          completingTaskId={completingTaskId}
           title={taskTitle}
           description={taskDescription}
           deadline={taskDeadline}
@@ -845,15 +1233,24 @@ export default function App() {
           isSaving={loadingAction === "task"}
           onShowForm={() => setShowTaskForm(true)}
           onCancelForm={resetTaskForm}
+          onShowDeadlinePicker={() => setShowDeadlinePicker(true)}
+          onHideDeadlinePicker={() => setShowDeadlinePicker(false)}
           onTitleChange={(value) => {
             setTaskTitle(value);
             setTaskFormError(null);
           }}
           onDescriptionChange={setTaskDescription}
-          onDeadlineChange={(value) => {
+          onDeadlineSelect={(value) => {
             setTaskDeadline(value);
             setTaskFormError(null);
+            setShowDeadlinePicker(false);
           }}
+          onDeadlineClear={() => {
+            setTaskDeadline("");
+            setTaskFormError(null);
+            setShowDeadlinePicker(false);
+          }}
+          onCompleteTask={(task) => void completeTask(task)}
           onSave={() => void saveTask()}
           onboarding={onboardingProps}
         />
@@ -895,7 +1292,9 @@ export default function App() {
                 onPress={() => setActiveTab(tab.key)}
                 style={[styles.tabItem, isActive ? styles.tabItemActive : null]}
               >
-                <View style={[styles.tabDot, isActive ? styles.tabDotActive : null]} />
+                <Text style={[styles.tabIcon, isActive ? styles.tabIconActive : null]}>
+                  {tab.icon}
+                </Text>
                 <Text style={[styles.tabLabel, isActive ? styles.tabLabelActive : null]}>
                   {tab.label}
                 </Text>
@@ -909,14 +1308,16 @@ export default function App() {
 }
 
 const theme = {
-  background: "#F6F8FB",
+  background: "#F7F9FC",
   surface: "#FFFFFF",
   text: "#172033",
   muted: "#667085",
-  border: "#D8DEE8",
+  subtle: "#475467",
+  border: "#E4E9F2",
   primary: "#2563EB",
   primaryPressed: "#1D4ED8",
   primarySoft: "#EAF1FF",
+  primaryFaint: "#F4F7FF",
   warning: "#B45309",
   warningSoft: "#FFF7ED"
 } as const;
@@ -931,39 +1332,56 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingBottom: 108,
-    paddingHorizontal: 18,
-    paddingTop: 18,
-    rowGap: 16
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    rowGap: 18
   },
   stack: {
-    rowGap: 14
+    rowGap: 16
   },
   sectionHeader: {
-    rowGap: 3
+    flex: 1,
+    rowGap: 5
   },
   eyebrow: {
     color: theme.primary,
-    fontSize: 15,
+    fontSize: 12,
     fontWeight: "800"
   },
   sectionTitle: {
     color: theme.text,
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: "800",
-    lineHeight: 34
+    lineHeight: 35
+  },
+  sectionSubtitle: {
+    color: theme.muted,
+    fontSize: 15,
+    lineHeight: 22
   },
   screenTitleRow: {
-    alignItems: "flex-start",
+    alignItems: "center",
+    columnGap: 16,
     flexDirection: "row",
     justifyContent: "space-between"
   },
   card: {
     backgroundColor: theme.surface,
-    borderColor: theme.border,
     borderRadius: 8,
-    borderWidth: 1,
-    padding: 16,
-    rowGap: 10
+    padding: 18,
+    rowGap: 12,
+    shadowColor: "#101828",
+    shadowOffset: { height: 3, width: 0 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12
+  },
+  softCard: {
+    backgroundColor: theme.primaryFaint,
+    shadowOpacity: 0
+  },
+  plainCard: {
+    backgroundColor: theme.surface,
+    shadowOpacity: 0.08
   },
   cardHeaderRow: {
     alignItems: "flex-start",
@@ -983,11 +1401,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22
   },
+  compactBodyText: {
+    color: theme.muted,
+    fontSize: 14,
+    lineHeight: 20
+  },
   emptyTitle: {
     color: theme.text,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "800",
-    lineHeight: 26
+    lineHeight: 24
   },
   label: {
     color: theme.text,
@@ -998,7 +1421,7 @@ const styles = StyleSheet.create({
     rowGap: 8
   },
   input: {
-    backgroundColor: theme.surface,
+    backgroundColor: "#FBFCFE",
     borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
@@ -1011,6 +1434,83 @@ const styles = StyleSheet.create({
   textArea: {
     minHeight: 92,
     textAlignVertical: "top"
+  },
+  dateField: {
+    alignItems: "center",
+    backgroundColor: "#FBFCFE",
+    borderColor: theme.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    columnGap: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 54,
+    paddingHorizontal: 14,
+    paddingVertical: 11
+  },
+  dateFieldPressed: {
+    backgroundColor: theme.primaryFaint,
+    borderColor: theme.primary
+  },
+  dateFieldTextGroup: {
+    flex: 1,
+    rowGap: 2
+  },
+  dateFieldPlaceholder: {
+    color: theme.muted,
+    fontSize: 16,
+    fontWeight: "700"
+  },
+  dateFieldValue: {
+    color: theme.text,
+    fontSize: 16,
+    fontWeight: "800"
+  },
+  dateFieldIcon: {
+    color: theme.primary,
+    fontSize: 20,
+    fontWeight: "900"
+  },
+  clearDateButton: {
+    alignSelf: "flex-start",
+    borderRadius: 8,
+    paddingVertical: 4
+  },
+  clearDateButtonPressed: {
+    opacity: 0.62
+  },
+  clearDateText: {
+    color: theme.primary,
+    fontSize: 14,
+    fontWeight: "800"
+  },
+  datePickerBackdrop: {
+    backgroundColor: "rgba(23, 32, 51, 0.34)",
+    flex: 1,
+    justifyContent: "flex-end"
+  },
+  datePickerDismissArea: {
+    flex: 1
+  },
+  nativeDatePickerPanel: {
+    backgroundColor: theme.surface,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    paddingHorizontal: 18,
+    paddingBottom: 28,
+    paddingTop: 18,
+    rowGap: 16
+  },
+  datePickerHeader: {
+    alignItems: "flex-start",
+    columnGap: 12,
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  datePickerFooter: {
+    columnGap: 10,
+    flexDirection: "row",
+    justifyContent: "space-between"
   },
   primaryButton: {
     alignItems: "center",
@@ -1075,41 +1575,105 @@ const styles = StyleSheet.create({
   warningPillText: {
     color: theme.warning
   },
-  metaWrap: {
-    rowGap: 4
-  },
   metaText: {
     color: theme.muted,
     fontSize: 13,
     lineHeight: 18
   },
-  metricGrid: {
-    columnGap: 10,
-    flexDirection: "row"
-  },
-  metric: {
-    backgroundColor: theme.surface,
-    borderColor: theme.border,
-    borderRadius: 8,
-    borderWidth: 1,
+  taskTitleGroup: {
     flex: 1,
-    minHeight: 88,
-    padding: 12,
     rowGap: 4
   },
-  metricValue: {
-    color: theme.text,
-    fontSize: 27,
-    fontWeight: "800"
+  taskTiming: {
+    color: theme.subtle,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 18
   },
-  metricLabel: {
+  taskRow: {
+    alignItems: "flex-start",
+    backgroundColor: theme.surface,
+    borderBottomColor: theme.border,
+    borderBottomWidth: 1,
+    columnGap: 12,
+    flexDirection: "row",
+    minHeight: 74,
+    paddingHorizontal: 4,
+    paddingVertical: 12
+  },
+  completeControl: {
+    alignItems: "center",
+    borderColor: theme.primary,
+    borderRadius: 12,
+    borderWidth: 2,
+    height: 24,
+    justifyContent: "center",
+    marginTop: 2,
+    width: 24
+  },
+  completeControlPressed: {
+    backgroundColor: theme.primarySoft
+  },
+  taskRowBody: {
+    flex: 1,
+    rowGap: 3
+  },
+  taskRowTitle: {
+    color: theme.text,
+    fontSize: 16,
+    fontWeight: "800",
+    lineHeight: 21
+  },
+  warningText: {
+    color: theme.warning
+  },
+  summaryHeader: {
+    alignItems: "flex-start",
+    columnGap: 12,
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  summaryTitleGroup: {
+    flex: 1,
+    rowGap: 4
+  },
+  summaryStats: {
+    backgroundColor: theme.primaryFaint,
+    borderRadius: 8,
+    columnGap: 8,
+    flexDirection: "row",
+    padding: 12
+  },
+  summaryStat: {
+    flex: 1,
+    rowGap: 2
+  },
+  summaryStatValue: {
+    color: theme.text,
+    fontSize: 23,
+    fontWeight: "900"
+  },
+  summaryStatLabel: {
     color: theme.muted,
     fontSize: 12,
     fontWeight: "700",
     lineHeight: 16
   },
-  quickActions: {
-    rowGap: 10
+  summaryTaskPreview: {
+    borderColor: theme.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 14,
+    rowGap: 8
+  },
+  summaryEmpty: {
+    backgroundColor: theme.primaryFaint,
+    borderRadius: 8,
+    padding: 14,
+    rowGap: 6
+  },
+  summaryActions: {
+    alignItems: "flex-start"
   },
   addressOption: {
     backgroundColor: theme.surface,
@@ -1130,6 +1694,73 @@ const styles = StyleSheet.create({
     columnGap: 10,
     flexDirection: "row",
     justifyContent: "flex-end"
+  },
+  houseHeroTop: {
+    alignItems: "center",
+    columnGap: 14,
+    flexDirection: "row"
+  },
+  houseGlyph: {
+    alignItems: "center",
+    backgroundColor: theme.primarySoft,
+    borderRadius: 8,
+    height: 48,
+    justifyContent: "center",
+    width: 48
+  },
+  houseGlyphText: {
+    color: theme.primary,
+    fontSize: 19,
+    fontWeight: "900"
+  },
+  houseHeroText: {
+    flex: 1,
+    rowGap: 3
+  },
+  houseLabel: {
+    color: theme.muted,
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  houseTitle: {
+    color: theme.text,
+    fontSize: 20,
+    fontWeight: "900",
+    lineHeight: 26
+  },
+  infoList: {
+    borderTopColor: theme.border,
+    borderTopWidth: 1,
+    rowGap: 0
+  },
+  infoRow: {
+    borderBottomColor: theme.border,
+    borderBottomWidth: 1,
+    paddingVertical: 12,
+    rowGap: 3
+  },
+  infoLabel: {
+    color: theme.muted,
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  infoValue: {
+    color: theme.text,
+    fontSize: 15,
+    fontWeight: "700",
+    lineHeight: 21
+  },
+  formHeader: {
+    rowGap: 4
+  },
+  taskList: {
+    backgroundColor: theme.surface,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    shadowColor: "#101828",
+    shadowOffset: { height: 3, width: 0 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10
   },
   errorTitle: {
     color: "#991B1B",
@@ -1190,14 +1821,15 @@ const styles = StyleSheet.create({
   tabItemActive: {
     backgroundColor: theme.primarySoft
   },
-  tabDot: {
-    backgroundColor: "#B7C0CF",
-    borderRadius: 4,
-    height: 8,
-    width: 8
+  tabIcon: {
+    color: theme.muted,
+    fontSize: 19,
+    fontWeight: "900",
+    lineHeight: 22,
+    textAlign: "center"
   },
-  tabDotActive: {
-    backgroundColor: theme.primary
+  tabIconActive: {
+    color: theme.primary
   },
   tabLabel: {
     color: theme.muted,

@@ -70,6 +70,12 @@ npm run smoke:api:routes
 
 `smoke:api:dev` only verifies startup and `GET /health`. `smoke:api:routes` verifies the backend-owned onboarding-preview flow through `/health`, `/v1/bootstrap`, `/v1/addresses/search`, `/v1/house-drafts`, and `/v1/house-drafts/enrich`. It requires DAWA/address-search to be reachable through the Matriva API, but it does not call DAWA directly and does not perform live BBR/Datafordeler enrichment.
 
+Smoke-check the BBR/public-data mapper with sanitized local fixtures:
+
+```sh
+npm run smoke:bbr
+```
+
 Run the mobile onboarding preview:
 
 ```sh
@@ -90,15 +96,15 @@ EXPO_PUBLIC_MATRIVA_API_BASE_URL=http://127.0.0.1:4000
 
 Do not put secrets in `EXPO_PUBLIC_` variables. Expo public env values are bundled into the mobile app. `EXPO_PUBLIC_*` must never be used for private upstream credentials. This setting is only development configuration for the temporary onboarding preview.
 
-Future server-side Datafordeler integration uses these API runtime env var names:
+Server-side Datafordeler integration uses these API runtime env var names:
 
 ```text
 DATAFORDELER_API_KEY
-DATAFORDELER_BASE_URL
-DATAFORDELER_AUTH_MODE
+DATAFORDELER_GRAPHQL_URL
+DATAFORDELER_TIMEOUT_MS
 ```
 
-Credential values may only live in local developer env or hosting secret configuration. Never commit secrets to code, docs, tests, fixtures, logs, or generated output.
+`DATAFORDELER_GRAPHQL_URL` defaults to `https://graphql.datafordeler.dk/flexibleCurrent/v1` if unset. The URL is not a secret. `DATAFORDELER_API_KEY` has no code default and may only live in local developer env or hosting secret configuration. Never commit secrets to code, docs, tests, fixtures, logs, or generated output.
 
 Local URL notes:
 
@@ -114,6 +120,8 @@ GET http://localhost:4000/v1/bootstrap
 GET http://localhost:4000/v1/addresses/search?q=Rådhuspladsen 1
 POST http://localhost:4000/v1/house-drafts
 POST http://localhost:4000/v1/house-drafts/enrich
+GET http://localhost:4000/v1/houses/:id/public-data
+POST http://localhost:4000/v1/houses/:id/public-data/refresh
 ```
 
 `GET /v1/bootstrap` is a development-only skeleton contract for validating the first shared domain/API shape: user summary, house summary, entitlements, and backend-driven Home cards. It is not a production feature, does not create seed data, does not use a database, and does not implement authentication.
@@ -144,11 +152,30 @@ const enrichment = await client.enrichHouseDraft({
 
 `GET /v1/app-bootstrap` is the authenticated app-start contract. It returns the current user, profile, backend-computed `onboarding.state`, houses owned by the current user, `activeHouseId`, entitlements, cards, and `generatedAt`. The mobile app must route from this backend-returned state instead of deriving onboarding completion locally.
 
-`GET /v1/addresses/search` is the backend-owned address search contract. The mobile app must call the Matriva API, not DAWA/Dataforsyningen directly. The API currently uses DAWA/Dataforsyningen (`https://api.dataforsyningen.dk/adresser?q=`) as the address source and returns normalized `AddressSuggestion` objects with Matriva-owned `addr_<opaque>` suggestion IDs. Live BBR/Datafordeler lookup is not implemented yet.
+`GET /v1/addresses/search` is the backend-owned address search contract. The mobile app must call the Matriva API, not DAWA/Dataforsyningen directly. The API currently uses DAWA/Dataforsyningen (`https://api.dataforsyningen.dk/adresser?q=`) as the address source and returns normalized `AddressSuggestion` objects with Matriva-owned `addr_<opaque>` suggestion IDs.
 
 `POST /v1/house-drafts` is a development-only skeleton contract for validating the next onboarding step after a user selects a DAWA address. The request must send DAWA source references (`source`, `sourceAddressId`, optional `sourceAccessAddressId`, and `label`), not the request-local `addr_<opaque>` suggestion ID. The response returns a `house_draft_<opaque>` draft and skeleton backend-driven Home cards. It does not use a database, does not implement auth, and does not fetch BBR/Datafordeler data yet.
 
-`POST /v1/house-drafts/enrich` is a development-only skeleton contract for future BBR/Datafordeler enrichment of a selected DAWA address. BBR/Datafordeler enrichment is backend-owned: the mobile app must call the Matriva API and must not call Datafordeler directly. The endpoint may return a skeleton response when local Datafordeler credentials are missing or while the live adapter is not implemented. It does not use a database, does not implement auth, and does not persist enrichment data.
+`POST /v1/house-drafts/enrich` remains a development-only skeleton contract for the non-persistent onboarding draft flow. Saved-house public data enrichment is implemented on authenticated house routes instead.
+
+`GET /v1/houses/:id/public-data` returns the current backend-owned `house_public_data.v1` contract for a saved house owned by the session user. If no enrichment has run yet, it returns `status: "not_started"`.
+
+`POST /v1/houses/:id/public-data/refresh` reads the house's stored DAR address identity, calls Datafordeler from the API process only, maps BBR source data into Matriva public-data entities, stores the raw provider snapshot as JSONB, stores normalized relation rows for buildings, units, floors, and parcels, and returns the stable `house_public_data.v1` response. The mobile app must not send BFE, ground ID, BBR IDs, or Datafordeler credentials.
+
+The response separates:
+
+* `buildings`: all normalized source buildings from the ground
+* `productBuildings`: buildings included in normal product view, currently driven by lifecycle/status `6`
+* `warnings`: data-quality warnings and partial mapping signals
+
+Area mapping keeps BBR meanings separate:
+
+* `enh027ArealTilBeboelse` is the primary residential unit area
+* `enh026EnhedensSamledeAreal` remains unit total area
+* `byg038SamletBygningsareal` remains total building area
+* basement fields such as `eta022Kælderareal` and `eta023ArealAfLovligBeboelseIKælder` stay on floor data and are not automatically added to residential area
+
+Codebooks are backend-owned and versioned. Returned code values include `code`, `label`, `known`, and `codebookKey`. Unknown codes are preserved with `known: false` and may produce `unknown_code` warnings.
 
 Example local skeleton request:
 
@@ -160,7 +187,7 @@ curl -X POST http://127.0.0.1:4000/v1/house-drafts/enrich \
 
 The mobile app starts with welcome/login, restores or refreshes the SecureStore session, loads `/v1/app-bootstrap`, then routes to profile onboarding, first-house creation, or the normal tab app according to backend-owned onboarding state. First-house creation reuses the Matriva API address and house flow; the mobile app must not call DAWA/Dataforsyningen directly.
 
-Live BBR/Datafordeler enrichment, billing, push, and document upload are not implemented yet.
+Billing, push, and document upload are not implemented yet.
 
 If `EXPO_PUBLIC_MATRIVA_API_BASE_URL` is not set, the onboarding preview falls back to `http://127.0.0.1:4000` and shows that fallback in the app.
 

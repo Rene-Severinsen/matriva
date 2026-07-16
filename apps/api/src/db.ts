@@ -124,11 +124,24 @@ function databaseUrl() {
   return url;
 }
 
-const pool = new Pool({
+export const pool = new Pool({
   connectionString: databaseUrl()
 });
 
-function createOpaqueId(prefix: "usr" | "profile" | "house" | "task" | "mlt" | "sess") {
+export function createOpaqueId(
+  prefix:
+    | "usr"
+    | "profile"
+    | "house"
+    | "task"
+    | "mlt"
+    | "sess"
+    | "pubsnap"
+    | "pubbld"
+    | "pubunt"
+    | "pubflr"
+    | "pubpar"
+) {
   return `${prefix}_${randomBytes(12).toString("hex")}`;
 }
 

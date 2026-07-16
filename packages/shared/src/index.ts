@@ -1130,6 +1130,225 @@ export type EnrichHouseDraftResponse = z.infer<
   typeof enrichHouseDraftResponseSchema
 >;
 
+export const publicDataEnrichmentStatusSchema = z.enum([
+  "not_started",
+  "fetching",
+  "success",
+  "partial",
+  "not_found",
+  "ambiguous",
+  "temporarily_unavailable",
+  "failed"
+]);
+
+export type PublicDataEnrichmentStatus = z.infer<
+  typeof publicDataEnrichmentStatusSchema
+>;
+
+export const publicDataSelectionStatusSchema = z.enum([
+  "automatic_address_relation",
+  "automatic_unambiguous",
+  "user_confirmation_required",
+  "not_found"
+]);
+
+export type PublicDataSelectionStatus = z.infer<
+  typeof publicDataSelectionStatusSchema
+>;
+
+export const publicDataWarningCodeSchema = z.enum([
+  "unit_total_area_not_evaluable",
+  "building_unit_residential_area_mismatch",
+  "missing_primary_unit",
+  "multiple_primary_unit_candidates",
+  "unknown_code",
+  "missing_ground_relation",
+  "missing_bfe_number",
+  "optional_field_unavailable",
+  "partial_building_details",
+  "provider_not_configured",
+  "provider_not_found",
+  "provider_temporarily_unavailable"
+]);
+
+export const publicDataWarningSchema = z.object({
+  code: publicDataWarningCodeSchema,
+  message: z.string().min(1),
+  path: z.string().min(1).optional()
+});
+
+export type PublicDataWarning = z.infer<typeof publicDataWarningSchema>;
+
+export const publicCodeValueSchema = z.object({
+  code: z.string().min(1),
+  label: z.string().min(1).nullable(),
+  known: z.boolean(),
+  codebookKey: z.string().min(1),
+  deprecated: z.boolean().optional()
+});
+
+export type PublicCodeValue = z.infer<typeof publicCodeValueSchema>;
+
+export const publicAddressSchema = z.object({
+  label: z.string().min(1),
+  darAddressId: z.string().min(1),
+  darAccessAddressId: z.string().min(1).nullable(),
+  roadName: z.string().min(1).nullable(),
+  houseNumberText: z.string().min(1).nullable(),
+  postalCode: z.string().min(1).nullable(),
+  postalDistrict: z.string().min(1).nullable()
+});
+
+export const publicPropertySchema = z.object({
+  bfeNumber: z.string().min(1).nullable(),
+  propertyType: publicCodeValueSchema.nullable(),
+  status: publicCodeValueSchema.nullable(),
+  municipalityCode: z.string().min(1).nullable(),
+  assessmentPropertyNumber: z.string().min(1).nullable()
+});
+
+export const publicGroundSchema = z.object({
+  bbrGroundId: z.string().min(1),
+  waterSupply: publicCodeValueSchema.nullable(),
+  sewer: publicCodeValueSchema.nullable()
+});
+
+export const publicParcelSchema = z.object({
+  cadastralParcelId: z.string().min(1),
+  cadastralNumber: z.string().min(1).nullable(),
+  ownerDistrictId: z.string().min(1).nullable(),
+  municipalityId: z.string().min(1).nullable()
+});
+
+const inclusionDecisionSchema = z.object({
+  includedInProductView: z.boolean(),
+  exclusionReason: z
+    .enum([
+      "projected",
+      "non_constructed_lifecycle",
+      "unsupported_lifecycle",
+      "invalid_source_identity"
+    ])
+    .nullable()
+});
+
+export const publicUnitSchema = z.object({
+  bbrUnitId: z.string().min(1),
+  buildingId: z.string().min(1),
+  floorId: z.string().min(1).nullable(),
+  lifecycle: publicCodeValueSchema,
+  use: publicCodeValueSchema.nullable(),
+  housingType: publicCodeValueSchema.nullable(),
+  areas: z.object({
+    totalAreaM2: z.number().int().nonnegative().nullable(),
+    residentialAreaM2: z.number().int().nonnegative().nullable(),
+    commercialAreaM2: z.number().int().nonnegative().nullable(),
+    physicalResidentialAreaM2: z.number().int().nonnegative().nullable(),
+    physicalCommercialAreaM2: z.number().int().nonnegative().nullable()
+  }),
+  roomCount: z.number().int().nonnegative().nullable(),
+  facilities: z.object({
+    toiletType: publicCodeValueSchema.nullable(),
+    bathType: publicCodeValueSchema.nullable(),
+    kitchenType: publicCodeValueSchema.nullable(),
+    flushToiletCount: z.number().int().nonnegative().nullable(),
+    bathroomCount: z.number().int().nonnegative().nullable()
+  }),
+  heating: z.object({
+    installation: publicCodeValueSchema.nullable(),
+    source: publicCodeValueSchema.nullable(),
+    supplementary: publicCodeValueSchema.nullable(),
+    sourceApplicability: z.enum(["applicable", "not_applicable", "unknown"])
+  })
+});
+
+export type PublicUnit = z.infer<typeof publicUnitSchema>;
+
+export const publicFloorSchema = z.object({
+  bbrFloorId: z.string().min(1),
+  buildingId: z.string().min(1),
+  lifecycle: publicCodeValueSchema,
+  designation: z.string().min(1).nullable(),
+  type: publicCodeValueSchema.nullable(),
+  totalFloorAreaM2: z.number().int().nonnegative().nullable(),
+  utilisedAtticAreaM2: z.number().int().nonnegative().nullable(),
+  basementAreaM2: z.number().int().nonnegative().nullable(),
+  legalResidentialBasementAreaM2: z.number().int().nonnegative().nullable(),
+  accessAreaM2: z.number().int().nonnegative().nullable(),
+  commercialBasementAreaM2: z.number().int().nonnegative().nullable()
+});
+
+export type PublicFloor = z.infer<typeof publicFloorSchema>;
+
+export const publicBuildingSchema = z.object({
+  bbrBuildingId: z.string().min(1),
+  number: z.number().int().nonnegative().nullable(),
+  isAddressBuilding: z.boolean(),
+  lifecycle: publicCodeValueSchema,
+  use: publicCodeValueSchema.nullable(),
+  inclusion: inclusionDecisionSchema,
+  constructionYear: z.number().int().min(1000).max(3000).nullable(),
+  remodelOrExtensionYear: z.number().int().min(1000).max(3000).nullable(),
+  materials: z.object({
+    outerWall: publicCodeValueSchema.nullable(),
+    roof: publicCodeValueSchema.nullable(),
+    asbestos: publicCodeValueSchema.nullable()
+  }),
+  areas: z.object({
+    totalBuildingAreaM2: z.number().int().nonnegative().nullable(),
+    residentialAreaM2: z.number().int().nonnegative().nullable(),
+    commercialAreaM2: z.number().int().nonnegative().nullable(),
+    footprintAreaM2: z.number().int().nonnegative().nullable(),
+    integratedGarageM2: z.number().int().nonnegative().nullable(),
+    integratedCarportM2: z.number().int().nonnegative().nullable(),
+    integratedOutbuildingM2: z.number().int().nonnegative().nullable(),
+    integratedConservatoryM2: z.number().int().nonnegative().nullable(),
+    otherAreaM2: z.number().int().nonnegative().nullable(),
+    coveredAreaM2: z.number().int().nonnegative().nullable()
+  }),
+  registeredFloorCount: z.number().int().nonnegative().nullable(),
+  heating: z.object({
+    installation: publicCodeValueSchema.nullable(),
+    source: publicCodeValueSchema.nullable(),
+    supplementary: publicCodeValueSchema.nullable(),
+    sourceApplicability: z.enum(["applicable", "not_applicable", "unknown"])
+  }),
+  units: z.array(publicUnitSchema),
+  floors: z.array(publicFloorSchema)
+});
+
+export type PublicBuilding = z.infer<typeof publicBuildingSchema>;
+
+export const housePublicDataResponseV1Schema = z.object({
+  contract: z.literal("house_public_data.v1"),
+  status: publicDataEnrichmentStatusSchema,
+  source: z.object({
+    provider: z.literal("datafordeler"),
+    register: z.literal("bbr"),
+    fetchedAt: z.string().datetime().nullable(),
+    effectiveAt: z.string().datetime().nullable(),
+    mappingVersion: z.string().min(1),
+    codebookVersion: z.string().min(1)
+  }),
+  selection: z.object({
+    primaryBuildingId: z.string().min(1).nullable(),
+    primaryBuildingStatus: publicDataSelectionStatusSchema,
+    primaryUnitId: z.string().min(1).nullable(),
+    primaryUnitStatus: publicDataSelectionStatusSchema
+  }),
+  address: publicAddressSchema.nullable(),
+  property: publicPropertySchema.nullable(),
+  ground: publicGroundSchema.nullable(),
+  parcels: z.array(publicParcelSchema),
+  buildings: z.array(publicBuildingSchema),
+  productBuildings: z.array(publicBuildingSchema),
+  warnings: z.array(publicDataWarningSchema)
+});
+
+export type HousePublicDataResponseV1 = z.infer<
+  typeof housePublicDataResponseV1Schema
+>;
+
 export const featureKeySchema = z.enum([
   "documents.maxCount",
   "documents.maxStorageMb",

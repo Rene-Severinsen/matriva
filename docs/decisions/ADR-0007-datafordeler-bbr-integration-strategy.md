@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted, implemented foundation extended by ADR-0009
 
 ## Context
 
@@ -20,7 +20,7 @@ Datafordeler/BBR integration is backend-owned.
 
 The mobile app may only see Matriva API contracts. It must never receive or depend on Datafordeler/BBR credentials, upstream request shapes, upstream response shapes, or private integration details.
 
-`DATAFORDELER_API_KEY`, `DATAFORDELER_BASE_URL`, and `DATAFORDELER_AUTH_MODE` are handled only in the API runtime environment. Values must live only in local developer env or hosting secret configuration.
+`DATAFORDELER_API_KEY`, `DATAFORDELER_GRAPHQL_URL`, and Datafordeler runtime settings are handled only in the API runtime environment. Secret values must live only in local developer env or hosting secret configuration.
 
 The API helper may expose only safe status and availability information. It must never expose secret values, derived credential material, or upstream payload details.
 
@@ -30,11 +30,11 @@ The enrichment contract must use Matriva-owned status fields for skeleton, verif
 
 Verified BBR data may only be marked as verified after live integration, mapping, source timestamp handling, caching, and audit support are implemented.
 
-No live BBR mapping is implemented in this task.
+The first live GraphQL foundation is implemented for saved-house public data refresh in ADR-0009. The non-persistent house-draft enrichment route remains a skeleton contract until house drafts become persisted, ownership-bound resources.
 
 ## Consequences
 
-The `/v1/house-drafts/enrich` endpoint can keep returning a skeleton contract while the API reports whether Datafordeler config is missing, unsupported, or configured but not yet usable.
+The `/v1/house-drafts/enrich` endpoint can keep returning a skeleton contract while saved-house public data enrichment uses authenticated `/v1/houses/:id/public-data` routes.
 
 The mobile app remains decoupled from Datafordeler/BBR choices and can continue to render Matriva-owned response contracts.
 

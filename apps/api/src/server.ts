@@ -15,6 +15,7 @@ import {
   enrichHouseDraftRequestSchema,
   enrichHouseDraftResponseSchema,
   healthResponseSchema,
+  housePublicDataResponseV1Schema,
   houseDraftIdSchema,
   houseDraftOverviewPreviewResponseSchema,
   houseDraftResponseSchema,
@@ -59,6 +60,10 @@ import {
   updateProfile,
   validateAuthRuntimeConfig
 } from "./db.ts";
+import {
+  getHousePublicData,
+  refreshHousePublicData
+} from "./public-data/service.ts";
 
 const port = Number.parseInt(process.env.PORT ?? "4000", 10);
 const host = process.env.HOST ?? "127.0.0.1";
@@ -519,6 +524,67 @@ const server = createServer((request, response) => {
           201,
           savedHouseResponseSchema.parse({ house })
         );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const housePublicDataMatch =
+    /^\/v1\/houses\/([^/]+)\/public-data$/.exec(request.url ?? "");
+
+  if (request.method === "GET" && housePublicDataMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(housePublicDataMatch[1]);
+
+      if (!parsedHouseId.success) {
+        writeApiError(
+          response,
+          400,
+          "house_public_data_route_invalid",
+          "Public data routes require a valid house_ ID."
+        );
+        return;
+      }
+
+      try {
+        const userId = await requireUserId(request);
+        const publicData = await getHousePublicData(userId, parsedHouseId.data);
+        writeJson(response, 200, housePublicDataResponseV1Schema.parse(publicData));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const housePublicDataRefreshMatch =
+    /^\/v1\/houses\/([^/]+)\/public-data\/refresh$/.exec(request.url ?? "");
+
+  if (request.method === "POST" && housePublicDataRefreshMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(
+        housePublicDataRefreshMatch[1]
+      );
+
+      if (!parsedHouseId.success) {
+        writeApiError(
+          response,
+          400,
+          "house_public_data_refresh_route_invalid",
+          "Public data refresh requires a valid house_ ID."
+        );
+        return;
+      }
+
+      try {
+        const userId = await requireUserId(request);
+        const publicData = await refreshHousePublicData(
+          userId,
+          parsedHouseId.data
+        );
+        writeJson(response, 200, housePublicDataResponseV1Schema.parse(publicData));
       } catch (error) {
         writeUnknownApiError(response, error);
       }
@@ -1098,7 +1164,7 @@ const server = createServer((request, response) => {
               }
             : (datafordelerStatus.authMode === "api_key" ||
                   datafordelerStatus.authMode === "oauth") &&
-                datafordelerStatus.baseUrlConfigured &&
+                datafordelerStatus.graphqlUrlConfigured &&
                 datafordelerStatus.apiKeyConfigured
               ? {
                   code: "credentials_configured_not_implemented",

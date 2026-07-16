@@ -3,16 +3,34 @@ type DatafordelerAuthMode = "api_key" | "oauth" | "missing" | "unsupported";
 type DatafordelerConfigStatus = {
   available: boolean;
   authMode: DatafordelerAuthMode;
-  baseUrlConfigured: boolean;
+  graphqlUrlConfigured: boolean;
   apiKeyConfigured: boolean;
-  liveIntegrationImplemented: false;
+  liveIntegrationImplemented: boolean;
   reason: string;
 };
 
-const supportedAuthModes = new Set(["api_key", "oauth"]);
+export const DATAFORDELER_DEFAULT_GRAPHQL_URL =
+  "https://graphql.datafordeler.dk/flexibleCurrent/v1";
+
+const supportedAuthModes = new Set(["api_key"]);
 
 function isConfigured(value: string | undefined): value is string {
-  return typeof value === "string" && value.trim().length > 0;
+  return typeof value === "string" && normalizeEnvValue(value).length > 0;
+}
+
+function normalizeEnvValue(value: string | undefined) {
+  const trimmed = value?.trim() ?? "";
+  const quote = trimmed[0];
+
+  if (
+    trimmed.length >= 2 &&
+    (quote === "\"" || quote === "'") &&
+    trimmed.endsWith(quote)
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+
+  return trimmed;
 }
 
 function isSupportedAuthMode(
@@ -22,15 +40,15 @@ function isSupportedAuthMode(
 }
 
 export function getDatafordelerConfigStatus(): DatafordelerConfigStatus {
-  const authModeValue = process.env.DATAFORDELER_AUTH_MODE;
-  const baseUrlConfigured = isConfigured(process.env.DATAFORDELER_BASE_URL);
+  const authModeValue = process.env.DATAFORDELER_AUTH_MODE ?? "api_key";
+  const graphqlUrlConfigured = true;
   const apiKeyConfigured = isConfigured(process.env.DATAFORDELER_API_KEY);
 
   if (!isConfigured(authModeValue)) {
     return {
       available: false,
       authMode: "missing",
-      baseUrlConfigured,
+      graphqlUrlConfigured,
       apiKeyConfigured,
       liveIntegrationImplemented: false,
       reason: "Datafordeler auth mode is missing."
@@ -41,18 +59,18 @@ export function getDatafordelerConfigStatus(): DatafordelerConfigStatus {
     return {
       available: false,
       authMode: "unsupported",
-      baseUrlConfigured,
+      graphqlUrlConfigured,
       apiKeyConfigured,
       liveIntegrationImplemented: false,
       reason: "Datafordeler auth mode is unsupported."
     };
   }
 
-  if (!baseUrlConfigured || !apiKeyConfigured) {
+  if (!graphqlUrlConfigured || !apiKeyConfigured) {
     return {
       available: false,
       authMode: authModeValue,
-      baseUrlConfigured,
+      graphqlUrlConfigured,
       apiKeyConfigured,
       liveIntegrationImplemented: false,
       reason: "Datafordeler credentials are missing or incomplete."
@@ -60,12 +78,30 @@ export function getDatafordelerConfigStatus(): DatafordelerConfigStatus {
   }
 
   return {
-    available: false,
+    available: true,
     authMode: authModeValue,
-    baseUrlConfigured,
+    graphqlUrlConfigured,
     apiKeyConfigured,
-    liveIntegrationImplemented: false,
-    reason:
-      "Datafordeler credentials are configured, but live integration is not implemented."
+    liveIntegrationImplemented: true,
+    reason: "Datafordeler GraphQL integration is configured."
+  };
+}
+
+export function getDatafordelerRuntimeConfig() {
+  const apiKey = normalizeEnvValue(process.env.DATAFORDELER_API_KEY);
+
+  if (!apiKey) {
+    throw new Error("DATAFORDELER_API_KEY is required for public data enrichment.");
+  }
+
+  return {
+    graphqlUrl:
+      normalizeEnvValue(process.env.DATAFORDELER_GRAPHQL_URL) ||
+      DATAFORDELER_DEFAULT_GRAPHQL_URL,
+    apiKey,
+    timeoutMs: Number.parseInt(
+      process.env.DATAFORDELER_TIMEOUT_MS ?? "8000",
+      10
+    )
   };
 }

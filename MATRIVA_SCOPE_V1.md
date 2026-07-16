@@ -258,3 +258,8 @@ Følgende er eksplicit ikke V1:
 * mæglerflow som kernefunktion
 * kompleks GIS
 * automatisk nyhedsindlæsning/crawler
+
+
+## V1 authentication decision
+
+Account creation and login in V1 are implemented with backend-owned email magic links, rotating sessions, SecureStore-backed mobile restore, profile onboarding, and backend-computed onboarding state. The previous DevUser boundary is no longer the normal runtime identity and may only remain as an explicit development fixture.

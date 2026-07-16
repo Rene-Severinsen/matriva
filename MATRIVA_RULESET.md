@@ -332,3 +332,8 @@ Hvis Codex opdager, at en feature kan skabe platform review-risiko, skal Codex s
 * hvilken platform den rammer
 * anbefalet løsning
 * om det kræver produktbeslutning
+
+
+## Production authentication foundation
+
+Matriva V1 uses backend-owned magic-link authentication. The mobile app must store session credentials in Expo SecureStore, must not use email as an authoritative user ID, and must not decide resource ownership locally. Passwords, OAuth, Apple login, Google login, and SMS login require separate product and architecture decisions before implementation.

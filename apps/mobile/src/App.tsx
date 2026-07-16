@@ -1,7 +1,8 @@
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -19,18 +20,25 @@ import DateTimePicker, {
 import { createMatrivaApiClient } from "@matriva/api-client";
 import {
   type AddressSuggestion,
+  type AppBootstrapResponse,
   type CreateMaintenanceTaskRequest,
+  type CurrentUser,
   type HouseId,
   type MaintenanceTask,
   type SavedHouse,
   type SelectedAddressInput,
-  type TaskId
+  type SessionTokens,
+  type TaskId,
+  type UserProfile
 } from "@matriva/shared";
 
 import { matrivaApiConfig } from "./config/api";
+import { clearStoredSession, readStoredSession, writeStoredSession } from "./auth/sessionStorage";
 
 type TabKey = "dashboard" | "house" | "maintenance" | "documents" | "more";
-type LoadingAction = "app" | "address" | "house" | "task";
+type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" | "logout";
+type AuthStatus = "restoring" | "anonymous" | "authenticated";
+type MoreView = "menu" | "profile";
 
 type Tab = {
   key: TabKey;
@@ -943,6 +951,98 @@ function MaintenanceScreen({
   );
 }
 
+
+function LoginScreen({
+  email,
+  message,
+  devMagicLink,
+  isLoading,
+  onEmailChange,
+  onRequestLink,
+  onOpenDevLink
+}: {
+  email: string;
+  message: string | null;
+  devMagicLink: string | null;
+  isLoading: boolean;
+  onEmailChange: (value: string) => void;
+  onRequestLink: () => void;
+  onOpenDevLink: (url: string) => void;
+}) {
+  return (
+    <View style={styles.stack}>
+      <SectionHeader
+        title="Matriva"
+        subtitle="Log ind med din email. Vi sender et sikkert loginlink, som virker kort tid."
+      />
+      <Card>
+        <View style={styles.formSection}>
+          <Text style={styles.label}>Email</Text>
+          <TextInput
+            autoCapitalize="none"
+            autoCorrect={false}
+            inputMode="email"
+            keyboardType="email-address"
+            onChangeText={onEmailChange}
+            placeholder="dig@example.dk"
+            style={styles.input}
+            value={email}
+          />
+        </View>
+        <PrimaryButton
+          label="Send loginlink"
+          loading={isLoading}
+          disabled={isLoading}
+          onPress={onRequestLink}
+        />
+        {message ? <Text style={styles.bodyText}>{message}</Text> : null}
+        {devMagicLink ? (
+          <SecondaryButton label="Åbn udviklingslink" onPress={() => onOpenDevLink(devMagicLink)} />
+        ) : null}
+      </Card>
+    </View>
+  );
+}
+
+function ProfileOnboardingScreen({
+  user,
+  displayName,
+  isSaving,
+  onNameChange,
+  onSave
+}: {
+  user: CurrentUser;
+  displayName: string;
+  isSaving: boolean;
+  onNameChange: (value: string) => void;
+  onSave: () => void;
+}) {
+  return (
+    <View style={styles.stack}>
+      <SectionHeader title="Din profil" subtitle="Fortæl Matriva, hvad vi skal kalde dig." />
+      <Card>
+        <InfoRow label="Email" value={user.email} />
+        <View style={styles.formSection}>
+          <Text style={styles.label}>Navn</Text>
+          <TextInput
+            autoCapitalize="words"
+            onChangeText={onNameChange}
+            placeholder="Dit navn"
+            style={styles.input}
+            value={displayName}
+          />
+        </View>
+        <PrimaryButton
+          label="Fortsæt"
+          loading={isSaving}
+          disabled={isSaving || displayName.trim().length === 0}
+          onPress={onSave}
+        />
+      </Card>
+    </View>
+  );
+}
+
 function DocumentsScreen() {
   return (
     <View style={styles.stack}>
@@ -952,37 +1052,131 @@ function DocumentsScreen() {
   );
 }
 
-function MoreScreen() {
+function MoreScreen({
+  isLoggingOut,
+  onOpenProfile,
+  onLogout
+}: {
+  isLoggingOut: boolean;
+  onOpenProfile: () => void;
+  onLogout: () => void;
+}) {
   const rows = ["Profil", "Indstillinger", "Deling & adgang", "Hjælp", "Om Matriva"];
 
   return (
     <View style={styles.stack}>
       <SectionHeader title="Mere" />
       <Card>
-        {rows.map((row, index) => (
-          <View
-            key={row}
-            style={[styles.menuRow, index === rows.length - 1 ? styles.menuRowLast : null]}
-          >
-            <Text style={styles.menuText}>{row}</Text>
-            <Text style={styles.menuMeta}>Kommer senere</Text>
-          </View>
-        ))}
+        {rows.map((row, index) => {
+          const isProfile = row === "Profil";
+
+          return (
+            <Pressable
+              accessibilityRole="button"
+              disabled={!isProfile}
+              key={row}
+              onPress={isProfile ? onOpenProfile : undefined}
+              style={({ pressed }) => [
+                styles.menuRow,
+                index === rows.length - 1 ? styles.menuRowLast : null,
+                pressed && isProfile ? styles.secondaryButtonPressed : null
+              ]}
+            >
+              <Text style={styles.menuText}>{row}</Text>
+              <Text style={styles.menuMeta}>{isProfile ? "Åbn" : "Kommer senere"}</Text>
+            </Pressable>
+          );
+        })}
+      </Card>
+      <Card>
+        <Pressable
+          accessibilityRole="button"
+          disabled={isLoggingOut}
+          onPress={onLogout}
+          style={({ pressed }) => [
+            styles.menuRow,
+            styles.menuRowLast,
+            pressed && !isLoggingOut ? styles.secondaryButtonPressed : null,
+            isLoggingOut ? styles.disabled : null
+          ]}
+        >
+          <Text style={styles.menuText}>{isLoggingOut ? "Logger ud..." : "Log ud"}</Text>
+          <Text style={styles.menuMeta}>Afslut session</Text>
+        </Pressable>
+      </Card>
+    </View>
+  );
+}
+
+function ProfileScreen({
+  user,
+  profile,
+  displayName,
+  isSaving,
+  onBack,
+  onNameChange,
+  onSaveProfile
+}: {
+  user: CurrentUser | null;
+  profile: UserProfile | null;
+  displayName: string;
+  isSaving: boolean;
+  onBack: () => void;
+  onNameChange: (value: string) => void;
+  onSaveProfile: () => void;
+}) {
+  return (
+    <View style={styles.stack}>
+      <View style={styles.screenTitleRow}>
+        <SectionHeader title="Profil" />
+        <SecondaryButton label="Tilbage" onPress={onBack} />
+      </View>
+      <Card>
+        <InfoRow label="Navn" value={profile?.displayName ?? "Ikke sat"} />
+        <InfoRow label="Email" value={user?.email ?? "Ikke indlæst"} />
+        <View style={styles.formSection}>
+          <Text style={styles.label}>Rediger navn</Text>
+          <TextInput
+            autoCapitalize="words"
+            onChangeText={onNameChange}
+            placeholder="Dit navn"
+            style={styles.input}
+            value={displayName}
+          />
+        </View>
+        <PrimaryButton
+          label="Gem navn"
+          loading={isSaving}
+          disabled={isSaving || displayName.trim().length === 0}
+          onPress={onSaveProfile}
+        />
       </Card>
     </View>
   );
 }
 
 export default function App() {
+  const accessTokenRef = useRef<string | null>(null);
+  const consumedMagicLinkTokensRef = useRef<Set<string>>(new Set());
+  const isConsumingMagicLinkRef = useRef(false);
   const apiClient = useMemo(
     () =>
       createMatrivaApiClient({
-        baseUrl: matrivaApiConfig.baseUrl
+        baseUrl: matrivaApiConfig.baseUrl,
+        getAccessToken: () => accessTokenRef.current
       }),
     []
   );
 
+  const [authStatus, setAuthStatus] = useState<AuthStatus>("restoring");
+  const [session, setSession] = useState<SessionTokens | null>(null);
+  const [bootstrap, setBootstrap] = useState<AppBootstrapResponse | null>(null);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginMessage, setLoginMessage] = useState<string | null>(null);
+  const [devMagicLink, setDevMagicLink] = useState<string | null>(null);
+  const [profileName, setProfileName] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
+  const [moreView, setMoreView] = useState<MoreView>("menu");
   const [loadingAction, setLoadingAction] = useState<LoadingAction | null>("app");
   const [houses, setHouses] = useState<SavedHouse[]>([]);
   const [selectedHouseId, setSelectedHouseId] = useState<HouseId | null>(null);
@@ -1002,6 +1196,35 @@ export default function App() {
 
   const selectedHouse = houses.find((house) => house.id === selectedHouseId) ?? houses[0] ?? null;
 
+  function resetUnauthenticatedFlowState() {
+    accessTokenRef.current = null;
+    isConsumingMagicLinkRef.current = false;
+    consumedMagicLinkTokensRef.current.clear();
+    setSession(null);
+    setBootstrap(null);
+    setLoginMessage(null);
+    setDevMagicLink(null);
+    setProfileName("");
+    setActiveTab("dashboard");
+    setMoreView("menu");
+    setHouses([]);
+    setSelectedHouseId(null);
+    setTasks([]);
+    setQuery("");
+    setSuggestions([]);
+    setSelectedAddress(null);
+    setHasAddressSearched(false);
+    setError(null);
+    setShowTaskForm(false);
+    setShowDeadlinePicker(false);
+    setCompletingTaskId(null);
+    setTaskTitle("");
+    setTaskDescription("");
+    setTaskDeadline("");
+    setTaskFormError(null);
+    setLoadingAction(null);
+  }
+
   const loadTasks = useCallback(
     async (houseId: HouseId) => {
       const response = await apiClient.listMaintenanceTasks(houseId);
@@ -1010,14 +1233,25 @@ export default function App() {
     [apiClient]
   );
 
+  async function storeSessionTokens(tokens: SessionTokens) {
+    accessTokenRef.current = tokens.accessToken;
+    setSession(tokens);
+    await writeStoredSession(tokens);
+  }
+
   const loadApp = useCallback(async () => {
     setLoadingAction("app");
     setError(null);
 
     try {
-      const response = await apiClient.listHouses();
-      setHouses(response.houses);
-      const nextHouse = response.houses[0] ?? null;
+      const [bootstrapResponse, housesResponse] = await Promise.all([
+        apiClient.getAppBootstrap(),
+        apiClient.listHouses()
+      ]);
+      setBootstrap(bootstrapResponse);
+      setProfileName(bootstrapResponse.profile.displayName ?? "");
+      setHouses(housesResponse.houses);
+      const nextHouse = bootstrapResponse.primaryHouse ?? housesResponse.houses[0] ?? null;
       setSelectedHouseId(nextHouse?.id ?? null);
 
       if (nextHouse) {
@@ -1033,9 +1267,92 @@ export default function App() {
     }
   }, [apiClient, loadTasks]);
 
+  const consumeMagicLinkUrl = useCallback(
+    async (url: string | null) => {
+      if (!url) {
+        return;
+      }
+
+      let parsedUrl: URL;
+
+      try {
+        parsedUrl = new URL(url);
+      } catch {
+        return;
+      }
+
+      const token = parsedUrl.searchParams.get("token");
+
+      if (!token || !url.startsWith("matriva://auth/magic-link")) {
+        return;
+      }
+
+      if (isConsumingMagicLinkRef.current || consumedMagicLinkTokensRef.current.has(token)) {
+        return;
+      }
+
+      isConsumingMagicLinkRef.current = true;
+      setLoadingAction("auth");
+      setLoginMessage(null);
+      setDevMagicLink(null);
+      setError(null);
+
+      try {
+        const response = await apiClient.consumeMagicLink({ token });
+        consumedMagicLinkTokensRef.current.add(token);
+        await storeSessionTokens(response.tokens);
+        setBootstrap(null);
+        setAuthStatus("authenticated");
+        await loadApp();
+      } catch (caughtError) {
+        await clearStoredSession();
+        resetUnauthenticatedFlowState();
+        setAuthStatus("anonymous");
+        setError(userFacingError(caughtError));
+      } finally {
+        isConsumingMagicLinkRef.current = false;
+        setLoadingAction(null);
+      }
+    },
+    [apiClient, loadApp]
+  );
+
   useEffect(() => {
-    void loadApp();
-  }, [loadApp]);
+    void (async () => {
+      try {
+        const storedSession = await readStoredSession();
+
+        if (!storedSession) {
+          setAuthStatus("anonymous");
+          return;
+        }
+
+        accessTokenRef.current = storedSession.accessToken;
+        const refreshed = await apiClient.refreshSession({
+          refreshToken: storedSession.refreshToken
+        });
+        await storeSessionTokens(refreshed.tokens);
+        setAuthStatus("authenticated");
+        await loadApp();
+      } catch {
+        await clearStoredSession();
+        resetUnauthenticatedFlowState();
+        setAuthStatus("anonymous");
+      } finally {
+        setLoadingAction(null);
+      }
+    })();
+  }, [apiClient, loadApp]);
+
+  useEffect(() => {
+    const subscription = Linking.addEventListener("url", ({ url }) => {
+      void consumeMagicLinkUrl(url);
+    });
+
+    void Linking.getInitialURL().then(consumeMagicLinkUrl);
+
+    return () => subscription.remove();
+  }, [consumeMagicLinkUrl]);
 
   async function searchAddresses() {
     const trimmedQuery = query.trim();
@@ -1062,6 +1379,68 @@ export default function App() {
     }
   }
 
+  async function requestLoginLink() {
+    const trimmedEmail = loginEmail.trim();
+
+    if (!/^\S+@\S+\.\S+$/.test(trimmedEmail)) {
+      setLoginMessage("Skriv en gyldig emailadresse.");
+      return;
+    }
+
+    setLoadingAction("auth");
+    setLoginMessage(null);
+    setDevMagicLink(null);
+    setError(null);
+
+    try {
+      const response = await apiClient.requestMagicLink({ email: trimmedEmail });
+      setLoginMessage("Vi har sendt et loginlink, hvis emailen kan bruges til Matriva.");
+      setDevMagicLink(response.devMagicLink ?? null);
+    } catch (caughtError) {
+      setError(userFacingError(caughtError));
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
+  async function saveProfile() {
+    const trimmedName = profileName.trim();
+
+    if (!trimmedName) {
+      setError("Navn må ikke være tomt.");
+      return;
+    }
+
+    setLoadingAction("profile");
+    setError(null);
+
+    try {
+      await apiClient.updateProfile({ displayName: trimmedName, preferredLocale: "da-DK" });
+      await loadApp();
+    } catch (caughtError) {
+      setError(userFacingError(caughtError));
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
+  async function logout() {
+    setLoadingAction("logout");
+    setError(null);
+
+    try {
+      if (session) {
+        await apiClient.logout({ refreshToken: session.refreshToken });
+      }
+    } catch {
+      // Local credentials are still removed so a user can leave the device safely if the API is unavailable.
+    } finally {
+      await clearStoredSession();
+      resetUnauthenticatedFlowState();
+      setAuthStatus("anonymous");
+    }
+  }
+
   async function saveHouse() {
     if (!selectedAddress) {
       setError("Vælg en adresse, før du gemmer huset.");
@@ -1078,8 +1457,7 @@ export default function App() {
         houseDraftId: draft.houseDraft.id,
         selectedAddress: draft.houseDraft.selectedAddress
       });
-      const savedHouses = await apiClient.listHouses();
-      setHouses(savedHouses.houses);
+      await loadApp();
       setSelectedHouseId(response.house.id);
       setQuery("");
       setSuggestions([]);
@@ -1187,11 +1565,11 @@ export default function App() {
   };
 
   function renderActiveScreen() {
-    if (loadingAction === "app") {
+    if (authStatus === "restoring" || loadingAction === "app") {
       return (
         <View style={styles.loadingState}>
           <ActivityIndicator color={theme.primary} />
-          <Text style={styles.bodyText}>Henter dit husoverblik...</Text>
+          <Text style={styles.bodyText}>Henter Matriva...</Text>
         </View>
       );
     }
@@ -1261,7 +1639,85 @@ export default function App() {
       return <DocumentsScreen />;
     }
 
-    return <MoreScreen />;
+    if (moreView === "profile") {
+      return (
+        <ProfileScreen
+          user={bootstrap?.user ?? null}
+          profile={bootstrap?.profile ?? null}
+          displayName={profileName}
+          isSaving={loadingAction === "profile"}
+          onBack={() => setMoreView("menu")}
+          onNameChange={(value) => {
+            setProfileName(value);
+            setError(null);
+          }}
+          onSaveProfile={() => void saveProfile()}
+        />
+      );
+    }
+
+    return (
+      <MoreScreen
+        isLoggingOut={loadingAction === "logout"}
+        onOpenProfile={() => setMoreView("profile")}
+        onLogout={() => void logout()}
+      />
+    );
+  }
+
+  if (authStatus === "anonymous") {
+    return (
+      <SafeAreaView style={styles.screen}>
+        <StatusBar style="dark" />
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          {error ? (
+            <Card>
+              <Text style={styles.errorTitle}>Der opstod et problem</Text>
+              <Text style={styles.errorText}>{error}</Text>
+            </Card>
+          ) : null}
+          <LoginScreen
+            email={loginEmail}
+            message={loginMessage}
+            devMagicLink={devMagicLink}
+            isLoading={loadingAction === "auth"}
+            onEmailChange={(value) => {
+              setLoginEmail(value);
+              setLoginMessage(null);
+              setError(null);
+            }}
+            onRequestLink={() => void requestLoginLink()}
+            onOpenDevLink={(url) => void consumeMagicLinkUrl(url)}
+          />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  if (bootstrap?.onboardingState === "profile_required") {
+    return (
+      <SafeAreaView style={styles.screen}>
+        <StatusBar style="dark" />
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          {error ? (
+            <Card>
+              <Text style={styles.errorTitle}>Der opstod et problem</Text>
+              <Text style={styles.errorText}>{error}</Text>
+            </Card>
+          ) : null}
+          <ProfileOnboardingScreen
+            user={bootstrap.user}
+            displayName={profileName}
+            isSaving={loadingAction === "profile"}
+            onNameChange={(value) => {
+              setProfileName(value);
+              setError(null);
+            }}
+            onSave={() => void saveProfile()}
+          />
+        </ScrollView>
+      </SafeAreaView>
+    );
   }
 
   return (

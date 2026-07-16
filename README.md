@@ -186,3 +186,16 @@ Not implemented yet:
 * Firebase of any kind
 
 Architectural uncertainty should be captured in `docs/decisions/` before implementation.
+
+
+## Authentication foundation
+
+Matriva uses backend-owned magic-link authentication for V1. Local development defaults to `MATRIVA_MAIL_TRANSPORT=console`, which exposes a development-only `devMagicLink` in the API response and console output. This keeps local tests from sending real email unless SMTP is explicitly enabled.
+
+Production email uses `MATRIVA_MAIL_TRANSPORT=smtp` with STARTTLS SMTP through `mail.your-server.de:587`. Set `MATRIVA_SMTP_HOST=mail.your-server.de`, `MATRIVA_SMTP_PORT=587`, `MATRIVA_SMTP_USER=login@matriva.dk`, `MATRIVA_SMTP_FROM=login@matriva.dk`, and `MATRIVA_SMTP_PASSWORD` from secret environment configuration. SMTP credentials must not be committed to the repository.
+
+For local development and automated tests only, `MATRIVA_AUTH_DISABLE_LIMITS=true` disables auth request limits so repeated magic-link requests can be generated without waiting. The API fails fast if this flag is enabled with `NODE_ENV=production`. Never enable it in production or shared production-like environments.
+
+Native deep links use `matriva://auth/magic-link?token=...`. Universal links/app links still require production domain association files and platform signing configuration; no fake production domain is hardcoded.
+
+Protected API calls require `Authorization: Bearer <accessToken>`. Refresh tokens rotate through `POST /v1/auth/refresh`, and logout invalidates the active session when the API is reachable.

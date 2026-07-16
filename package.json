@@ -18,7 +18,8 @@
     "check:secrets": "node tools/check-no-secrets.mjs",
     "smoke:api:dev": "node tools/smoke-api-dev.mjs",
     "smoke:api:routes": "node tools/smoke-api-routes.mjs",
-    "check": "npm run check:no-firebase && npm run check:secrets && npm run typecheck && npm run lint"
+    "check": "npm run check:no-firebase && npm run check:secrets && npm run typecheck && npm run lint",
+    "smoke:auth": "node tools/smoke-auth.mjs"
   },
   "engines": {
     "node": ">=22"

@@ -110,30 +110,28 @@ async function readHealth() {
   }
 }
 
-async function readCurrentDevUser() {
+async function requestMagicLink() {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
 
   try {
-    const response = await fetch(`${baseUrl}/v1/dev-user`, {
+    const response = await fetch(`${baseUrl}/v1/auth/magic-link/request`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: `dev-smoke-${Date.now()}@example.test` }),
       signal: controller.signal
     });
 
     if (response.status !== 200) {
       throw new Error(
-        `Expected HTTP 200 from /v1/dev-user, got ${response.status}.`
+        `Expected HTTP 200 from /v1/auth/magic-link/request, got ${response.status}.`
       );
     }
 
     const body = await response.json();
 
-    if (
-      !body?.user?.id?.startsWith("usr_") ||
-      body.user.email !== "rene@joinit.dk" ||
-      Number.isNaN(Date.parse(body.user.createdAt)) ||
-      Number.isNaN(Date.parse(body.user.updatedAt))
-    ) {
-      throw new Error("DevUser response did not match the expected JSON shape.");
+    if (body?.ok !== true || typeof body?.message !== "string") {
+      throw new Error("Magic link response did not match the expected JSON shape.");
     }
 
     return body;
@@ -170,8 +168,8 @@ const child = startApi();
 
 try {
   await waitForHealth(child);
-  await readCurrentDevUser();
-  console.log(`API dev smoke passed: GET ${healthUrl}, GET ${baseUrl}/v1/dev-user`);
+  await requestMagicLink();
+  console.log(`API dev smoke passed: GET ${healthUrl}, POST ${baseUrl}/v1/auth/magic-link/request`);
 } catch (error) {
   console.error(`API dev smoke failed: ${error.message}`);
   printCapturedOutput();

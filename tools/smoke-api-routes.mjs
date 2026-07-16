@@ -411,6 +411,38 @@ function dateOnlyDaysFromNow(daysFromNow) {
   return date.toISOString().slice(0, 10);
 }
 
+
+async function createAuthSession() {
+  const email = `routes-smoke-${Date.now()}@example.test`;
+  const requested = await fetchJson("/v1/auth/magic-link/request", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email })
+  });
+  const token = new URL(requested.devMagicLink).searchParams.get("token");
+  const consumed = await fetchJson("/v1/auth/magic-link/consume", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token })
+  });
+  await fetchJson("/v1/me/profile", {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${consumed.tokens.accessToken}`
+    },
+    body: JSON.stringify({ displayName: "Route Smoke", preferredLocale: "da-DK" })
+  });
+  return consumed;
+}
+
+function authHeaders(session, extra = {}) {
+  return {
+    ...extra,
+    authorization: `Bearer ${session.tokens.accessToken}`
+  };
+}
+
 async function waitForHealth(child) {
   const startedAt = Date.now();
   let lastError;
@@ -443,8 +475,7 @@ async function runSmoke(child) {
   const bootstrap = await fetchJson("/v1/bootstrap");
   assertBootstrap(bootstrap);
 
-  const currentDevUser = await fetchJson("/v1/dev-user");
-  assertCurrentDevUser(currentDevUser);
+  const authSession = await createAuthSession();
 
   const searchParams = new URLSearchParams({ q: addressQuery });
   let addressSearch;
@@ -460,9 +491,9 @@ async function runSmoke(child) {
   const selectedAddress = toSelectedAddress(addressSearch.suggestions[0]);
   const houseDraft = await fetchJson("/v1/house-drafts", {
     method: "POST",
-    headers: {
+    headers: authHeaders(authSession, {
       "content-type": "application/json"
-    },
+    }),
     body: JSON.stringify(selectedAddress)
   });
 
@@ -470,39 +501,39 @@ async function runSmoke(child) {
 
   const savedHouse = await fetchJson("/v1/houses", {
     method: "POST",
-    headers: {
+    headers: authHeaders(authSession, {
       "content-type": "application/json"
-    },
+    }),
     body: JSON.stringify({
       houseDraftId: houseDraft.houseDraft.id,
       selectedAddress
     })
   });
 
-  assertSavedHouse(savedHouse, selectedAddress, currentDevUser.user.id);
+  assertSavedHouse(savedHouse, selectedAddress, authSession.user.id);
 
-  const savedHouses = await fetchJson("/v1/houses");
+  const savedHouses = await fetchJson("/v1/houses", { headers: authHeaders(authSession) });
   assert(
     savedHouses.houses.some((house) => house.id === savedHouse.house.id),
     "Saved houses list must include the newly created house."
   );
 
-  const oneSavedHouse = await fetchJson(`/v1/houses/${savedHouse.house.id}`);
-  assertSavedHouse(oneSavedHouse, selectedAddress, currentDevUser.user.id);
+  const oneSavedHouse = await fetchJson(`/v1/houses/${savedHouse.house.id}`, { headers: authHeaders(authSession) });
+  assertSavedHouse(oneSavedHouse, selectedAddress, authSession.user.id);
 
-  const notOwnedHouse = await fetchJsonWithStatus("/v1/houses/house_aaaaaaaa");
+  const notOwnedHouse = await fetchJsonWithStatus("/v1/houses/house_aaaaaaaa", { headers: authHeaders(authSession) });
   assert(
     notOwnedHouse.status === 404 && notOwnedHouse.body?.code === "house_not_found",
-    "Saved house ownership boundary must reject houses outside the current DevUser."
+    "Saved house ownership boundary must reject houses outside the current user."
   );
 
   const maintenanceTask = await fetchJson(
     `/v1/houses/${savedHouse.house.id}/maintenance-tasks`,
     {
       method: "POST",
-      headers: {
+      headers: authHeaders(authSession, {
         "content-type": "application/json"
-      },
+      }),
       body: JSON.stringify({
         title: "Skift filter i ventilation",
         description: "Brugeroprettet opgave fra persisted smoke.",
@@ -517,7 +548,8 @@ async function runSmoke(child) {
   assertMaintenanceTask(maintenanceTask, savedHouse.house.id);
 
   const maintenanceTasks = await fetchJson(
-    `/v1/houses/${savedHouse.house.id}/maintenance-tasks`
+    `/v1/houses/${savedHouse.house.id}/maintenance-tasks`,
+    { headers: authHeaders(authSession) }
   );
   assert(
     maintenanceTasks.tasks.some((task) => task.id === maintenanceTask.task.id),
@@ -528,9 +560,9 @@ async function runSmoke(child) {
     `/v1/houses/${savedHouse.house.id}/maintenance-tasks/${maintenanceTask.task.id}/status`,
     {
       method: "PATCH",
-      headers: {
+      headers: authHeaders(authSession, {
         "content-type": "application/json"
-      },
+      }),
       body: JSON.stringify({
         status: "done"
       })
@@ -543,9 +575,9 @@ async function runSmoke(child) {
     `/v1/houses/${savedHouse.house.id}/maintenance-tasks`,
     {
       method: "POST",
-      headers: {
+      headers: authHeaders(authSession, {
         "content-type": "application/json"
-      },
+      }),
       body: JSON.stringify({
         title: "Invalid timing",
         timing: {
@@ -562,16 +594,17 @@ async function runSmoke(child) {
   );
 
   const overviewPreview = await fetchJson(
-    `/v1/house-drafts/${houseDraft.houseDraft.id}/overview-preview`
+    `/v1/house-drafts/${houseDraft.houseDraft.id}/overview-preview`,
+    { headers: authHeaders(authSession) }
   );
 
   assertOverviewPreview(overviewPreview, houseDraft.houseDraft.id);
 
   const enrichment = await fetchJson("/v1/house-drafts/enrich", {
     method: "POST",
-    headers: {
+    headers: authHeaders(authSession, {
       "content-type": "application/json"
-    },
+    }),
     body: JSON.stringify({
       houseDraftId: houseDraft.houseDraft.id,
       selectedAddress

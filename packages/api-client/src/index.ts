@@ -1,8 +1,15 @@
 import {
   addressSearchResponseSchema,
+  appBootstrapResponseSchema,
+  authSessionResponseSchema,
+  currentUserResponseSchema,
   enrichHouseDraftResponseSchema,
+  logoutResponseSchema,
   maintenanceTaskResponseSchema,
   maintenanceTasksResponseSchema,
+  refreshSessionRequestSchema,
+  requestMagicLinkResponseSchema,
+  updateProfileResponseSchema,
   savedHouseResponseSchema,
   savedHousesResponseSchema,
   healthResponseSchema,
@@ -10,6 +17,10 @@ import {
   houseDraftResponseSchema,
   homeBootstrapResponseSchema,
   type AddressSearchResponse,
+  type AppBootstrapResponse,
+  type AuthSessionResponse,
+  type ConsumeMagicLinkRequest,
+  type CurrentUserResponse,
   type CreateMaintenanceTaskRequest,
   type CreateSavedHouseRequest,
   type EnrichHouseDraftRequest,
@@ -20,18 +31,25 @@ import {
   type HouseDraftResponse,
   type HouseId,
   type HomeBootstrapResponse,
+  type LogoutResponse,
   type MaintenanceTaskResponse,
   type MaintenanceTasksResponse,
+  type RefreshSessionRequest,
+  type RequestMagicLinkRequest,
+  type RequestMagicLinkResponse,
   type SavedHouseResponse,
   type SavedHousesResponse,
   type SelectedAddressInput,
   type TaskId,
-  type UpdateMaintenanceTaskStatusRequest
+  type UpdateMaintenanceTaskStatusRequest,
+  type UpdateProfileRequest,
+  type UpdateProfileResponse
 } from "@matriva/shared";
 
 export type MatrivaApiClientOptions = {
   baseUrl: string;
   fetchImpl?: typeof fetch;
+  getAccessToken?: () => string | null | undefined;
 };
 
 export type MatrivaApiClient = {
@@ -39,6 +57,13 @@ export type MatrivaApiClient = {
   getHealth: () => Promise<HealthResponse>;
   health: () => Promise<HealthResponse>;
   getBootstrap: () => Promise<HomeBootstrapResponse>;
+  requestMagicLink: (input: RequestMagicLinkRequest) => Promise<RequestMagicLinkResponse>;
+  consumeMagicLink: (input: ConsumeMagicLinkRequest) => Promise<AuthSessionResponse>;
+  refreshSession: (input: RefreshSessionRequest) => Promise<AuthSessionResponse>;
+  logout: (input: RefreshSessionRequest) => Promise<LogoutResponse>;
+  getCurrentUser: () => Promise<CurrentUserResponse>;
+  updateProfile: (input: UpdateProfileRequest) => Promise<UpdateProfileResponse>;
+  getAppBootstrap: () => Promise<AppBootstrapResponse>;
   searchAddresses: (query: string) => Promise<AddressSearchResponse>;
   createHouseDraft: (input: SelectedAddressInput) => Promise<HouseDraftResponse>;
   getHouseDraftOverviewPreview: (
@@ -71,6 +96,15 @@ export function createMatrivaApiClient(
 ): MatrivaApiClient {
   const normalizedBaseUrl = options.baseUrl.replace(/\/$/, "");
   const fetcher = options.fetchImpl ?? fetch;
+
+  function authHeaders(extra?: HeadersInit): HeadersInit {
+    const token = options.getAccessToken?.();
+
+    return {
+      ...(extra ?? {}),
+      ...(token ? { authorization: `Bearer ${token}` } : {})
+    };
+  }
 
   async function parseApiResponse(response: Response, fallbackMessage: string) {
     if (response.ok) {
@@ -120,6 +154,80 @@ export function createMatrivaApiClient(
         await parseApiResponse(response, "Could not load home data.")
       );
     },
+    async requestMagicLink(input) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/auth/magic-link/request`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input)
+      });
+
+      return requestMagicLinkResponseSchema.parse(
+        await parseApiResponse(response, "Could not request login link.")
+      );
+    },
+    async consumeMagicLink(input) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/auth/magic-link/consume`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input)
+      });
+
+      return authSessionResponseSchema.parse(
+        await parseApiResponse(response, "Could not log in with this link.")
+      );
+    },
+    async refreshSession(input) {
+      refreshSessionRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/auth/refresh`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input)
+      });
+
+      return authSessionResponseSchema.parse(
+        await parseApiResponse(response, "Could not refresh session.")
+      );
+    },
+    async logout(input) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/auth/logout`, {
+        method: "POST",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify(input)
+      });
+
+      return logoutResponseSchema.parse(
+        await parseApiResponse(response, "Could not log out.")
+      );
+    },
+    async getCurrentUser() {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/me`, {
+        headers: authHeaders()
+      });
+
+      return currentUserResponseSchema.parse(
+        await parseApiResponse(response, "Could not load profile.")
+      );
+    },
+    async updateProfile(input) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/me/profile`, {
+        method: "PUT",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify(input)
+      });
+
+      return updateProfileResponseSchema.parse(
+        await parseApiResponse(response, "Could not save profile.")
+      );
+    },
+    async getAppBootstrap() {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/app-bootstrap`, {
+        headers: authHeaders()
+      });
+
+      return appBootstrapResponseSchema.parse(
+        await parseApiResponse(response, "Could not load app state.")
+      );
+    },
     async searchAddresses(query) {
       const searchParams = new URLSearchParams({ q: query });
       const response = await fetcher(
@@ -133,9 +241,9 @@ export function createMatrivaApiClient(
     async createHouseDraft(input) {
       const response = await fetcher(`${normalizedBaseUrl}/v1/house-drafts`, {
         method: "POST",
-        headers: {
+        headers: authHeaders({
           "content-type": "application/json"
-        },
+        }),
         body: JSON.stringify(input)
       });
 
@@ -145,7 +253,8 @@ export function createMatrivaApiClient(
     },
     async getHouseDraftOverviewPreview(houseDraftId) {
       const response = await fetcher(
-        `${normalizedBaseUrl}/v1/house-drafts/${houseDraftId}/overview-preview`
+        `${normalizedBaseUrl}/v1/house-drafts/${houseDraftId}/overview-preview`,
+        { headers: authHeaders() }
       );
 
       return houseDraftOverviewPreviewResponseSchema.parse(
@@ -157,9 +266,9 @@ export function createMatrivaApiClient(
         `${normalizedBaseUrl}/v1/house-drafts/enrich`,
         {
           method: "POST",
-          headers: {
+          headers: authHeaders({
             "content-type": "application/json"
-          },
+          }),
           body: JSON.stringify(input)
         }
       );
@@ -169,7 +278,9 @@ export function createMatrivaApiClient(
       );
     },
     async listHouses() {
-      const response = await fetcher(`${normalizedBaseUrl}/v1/houses`);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/houses`, {
+        headers: authHeaders()
+      });
 
       return savedHousesResponseSchema.parse(
         await parseApiResponse(response, "Could not load saved houses.")
@@ -178,9 +289,9 @@ export function createMatrivaApiClient(
     async createSavedHouse(input) {
       const response = await fetcher(`${normalizedBaseUrl}/v1/houses`, {
         method: "POST",
-        headers: {
+        headers: authHeaders({
           "content-type": "application/json"
-        },
+        }),
         body: JSON.stringify(input)
       });
 
@@ -189,7 +300,9 @@ export function createMatrivaApiClient(
       );
     },
     async getHouse(houseId) {
-      const response = await fetcher(`${normalizedBaseUrl}/v1/houses/${houseId}`);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/houses/${houseId}`, {
+        headers: authHeaders()
+      });
 
       return savedHouseResponseSchema.parse(
         await parseApiResponse(response, "Could not load house.")
@@ -197,7 +310,8 @@ export function createMatrivaApiClient(
     },
     async listMaintenanceTasks(houseId) {
       const response = await fetcher(
-        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-tasks`
+        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-tasks`,
+        { headers: authHeaders() }
       );
 
       return maintenanceTasksResponseSchema.parse(
@@ -209,9 +323,9 @@ export function createMatrivaApiClient(
         `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-tasks`,
         {
           method: "POST",
-          headers: {
+          headers: authHeaders({
             "content-type": "application/json"
-          },
+          }),
           body: JSON.stringify(input)
         }
       );
@@ -225,9 +339,9 @@ export function createMatrivaApiClient(
         `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-tasks/${taskId}/status`,
         {
           method: "PATCH",
-          headers: {
+          headers: authHeaders({
             "content-type": "application/json"
-          },
+          }),
           body: JSON.stringify(input)
         }
       );

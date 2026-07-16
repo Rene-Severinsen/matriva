@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
@@ -6,9 +6,12 @@ import {
   addressSearchQuerySchema,
   addressSearchResponseSchema,
   apiErrorSchema,
+  appBootstrapResponseSchema,
+  authSessionResponseSchema,
+  consumeMagicLinkRequestSchema,
+  currentUserResponseSchema,
   createMaintenanceTaskRequestSchema,
   createSavedHouseRequestSchema,
-  currentDevUserResponseSchema,
   enrichHouseDraftRequestSchema,
   enrichHouseDraftResponseSchema,
   healthResponseSchema,
@@ -18,25 +21,43 @@ import {
   houseIdSchema,
   homeBootstrapResponseSchema,
   maintenanceTaskResponseSchema,
+  logoutRequestSchema,
+  logoutResponseSchema,
   maintenanceTasksResponseSchema,
+  refreshSessionRequestSchema,
+  requestMagicLinkRequestSchema,
+  requestMagicLinkResponseSchema,
   savedHouseResponseSchema,
   savedHousesResponseSchema,
   selectedAddressInputSchema,
   taskIdSchema,
+  updateProfileRequestSchema,
+  updateProfileResponseSchema,
   updateMaintenanceTaskStatusRequestSchema
 } from "@matriva/shared";
 
+import { sendMagicLinkEmail, createMagicLinkUrl } from "./auth/mailer.ts";
 import { getDatafordelerConfigStatus } from "./config/datafordeler.ts";
 import {
   ApiError,
+  authenticateAccessToken,
+  authPublicResponse,
+  buildAppBootstrap,
+  consumeMagicLinkToken,
   createMaintenanceTaskForHouse,
+  createMagicLinkToken,
   createSavedHouse,
-  ensureCurrentDevUser,
+  getProfileForUser,
   getSavedHouse,
+  getUserById,
   listMaintenanceTasksForHouse,
   listSavedHouses,
+  logoutSession,
   migrateDatabase,
-  updateMaintenanceTaskStatus
+  refreshSession,
+  updateMaintenanceTaskStatus,
+  updateProfile,
+  validateAuthRuntimeConfig
 } from "./db.ts";
 
 const port = Number.parseInt(process.env.PORT ?? "4000", 10);
@@ -82,6 +103,39 @@ function writeApiError(
       message
     })
   );
+}
+
+
+function getBearerToken(request: IncomingMessage) {
+  const authorization = request.headers.authorization;
+
+  if (!authorization?.startsWith("Bearer ")) {
+    return undefined;
+  }
+
+  return authorization.slice("Bearer ".length).trim();
+}
+
+async function requireUserId(request: IncomingMessage) {
+  return authenticateAccessToken(getBearerToken(request));
+}
+
+function requestIpHash(request: IncomingMessage) {
+  const forwardedFor = request.headers["x-forwarded-for"];
+  const rawIp = Array.isArray(forwardedFor)
+    ? forwardedFor[0]
+    : forwardedFor?.split(",")[0] ?? request.socket.remoteAddress;
+
+  if (!rawIp) {
+    return undefined;
+  }
+
+  return createHash("sha256").update(rawIp).digest("hex");
+}
+
+function userAgentHint(request: IncomingMessage) {
+  const userAgent = request.headers["user-agent"];
+  return Array.isArray(userAgent) ? userAgent[0] : userAgent;
 }
 
 function writeUnknownApiError(response: ServerResponse, error: unknown) {
@@ -205,6 +259,154 @@ const server = createServer((request, response) => {
     return;
   }
 
+  if (request.method === "POST" && request.url === "/v1/auth/magic-link/request") {
+    void (async () => {
+      try {
+        const payload = await readJsonBody(request);
+        const parsedRequest = requestMagicLinkRequestSchema.safeParse(payload);
+
+        if (!parsedRequest.success) {
+          writeJson(response, 200, requestMagicLinkResponseSchema.parse(authPublicResponse));
+          return;
+        }
+
+        const ipHash = requestIpHash(request);
+        const agentHint = userAgentHint(request);
+        const created = await createMagicLinkToken(parsedRequest.data.email, {
+          ...(ipHash ? { ipHash } : {}),
+          ...(agentHint ? { userAgentHint: agentHint } : {})
+        });
+        const delivery = await sendMagicLinkEmail({
+          to: created.user.email,
+          magicLink: createMagicLinkUrl(created.token),
+          expiresAt: created.expiresAt
+        });
+
+        writeJson(
+          response,
+          200,
+          requestMagicLinkResponseSchema.parse({
+            ...authPublicResponse,
+            ...delivery
+          })
+        );
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 429) {
+          writeJson(response, 200, requestMagicLinkResponseSchema.parse(authPublicResponse));
+          return;
+        }
+
+        console.error(JSON.stringify({ event: "auth.magic_link.request_failed" }));
+        writeApiError(response, 503, "magic_link_email_unavailable", "Matriva kunne ikke sende loginlinket lige nu.");
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/v1/auth/magic-link/consume") {
+    void (async () => {
+      try {
+        const payload = await readJsonBody(request);
+        const parsedRequest = consumeMagicLinkRequestSchema.safeParse(payload);
+
+        if (!parsedRequest.success) {
+          writeApiError(response, 401, "magic_link_invalid", "Loginlinket er ugyldigt eller udløbet.");
+          return;
+        }
+
+        const session = await consumeMagicLinkToken(parsedRequest.data.token);
+        writeJson(response, 200, authSessionResponseSchema.parse(session));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/v1/auth/refresh") {
+    void (async () => {
+      try {
+        const payload = await readJsonBody(request);
+        const parsedRequest = refreshSessionRequestSchema.safeParse(payload);
+
+        if (!parsedRequest.success) {
+          writeApiError(response, 401, "session_invalid", "Sessionen er udløbet.");
+          return;
+        }
+
+        const session = await refreshSession(parsedRequest.data.refreshToken);
+        writeJson(response, 200, authSessionResponseSchema.parse(session));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/v1/auth/logout") {
+    void (async () => {
+      try {
+        const userId = await requireUserId(request);
+        const payload = await readJsonBody(request);
+        const parsedRequest = logoutRequestSchema.safeParse(payload);
+        await logoutSession(userId, parsedRequest.success ? parsedRequest.data.refreshToken : undefined);
+        writeJson(response, 200, logoutResponseSchema.parse({ ok: true }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "GET" && request.url === "/v1/me") {
+    void (async () => {
+      try {
+        const userId = await requireUserId(request);
+        const [user, profile] = await Promise.all([
+          getUserById(userId),
+          getProfileForUser(userId)
+        ]);
+        writeJson(response, 200, currentUserResponseSchema.parse({ user, profile }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "PUT" && request.url === "/v1/me/profile") {
+    void (async () => {
+      try {
+        const userId = await requireUserId(request);
+        const payload = await readJsonBody(request);
+        const parsedRequest = updateProfileRequestSchema.safeParse(payload);
+
+        if (!parsedRequest.success) {
+          writeApiError(response, 400, "profile_request_invalid", "Profilen kræver et navn.");
+          return;
+        }
+
+        const profile = await updateProfile(userId, parsedRequest.data);
+        writeJson(response, 200, updateProfileResponseSchema.parse({ profile }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "GET" && request.url === "/v1/app-bootstrap") {
+    void (async () => {
+      try {
+        const userId = await requireUserId(request);
+        writeJson(response, 200, appBootstrapResponseSchema.parse(await buildAppBootstrap(userId)));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
   if (request.method === "GET" && request.url === "/v1/bootstrap") {
     const now = new Date().toISOString();
     const body = homeBootstrapResponseSchema.parse({
@@ -271,26 +473,11 @@ const server = createServer((request, response) => {
     return;
   }
 
-  if (request.method === "GET" && request.url === "/v1/dev-user") {
-    void (async () => {
-      try {
-        const user = await ensureCurrentDevUser();
-        writeJson(
-          response,
-          200,
-          currentDevUserResponseSchema.parse({ user })
-        );
-      } catch (error) {
-        writeUnknownApiError(response, error);
-      }
-    })();
-    return;
-  }
-
   if (request.method === "GET" && request.url === "/v1/houses") {
     void (async () => {
       try {
-        const houses = await listSavedHouses();
+        const userId = await requireUserId(request);
+        const houses = await listSavedHouses(userId);
         writeJson(
           response,
           200,
@@ -325,7 +512,8 @@ const server = createServer((request, response) => {
           return;
         }
 
-        const house = await createSavedHouse(parsedRequest.data.selectedAddress);
+        const userId = await requireUserId(request);
+        const house = await createSavedHouse(userId, parsedRequest.data.selectedAddress);
         writeJson(
           response,
           201,
@@ -355,7 +543,8 @@ const server = createServer((request, response) => {
       }
 
       try {
-        const house = await getSavedHouse(parsedHouseId.data);
+        const userId = await requireUserId(request);
+        const house = await getSavedHouse(userId, parsedHouseId.data);
         writeJson(response, 200, savedHouseResponseSchema.parse({ house }));
       } catch (error) {
         writeUnknownApiError(response, error);
@@ -384,7 +573,8 @@ const server = createServer((request, response) => {
       }
 
       try {
-        const tasks = await listMaintenanceTasksForHouse(parsedHouseId.data);
+        const userId = await requireUserId(request);
+        const tasks = await listMaintenanceTasksForHouse(userId, parsedHouseId.data);
         writeJson(
           response,
           200,
@@ -431,7 +621,9 @@ const server = createServer((request, response) => {
           return;
         }
 
+        const userId = await requireUserId(request);
         const task = await createMaintenanceTaskForHouse(
+          userId,
           parsedHouseId.data,
           parsedRequest.data
         );
@@ -484,7 +676,9 @@ const server = createServer((request, response) => {
           return;
         }
 
+        const userId = await requireUserId(request);
         const task = await updateMaintenanceTaskStatus(
+          userId,
           parsedHouseId.data,
           parsedTaskId.data,
           parsedRequest.data.status
@@ -574,6 +768,7 @@ const server = createServer((request, response) => {
   if (request.method === "POST" && request.url === "/v1/house-drafts") {
     void (async () => {
       try {
+        await requireUserId(request);
         const selectedAddress = await readJsonBody(request);
         const parsedAddress =
           selectedAddressInputSchema.safeParse(selectedAddress);
@@ -868,6 +1063,7 @@ const server = createServer((request, response) => {
   if (request.method === "POST" && request.url === "/v1/house-drafts/enrich") {
     void (async () => {
       try {
+        await requireUserId(request);
         const payload = await readJsonBody(request);
         const parsedRequest = enrichHouseDraftRequestSchema.safeParse(payload);
 
@@ -1001,6 +1197,7 @@ const server = createServer((request, response) => {
 });
 
 try {
+  validateAuthRuntimeConfig();
   await migrateDatabase();
 
   server.listen(port, host, () => {

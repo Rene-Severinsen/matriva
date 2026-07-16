@@ -5,6 +5,8 @@ export const MATRIVA_FOUNDATION_VERSION = "0.1.0";
 type Brand<Value, Name extends string> = Value & { readonly __brand: Name };
 
 export type UserId = Brand<string, "UserId">;
+export type MagicLinkTokenId = Brand<string, "MagicLinkTokenId">;
+export type AuthSessionId = Brand<string, "AuthSessionId">;
 export type HouseId = Brand<string, "HouseId">;
 export type HomeCardId = Brand<string, "HomeCardId">;
 export type TaskId = Brand<string, "TaskId">;
@@ -19,6 +21,16 @@ export const userIdSchema = z
   .string()
   .regex(new RegExp(`^usr_${opaqueSuffixPattern}$`))
   .transform((value): UserId => value as UserId);
+
+export const magicLinkTokenIdSchema = z
+  .string()
+  .regex(new RegExp(`^mlt_${opaqueSuffixPattern}$`))
+  .transform((value): MagicLinkTokenId => value as MagicLinkTokenId);
+
+export const authSessionIdSchema = z
+  .string()
+  .regex(new RegExp(`^sess_${opaqueSuffixPattern}$`))
+  .transform((value): AuthSessionId => value as AuthSessionId);
 
 export const houseIdSchema = z
   .string()
@@ -54,6 +66,118 @@ export const houseDraftIdSchema = z
   .string()
   .regex(new RegExp(`^house_draft_${opaqueSuffixPattern}$`))
   .transform((value): HouseDraftId => value as HouseDraftId);
+
+
+export const emailInputSchema = z.string().trim().email().max(320);
+
+export const userStatusSchema = z.enum(["active", "disabled"]);
+
+export type UserStatus = z.infer<typeof userStatusSchema>;
+
+export const userProfileSchema = z.object({
+  displayName: z.string().min(1).nullable(),
+  preferredLocale: z.literal("da-DK")
+});
+
+export type UserProfile = z.infer<typeof userProfileSchema>;
+
+export const currentUserSchema = z.object({
+  id: userIdSchema,
+  email: z.string().email(),
+  emailVerifiedAt: z.string().datetime().nullable(),
+  status: userStatusSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastLoginAt: z.string().datetime().nullable()
+});
+
+export type CurrentUser = z.infer<typeof currentUserSchema>;
+
+export const sessionTokensSchema = z.object({
+  accessToken: z.string().min(32),
+  accessTokenExpiresAt: z.string().datetime(),
+  refreshToken: z.string().min(32),
+  refreshTokenExpiresAt: z.string().datetime()
+});
+
+export type SessionTokens = z.infer<typeof sessionTokensSchema>;
+
+export const onboardingStateSchema = z.enum([
+  "profile_required",
+  "house_required",
+  "complete"
+]);
+
+export type OnboardingState = z.infer<typeof onboardingStateSchema>;
+
+export const requestMagicLinkRequestSchema = z.object({
+  email: emailInputSchema
+});
+
+export type RequestMagicLinkRequest = z.infer<typeof requestMagicLinkRequestSchema>;
+
+export const requestMagicLinkResponseSchema = z.object({
+  ok: z.literal(true),
+  message: z.string().min(1),
+  cooldownSeconds: z.number().int().positive(),
+  devMagicLink: z.string().url().optional()
+});
+
+export type RequestMagicLinkResponse = z.infer<
+  typeof requestMagicLinkResponseSchema
+>;
+
+export const consumeMagicLinkRequestSchema = z.object({
+  token: z.string().min(32).max(512)
+});
+
+export type ConsumeMagicLinkRequest = z.infer<typeof consumeMagicLinkRequestSchema>;
+
+export const authSessionResponseSchema = z.object({
+  user: currentUserSchema,
+  profile: userProfileSchema,
+  tokens: sessionTokensSchema
+});
+
+export type AuthSessionResponse = z.infer<typeof authSessionResponseSchema>;
+
+export const refreshSessionRequestSchema = z.object({
+  refreshToken: z.string().min(32).max(512)
+});
+
+export type RefreshSessionRequest = z.infer<typeof refreshSessionRequestSchema>;
+
+export const logoutRequestSchema = z.object({
+  refreshToken: z.string().min(32).max(512).optional()
+});
+
+export type LogoutRequest = z.infer<typeof logoutRequestSchema>;
+
+export const logoutResponseSchema = z.object({
+  ok: z.literal(true)
+});
+
+export type LogoutResponse = z.infer<typeof logoutResponseSchema>;
+
+export const currentUserResponseSchema = z.object({
+  user: currentUserSchema,
+  profile: userProfileSchema
+});
+
+export type CurrentUserResponse = z.infer<typeof currentUserResponseSchema>;
+
+export const updateProfileRequestSchema = z.object({
+  displayName: z.string().trim().min(1).max(120),
+  preferredLocale: z.literal("da-DK").optional()
+});
+
+export type UpdateProfileRequest = z.infer<typeof updateProfileRequestSchema>;
+
+export const updateProfileResponseSchema = z.object({
+  profile: userProfileSchema
+});
+
+export type UpdateProfileResponse = z.infer<typeof updateProfileResponseSchema>;
 
 export const userSummarySchema = z.object({
   id: userIdSchema,
@@ -1078,6 +1202,18 @@ export type ApiResult<Data> =
       ok: false;
       error: ApiError;
     };
+
+export const appBootstrapResponseSchema = z.object({
+  user: currentUserSchema,
+  profile: userProfileSchema,
+  onboardingState: onboardingStateSchema,
+  primaryHouse: savedHouseSchema.nullable(),
+  entitlements: entitlementsSchema,
+  cards: z.array(homeCardSchema),
+  generatedAt: z.string().datetime()
+});
+
+export type AppBootstrapResponse = z.infer<typeof appBootstrapResponseSchema>;
 
 export const homeBootstrapResponseSchema = z.object({
   user: userSummarySchema,

@@ -162,12 +162,21 @@ const bootstrapBeforeProfile = await request("/v1/app-bootstrap", {
   headers: bearer(consumed.body.tokens.accessToken)
 });
 assert.equal(bootstrapBeforeProfile.response.status, 200);
-assert.equal(bootstrapBeforeProfile.body.onboardingState, "profile_required");
+assert.equal(bootstrapBeforeProfile.body.onboarding.state, "profile_required");
+assert.deepEqual(bootstrapBeforeProfile.body.houses, []);
+assert.equal(bootstrapBeforeProfile.body.activeHouseId, null);
+
+const blankProfile = await request("/v1/me/profile", {
+  method: "PUT",
+  headers: bearer(consumed.body.tokens.accessToken),
+  body: JSON.stringify({ displayName: "   ", preferredLocale: "da-DK" })
+});
+assert.equal(blankProfile.response.status, 400, "blank profile names must be rejected");
 
 const profile = await request("/v1/me/profile", {
   method: "PUT",
   headers: bearer(consumed.body.tokens.accessToken),
-  body: JSON.stringify({ displayName: "Auth Smoke", preferredLocale: "da-DK" })
+  body: JSON.stringify({ displayName: "  Auth Smoke  ", preferredLocale: "da-DK" })
 });
 assert.equal(profile.response.status, 200);
 assert.equal(profile.body.profile.displayName, "Auth Smoke");
@@ -175,7 +184,8 @@ assert.equal(profile.body.profile.displayName, "Auth Smoke");
 const bootstrapBeforeHouse = await request("/v1/app-bootstrap", {
   headers: bearer(consumed.body.tokens.accessToken)
 });
-assert.equal(bootstrapBeforeHouse.body.onboardingState, "house_required");
+assert.equal(bootstrapBeforeHouse.body.onboarding.state, "house_required");
+assert.equal(bootstrapBeforeHouse.body.houses.length, 0);
 
 const savedHouse = await request("/v1/houses", {
   method: "POST",
@@ -188,7 +198,9 @@ assert.equal(savedHouse.body.house.ownerUserId, consumed.body.user.id);
 const bootstrapComplete = await request("/v1/app-bootstrap", {
   headers: bearer(consumed.body.tokens.accessToken)
 });
-assert.equal(bootstrapComplete.body.onboardingState, "complete");
+assert.equal(bootstrapComplete.body.onboarding.state, "complete");
+assert.equal(bootstrapComplete.body.houses.length, 1);
+assert.equal(bootstrapComplete.body.activeHouseId, savedHouse.body.house.id);
 
 const refreshed = await request("/v1/auth/refresh", {
   method: "POST",

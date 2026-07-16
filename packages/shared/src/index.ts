@@ -1206,8 +1206,11 @@ export type ApiResult<Data> =
 export const appBootstrapResponseSchema = z.object({
   user: currentUserSchema,
   profile: userProfileSchema,
-  onboardingState: onboardingStateSchema,
-  primaryHouse: savedHouseSchema.nullable(),
+  onboarding: z.object({
+    state: onboardingStateSchema
+  }),
+  houses: z.array(savedHouseSchema),
+  activeHouseId: houseIdSchema.nullable(),
   entitlements: entitlementsSchema,
   cards: z.array(homeCardSchema),
   generatedAt: z.string().datetime()

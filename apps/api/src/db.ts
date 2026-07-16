@@ -824,8 +824,11 @@ export async function buildAppBootstrap(userId: string): Promise<AppBootstrapRes
   return appBootstrapResponseSchema.parse({
     user,
     profile,
-    onboardingState,
-    primaryHouse: houses[0] ?? null,
+    onboarding: {
+      state: onboardingState
+    },
+    houses,
+    activeHouseId: houses[0]?.id ?? null,
     entitlements: {
       plan: "free",
       status: "free",

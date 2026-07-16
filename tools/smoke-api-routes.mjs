@@ -238,6 +238,25 @@ function assertSavedHouse(body, selectedAddress, ownerUserId) {
   assertIsoDate(body.house.updatedAt, "Saved house updatedAt");
 }
 
+function assertAppBootstrap(body, savedHouse, ownerUserId) {
+  assert(body?.user?.id === ownerUserId, "App bootstrap user must be the current user.");
+  assert(body?.profile?.displayName === "Route Smoke", "App bootstrap must include profile.");
+  assert(
+    body?.onboarding?.state === "complete",
+    "App bootstrap must return complete onboarding after profile and house exist."
+  );
+  assert(
+    Array.isArray(body?.houses) &&
+      body.houses.some((house) => house.id === savedHouse.house.id),
+    "App bootstrap must include houses owned by the current user."
+  );
+  assert(
+    body.activeHouseId === savedHouse.house.id,
+    "App bootstrap must include an active house ID."
+  );
+  assertIsoDate(body?.generatedAt, "App bootstrap generatedAt");
+}
+
 function assertMaintenanceTask(body, houseId, expectedStatus = "planned") {
   assert(body?.task?.id?.startsWith("task_"), "Maintenance task must include a task_ ID.");
   assert(body.task.houseId === houseId, "Maintenance task must belong to the saved house.");
@@ -517,6 +536,11 @@ async function runSmoke(child) {
     savedHouses.houses.some((house) => house.id === savedHouse.house.id),
     "Saved houses list must include the newly created house."
   );
+
+  const appBootstrap = await fetchJson("/v1/app-bootstrap", {
+    headers: authHeaders(authSession)
+  });
+  assertAppBootstrap(appBootstrap, savedHouse, authSession.user.id);
 
   const oneSavedHouse = await fetchJson(`/v1/houses/${savedHouse.house.id}`, { headers: authHeaders(authSession) });
   assertSavedHouse(oneSavedHouse, selectedAddress, authSession.user.id);

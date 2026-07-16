@@ -36,7 +36,7 @@ Mobile never sends email or user ID as ownership proof. Protected routes derive 
 
 Houses are owned by `users.id`. Maintenance task access is authorized through the authenticated user's house ownership. Opaque IDs remain identifiers only; they are not access control.
 
-`/v1/app-bootstrap` returns current user, profile, backend-computed onboarding state, the primary house, entitlements, and cards. The mobile app follows this state instead of defining the authoritative onboarding rule locally.
+`/v1/app-bootstrap` returns current user, profile, backend-computed onboarding state, houses owned by the current user, an active house ID when available, entitlements, and cards. The mobile app follows this state instead of defining the authoritative onboarding rule locally.
 
 ## Migration From DevUser
 

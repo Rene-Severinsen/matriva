@@ -2,6 +2,8 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
+  KeyboardAvoidingView,
   Linking,
   Modal,
   Platform,
@@ -11,6 +13,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View
 } from "react-native";
 
@@ -39,6 +42,7 @@ type TabKey = "dashboard" | "house" | "maintenance" | "documents" | "more";
 type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" | "logout";
 type AuthStatus = "restoring" | "anonymous" | "authenticated";
 type MoreView = "menu" | "profile";
+type UnauthenticatedStep = "welcome" | "create" | "login";
 
 type Tab = {
   key: TabKey;
@@ -53,6 +57,8 @@ const tabs: Tab[] = [
   { key: "documents", icon: "▤", label: "Dokumenter" },
   { key: "more", icon: "•••", label: "Mere" }
 ];
+
+const houseHeroPlaceholder = require("../assets/onboarding/house-hero-placeholder.png");
 
 function selectedAddressInput(
   suggestion: AddressSuggestion
@@ -952,29 +958,99 @@ function MaintenanceScreen({
 }
 
 
+function HeroMedia({ height }: { height: number }) {
+  return (
+    <Image
+      accessibilityIgnoresInvertColors
+      accessibilityLabel="Illustration af et hus"
+      resizeMode="cover"
+      source={houseHeroPlaceholder}
+      style={[styles.heroImage, { height }]}
+    />
+  );
+}
+
+function WelcomeScreen({
+  onCreateProfile,
+  onLogin
+}: {
+  onCreateProfile: () => void;
+  onLogin: () => void;
+}) {
+  const { height: windowHeight } = useWindowDimensions();
+  const heroHeight = Math.min(Math.max(windowHeight * 0.18, 120), 180);
+
+  return (
+    <View style={styles.welcomeStack}>
+      <HeroMedia height={heroHeight} />
+      <View style={styles.welcomeHeader}>
+        <Text style={styles.logoText}>DIT HUS. ÉT OVERBLIK.</Text>
+        <Text style={styles.welcomeTitle}>
+          Få styr på dit hus – før de små ting bliver dyre
+        </Text>
+        <Text style={styles.welcomeBody}>
+          Saml vedligehold, dokumenter og vigtig viden om dit hus ét sted.{" "}
+          Matriva hjælper dig med at huske, hvad der skal gøres – og hvornår.
+        </Text>
+      </View>
+      <View style={styles.welcomeActions}>
+        <PrimaryButton label="Opret din profil" onPress={onCreateProfile} />
+        <Text style={styles.helperText}>
+          Gratis at komme i gang. Det tager under ét minut.
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={onLogin}
+          style={({ pressed }) => [
+            styles.loginTextAction,
+            pressed ? styles.loginTextActionPressed : null
+          ]}
+        >
+          <Text style={styles.loginText}>
+            Har du allerede en profil? <Text style={styles.loginTextEmphasis}>Log ind</Text>
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 function LoginScreen({
+  mode,
   email,
   message,
   devMagicLink,
   isLoading,
+  onBack,
   onEmailChange,
   onRequestLink,
   onOpenDevLink
 }: {
+  mode: Exclude<UnauthenticatedStep, "welcome">;
   email: string;
   message: string | null;
   devMagicLink: string | null;
   isLoading: boolean;
+  onBack: () => void;
   onEmailChange: (value: string) => void;
   onRequestLink: () => void;
   onOpenDevLink: (url: string) => void;
 }) {
+  const isCreateMode = mode === "create";
+
   return (
     <View style={styles.stack}>
-      <SectionHeader
-        title="Matriva"
-        subtitle="Log ind med din email. Vi sender et sikkert loginlink, som virker kort tid."
-      />
+      <View style={styles.emailHeader}>
+        <SecondaryButton label="Tilbage" disabled={isLoading} onPress={onBack} />
+        <SectionHeader
+          title={isCreateMode ? "Opret din Matriva-profil" : "Log ind på Matriva"}
+          subtitle={
+            isCreateMode
+              ? "Indtast din e-mail. Vi sender dig et sikkert link – ingen adgangskode nødvendig."
+              : "Indtast den e-mail, du brugte, da du oprettede din profil."
+          }
+        />
+      </View>
       <Card>
         <View style={styles.formSection}>
           <Text style={styles.label}>Email</Text>
@@ -990,7 +1066,7 @@ function LoginScreen({
           />
         </View>
         <PrimaryButton
-          label="Send loginlink"
+          label={isCreateMode ? "Send mig linket" : "Send loginlink"}
           loading={isLoading}
           disabled={isLoading}
           onPress={onRequestLink}
@@ -1039,6 +1115,31 @@ function ProfileOnboardingScreen({
           onPress={onSave}
         />
       </Card>
+    </View>
+  );
+}
+
+function BootstrapRetryScreen({
+  isLoading,
+  onRetry
+}: {
+  isLoading: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <View style={styles.stack}>
+      <SectionHeader
+        title="Vi kunne ikke hente din appstatus"
+        subtitle={
+          "Din session er stadig gemt. Prøv igen, så henter Matriva den autoritative onboarding-state fra API'et."
+        }
+      />
+      <PrimaryButton
+        label="Prøv igen"
+        loading={isLoading}
+        disabled={isLoading}
+        onPress={onRetry}
+      />
     </View>
   );
 }
@@ -1171,6 +1272,8 @@ export default function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>("restoring");
   const [session, setSession] = useState<SessionTokens | null>(null);
   const [bootstrap, setBootstrap] = useState<AppBootstrapResponse | null>(null);
+  const [unauthenticatedStep, setUnauthenticatedStep] =
+    useState<UnauthenticatedStep>("welcome");
   const [loginEmail, setLoginEmail] = useState("");
   const [loginMessage, setLoginMessage] = useState<string | null>(null);
   const [devMagicLink, setDevMagicLink] = useState<string | null>(null);
@@ -1202,6 +1305,8 @@ export default function App() {
     consumedMagicLinkTokensRef.current.clear();
     setSession(null);
     setBootstrap(null);
+    setUnauthenticatedStep("welcome");
+    setLoginEmail("");
     setLoginMessage(null);
     setDevMagicLink(null);
     setProfileName("");
@@ -1244,17 +1349,19 @@ export default function App() {
     setError(null);
 
     try {
-      const [bootstrapResponse, housesResponse] = await Promise.all([
-        apiClient.getAppBootstrap(),
-        apiClient.listHouses()
-      ]);
+      const bootstrapResponse = await apiClient.getAppBootstrap();
       setBootstrap(bootstrapResponse);
       setProfileName(bootstrapResponse.profile.displayName ?? "");
-      setHouses(housesResponse.houses);
-      const nextHouse = bootstrapResponse.primaryHouse ?? housesResponse.houses[0] ?? null;
+      setHouses(bootstrapResponse.houses);
+      const nextHouse =
+        bootstrapResponse.houses.find(
+          (house) => house.id === bootstrapResponse.activeHouseId
+        ) ??
+        bootstrapResponse.houses[0] ??
+        null;
       setSelectedHouseId(nextHouse?.id ?? null);
 
-      if (nextHouse) {
+      if (bootstrapResponse.onboarding.state === "complete" && nextHouse) {
         await loadTasks(nextHouse.id);
       } else {
         setTasks([]);
@@ -1379,7 +1486,25 @@ export default function App() {
     }
   }
 
+  function openUnauthenticatedMode(mode: Exclude<UnauthenticatedStep, "welcome">) {
+    setUnauthenticatedStep(mode);
+    setLoginMessage(null);
+    setDevMagicLink(null);
+    setError(null);
+  }
+
+  function returnToWelcome() {
+    setUnauthenticatedStep("welcome");
+    setLoginMessage(null);
+    setDevMagicLink(null);
+    setError(null);
+  }
+
   async function requestLoginLink() {
+    if (loadingAction === "auth") {
+      return;
+    }
+
     const trimmedEmail = loginEmail.trim();
 
     if (!/^\S+@\S+\.\S+$/.test(trimmedEmail)) {
@@ -1463,7 +1588,6 @@ export default function App() {
       setSuggestions([]);
       setSelectedAddress(null);
       setHasAddressSearched(false);
-      await loadTasks(response.house.id);
       setActiveTab("dashboard");
     } catch (caughtError) {
       setError(userFacingError(caughtError));
@@ -1665,7 +1789,65 @@ export default function App() {
     );
   }
 
+  if (
+    authStatus === "restoring" ||
+    (authStatus === "authenticated" && loadingAction === "app" && !bootstrap)
+  ) {
+    return (
+      <SafeAreaView style={styles.screen}>
+        <StatusBar style="dark" />
+        <View style={styles.loadingState}>
+          <ActivityIndicator color={theme.primary} />
+          <Text style={styles.bodyText}>Henter Matriva...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   if (authStatus === "anonymous") {
+    return (
+      <SafeAreaView style={styles.screen}>
+        <StatusBar style="dark" />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.keyboardFrame}
+        >
+          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+            {error ? (
+              <Card>
+                <Text style={styles.errorTitle}>Der opstod et problem</Text>
+                <Text style={styles.errorText}>{error}</Text>
+              </Card>
+            ) : null}
+            {unauthenticatedStep === "welcome" ? (
+              <WelcomeScreen
+                onCreateProfile={() => openUnauthenticatedMode("create")}
+                onLogin={() => openUnauthenticatedMode("login")}
+              />
+            ) : (
+              <LoginScreen
+                mode={unauthenticatedStep}
+                email={loginEmail}
+                message={loginMessage}
+                devMagicLink={devMagicLink}
+                isLoading={loadingAction === "auth"}
+                onBack={returnToWelcome}
+                onEmailChange={(value) => {
+                  setLoginEmail(value);
+                  setLoginMessage(null);
+                  setError(null);
+                }}
+                onRequestLink={() => void requestLoginLink()}
+                onOpenDevLink={(url) => void consumeMagicLinkUrl(url)}
+              />
+            )}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
+  if (!bootstrap) {
     return (
       <SafeAreaView style={styles.screen}>
         <StatusBar style="dark" />
@@ -1676,25 +1858,16 @@ export default function App() {
               <Text style={styles.errorText}>{error}</Text>
             </Card>
           ) : null}
-          <LoginScreen
-            email={loginEmail}
-            message={loginMessage}
-            devMagicLink={devMagicLink}
-            isLoading={loadingAction === "auth"}
-            onEmailChange={(value) => {
-              setLoginEmail(value);
-              setLoginMessage(null);
-              setError(null);
-            }}
-            onRequestLink={() => void requestLoginLink()}
-            onOpenDevLink={(url) => void consumeMagicLinkUrl(url)}
+          <BootstrapRetryScreen
+            isLoading={loadingAction === "app"}
+            onRetry={() => void loadApp()}
           />
         </ScrollView>
       </SafeAreaView>
     );
   }
 
-  if (bootstrap?.onboardingState === "profile_required") {
+  if (bootstrap.onboarding.state === "profile_required") {
     return (
       <SafeAreaView style={styles.screen}>
         <StatusBar style="dark" />
@@ -1715,6 +1888,23 @@ export default function App() {
             }}
             onSave={() => void saveProfile()}
           />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  if (bootstrap.onboarding.state === "house_required") {
+    return (
+      <SafeAreaView style={styles.screen}>
+        <StatusBar style="dark" />
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          {error ? (
+            <Card>
+              <Text style={styles.errorTitle}>Der opstod et problem</Text>
+              <Text style={styles.errorText}>{error}</Text>
+            </Card>
+          ) : null}
+          <HouseOnboarding {...onboardingProps} />
         </ScrollView>
       </SafeAreaView>
     );
@@ -1786,6 +1976,9 @@ const styles = StyleSheet.create({
   appFrame: {
     flex: 1
   },
+  keyboardFrame: {
+    flex: 1
+  },
   content: {
     paddingBottom: 108,
     paddingHorizontal: 20,
@@ -1794,6 +1987,62 @@ const styles = StyleSheet.create({
   },
   stack: {
     rowGap: 16
+  },
+  welcomeStack: {
+    rowGap: 14
+  },
+  heroImage: {
+    borderRadius: 8,
+    width: "100%"
+  },
+  welcomeHeader: {
+    rowGap: 10
+  },
+  logoText: {
+    color: theme.primary,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0
+  },
+  welcomeTitle: {
+    color: theme.text,
+    fontSize: 32,
+    fontWeight: "800",
+    lineHeight: 38
+  },
+  welcomeBody: {
+    color: theme.muted,
+    fontSize: 16,
+    lineHeight: 23
+  },
+  welcomeActions: {
+    rowGap: 10
+  },
+  helperText: {
+    color: theme.subtle,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center"
+  },
+  loginTextAction: {
+    alignItems: "center",
+    paddingVertical: 8
+  },
+  loginTextActionPressed: {
+    opacity: 0.65
+  },
+  loginText: {
+    color: theme.muted,
+    fontSize: 15,
+    lineHeight: 21,
+    textAlign: "center"
+  },
+  loginTextEmphasis: {
+    color: theme.primary,
+    fontWeight: "800"
+  },
+  emailHeader: {
+    rowGap: 12
   },
   sectionHeader: {
     flex: 1,

@@ -142,6 +142,8 @@ const enrichment = await client.enrichHouseDraft({
 });
 ```
 
+`GET /v1/app-bootstrap` is the authenticated app-start contract. It returns the current user, profile, backend-computed `onboarding.state`, houses owned by the current user, `activeHouseId`, entitlements, cards, and `generatedAt`. The mobile app must route from this backend-returned state instead of deriving onboarding completion locally.
+
 `GET /v1/addresses/search` is the backend-owned address search contract. The mobile app must call the Matriva API, not DAWA/Dataforsyningen directly. The API currently uses DAWA/Dataforsyningen (`https://api.dataforsyningen.dk/adresser?q=`) as the address source and returns normalized `AddressSuggestion` objects with Matriva-owned `addr_<opaque>` suggestion IDs. Live BBR/Datafordeler lookup is not implemented yet.
 
 `POST /v1/house-drafts` is a development-only skeleton contract for validating the next onboarding step after a user selects a DAWA address. The request must send DAWA source references (`source`, `sourceAddressId`, optional `sourceAccessAddressId`, and `label`), not the request-local `addr_<opaque>` suggestion ID. The response returns a `house_draft_<opaque>` draft and skeleton backend-driven Home cards. It does not use a database, does not implement auth, and does not fetch BBR/Datafordeler data yet.
@@ -156,9 +158,9 @@ curl -X POST http://127.0.0.1:4000/v1/house-drafts/enrich \
   -d '{"houseDraftId":"house_draft_demo12345","selectedAddress":{"source":"DAWA","sourceAddressId":"dawa-address-id","sourceAccessAddressId":"dawa-access-address-id","label":"Rådhuspladsen 1, 1550 København V"}}'
 ```
 
-The mobile app currently shows a temporary onboarding preview for the first narrow product flow: search for an address, choose a DAWA-backed suggestion returned by Matriva API, create a skeleton house draft, and show the first backend-driven skeleton cards. It uses `@matriva/api-client`; the mobile app must not call DAWA/Dataforsyningen directly.
+The mobile app starts with welcome/login, restores or refreshes the SecureStore session, loads `/v1/app-bootstrap`, then routes to profile onboarding, first-house creation, or the normal tab app according to backend-owned onboarding state. First-house creation reuses the Matriva API address and house flow; the mobile app must not call DAWA/Dataforsyningen directly.
 
-This preview is not finished V1 product UI. Auth, database persistence, live BBR/Datafordeler enrichment, billing, push, and document upload are not implemented yet.
+Live BBR/Datafordeler enrichment, billing, push, and document upload are not implemented yet.
 
 If `EXPO_PUBLIC_MATRIVA_API_BASE_URL` is not set, the onboarding preview falls back to `http://127.0.0.1:4000` and shows that fallback in the app.
 

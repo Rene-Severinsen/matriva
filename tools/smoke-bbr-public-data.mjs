@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 
-import { buildHousePublicDataSummary } from "../packages/shared/dist/index.js";
+import {
+  buildHousePublicDataProfile,
+  buildHousePublicDataSummary
+} from "../packages/shared/dist/index.js";
 import {
   lookupCode,
   normalizeExternalCode
@@ -52,9 +55,11 @@ const raw = {
   },
   addressBuilding: { id_lokalId: "4600cb6a-4f3c-4cb2-872a-3ecb746cf866" },
   ground: {
-    id_lokalId: "90a31dae-fa35-43ee-9fc5-462029630500",
-    grundSamletFastEjendom: {
-      nodes: [{ bfeNummer: 5537536 }]
+      id_lokalId: "90a31dae-fa35-43ee-9fc5-462029630500",
+      gru009Vandforsyning: 1,
+      gru010Afloebsforhold: 10,
+      grundSamletFastEjendom: {
+      nodes: [{ bfeNummer: 5537536, kommunekode: "0840", vurderingsejendomsnummer: null }]
     }
   },
   buildings: [
@@ -64,9 +69,14 @@ const raw = {
       status: 6,
       byg021BygningensAnvendelse: 120,
       byg026Opfoerelsesaar: 1970,
+      byg032YdervaeggensMateriale: 1,
+      byg033Tagdaekningsmateriale: 5,
+      byg034SupplerendeYdervaeggensMateriale: 1,
       byg038SamletBygningsareal: 160,
       byg039BygningensSamledeBoligAreal: 160,
       byg041BebyggetAreal: 80,
+      byg046SamletArealAfLukkedeOverdaekningerPaaBygningen: 6,
+      byg047ArealAfAffaldsrumITerraenniveau: 2,
       byg056Varmeinstallation: 1,
       byg057Opvarmningsmiddel: null,
       byg058SupplerendeVarme: 2,
@@ -77,9 +87,17 @@ const raw = {
     {
       id_lokalId: "garage",
       byg007Bygningsnummer: 2,
-      status: 6,
+      status: 10,
       byg021BygningensAnvendelse: 910,
+      byg026Opfoerelsesaar: 1000,
       byg038SamletBygningsareal: 33
+    },
+    {
+      id_lokalId: "shed",
+      byg007Bygningsnummer: 3,
+      status: 6,
+      byg021BygningensAnvendelse: 930,
+      byg038SamletBygningsareal: 12
     },
     {
       id_lokalId: "projected",
@@ -95,12 +113,18 @@ const raw = {
         id_lokalId: "unit-1",
         status: 6,
         enh020EnhedensAnvendelse: 120,
+        enh023Boligtype: 1,
         enh026EnhedensSamledeAreal: 240,
         enh027ArealTilBeboelse: 160,
         enh028ArealTilErhverv: null,
+        enh030KildeTilEnhedensArealer: 1,
         enh031AntalVaerelser: 6,
+        enh032Toiletforhold: "T",
+        enh033Badeforhold: "V",
+        enh034Koekkenforhold: "E",
         enh065AntalVandskyllendeToiletter: 2,
-        enh066AntalBadevaerelser: 1
+        enh066AntalBadevaerelser: 1,
+        enh071AdresseFunktion: 0
       },
       {
         id_lokalId: "unit-2",
@@ -111,6 +135,7 @@ const raw = {
       }
     ],
     garage: [],
+    shed: [],
     projected: []
   },
   floorsByBuildingId: {
@@ -130,6 +155,7 @@ const raw = {
       }
     ],
     garage: [],
+    shed: [],
     projected: []
   },
   partialErrors: []
@@ -137,6 +163,36 @@ const raw = {
 
 assert.equal(lookupCode("buildingUse", 120)?.label, "Fritliggende enfamiliehus");
 assert.equal(lookupCode("buildingUse", 999)?.known, false);
+assert.equal(lookupCode("lifecycle", 10)?.label, "Fejlregistreret");
+assert.equal(lookupCode("lifecycle", 10)?.known, true);
+assert.equal(
+  lookupCode("outerWallMaterial", 1)?.label,
+  "Mursten (tegl, kalksten, cementsten)"
+);
+assert.equal(
+  lookupCode("roofMaterial", 5)?.label,
+  "Fibercement, herunder asbest"
+);
+assert.equal(
+  lookupCode("unitHousingType", 1)?.label,
+  "Egentlig beboelseslejlighed"
+);
+assert.equal(lookupCode("unitAreaSource", 1)?.label, "Oplyst af ejer");
+assert.equal(
+  lookupCode("unitToilet", "T")?.label,
+  "Vandskyllende toilet i enheden"
+);
+assert.equal(lookupCode("unitBath", "V")?.label, "Badeværelse i enheden");
+assert.equal(lookupCode("unitKitchen", "E")?.label, "Eget køkken med afløb");
+assert.equal(lookupCode("unitAddressFunction", 0)?.label, "Enhedens adresse");
+assert.equal(
+  lookupCode("groundWaterSupply", 1)?.label,
+  "Alment vandforsyningsanlæg"
+);
+assert.equal(
+  lookupCode("groundSewer", 10)?.label,
+  "Fælleskloakeret: spildevand + tag- og overfladevand"
+);
 assert.equal(normalizeExternalCode(5537536), "5537536");
 
 const mapped = mapPublicData(target, raw);
@@ -146,13 +202,38 @@ const basement = primary.floors.find(
 );
 
 assert.equal(mapped.property?.bfeNumber, "5537536");
+assert.equal(mapped.property?.municipalityCode, "0840");
+assert.equal(mapped.ground?.waterSupply?.known, true);
+assert.equal(mapped.ground?.sewer?.known, true);
 assert.equal(mapped.selection.primaryBuildingStatus, "automatic_address_relation");
 assert.equal(mapped.selection.primaryUnitStatus, "user_confirmation_required");
 assert.equal(mapped.status, "ambiguous");
 assert.equal(primary.areas.totalBuildingAreaM2, 160);
+assert.equal(primary.areas.coveredAreaM2, 6);
+assert.equal(primary.materials.outerWall?.code, "1");
+assert.equal(primary.materials.outerWall?.known, true);
+assert.equal(primary.materials.roof?.code, "5");
+assert.equal(primary.materials.roof?.known, true);
+assert.equal(mapped.buildings[1].lifecycle.code, "10");
+assert.equal(mapped.buildings[1].lifecycle.known, true);
+assert.equal(mapped.buildings[1].lifecycle.label, "Fejlregistreret");
+assert.equal(mapped.buildings[1].inclusion.exclusionReason, "non_constructed_lifecycle");
+assert.equal(mapped.buildings[1].availability.heating, "registered_empty");
+assert.equal(mapped.buildings[1].availability.materials, "registered_empty");
+assert.equal(mapped.buildings[1].availability.coveredArea, "registered_empty");
 assert.equal(primary.units[0].areas.totalAreaM2, 240);
 assert.equal(primary.units[0].areas.residentialAreaM2, 160);
 assert.equal(primary.units[0].areas.commercialAreaM2, null);
+assert.equal(primary.units[0].housingType?.known, true);
+assert.equal(primary.units[0].areaSource?.known, true);
+assert.equal(primary.units[0].facilities.toiletType?.known, true);
+assert.equal(primary.units[0].facilities.bathType?.known, true);
+assert.equal(primary.units[0].facilities.kitchenType?.known, true);
+assert.equal(primary.units[0].addressFunction?.known, true);
+assert.equal(mapped.parcels[0].ownerDistrictId, null);
+assert.equal(mapped.parcels[0].municipalityId, null);
+assert.equal(mapped.parcels[0].availability?.ownerDistrict, "source_unavailable");
+assert.equal(mapped.parcels[0].availability?.municipality, "source_unavailable");
 assert.equal(basement?.basementAreaM2, 80);
 assert.equal(basement?.legalResidentialBasementAreaM2, 0);
 assert.equal(primary.heating.sourceApplicability, "not_applicable");
@@ -175,8 +256,20 @@ optionalFieldRaw.unitsByBuildingId["4600cb6a-4f3c-4cb2-872a-3ecb746cf866"] = [
 ];
 const optionalFieldMapped = mapPublicData(target, optionalFieldRaw);
 const summary = buildHousePublicDataSummary(target.id, optionalFieldMapped);
+const profile = buildHousePublicDataProfile(target.id, optionalFieldMapped);
+const rawProfile = buildHousePublicDataProfile(target.id, mapped);
 
 assert.equal(summary.contract, "house_public_data_summary.v1");
+assert.equal(profile.contract, "house_public_data_profile.v1");
+assert.equal(
+  profile.sections.some((section) => section.key === "sourceAndQuality"),
+  true
+);
+assert.equal(
+  JSON.stringify(rawProfile).includes('"value":1000'),
+  false,
+  "Technical construction year 1000 must not be presented in product profile."
+);
 assert.equal(summary.status, "available");
 assert.equal(summary.sourceLabel, "Registreret i BBR");
 assert.equal(summary.primary.title, "Fritliggende enfamiliehus");
@@ -199,7 +292,7 @@ assert.equal(
   false
 );
 assert.equal(summary.existingOtherBuildingCount, 1);
-assert.equal(summary.otherBuildings[0].title, "Garage");
+assert.equal(summary.otherBuildings[0].title, "Udhus");
 assert.equal(summary.projectedBuildingCount, 1);
 assert.equal(optionalFieldMapped.status, "success");
 assert.equal(

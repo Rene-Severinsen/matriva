@@ -27,6 +27,8 @@ import {
   type CreateMaintenanceTaskRequest,
   type CurrentUser,
   type HouseId,
+  type HousePublicDataProfileFact,
+  type HousePublicDataProfileV1,
   type HousePublicDataSummary,
   type HousePublicDataSummaryField,
   type HousePublicDataSummaryValue,
@@ -454,11 +456,13 @@ function HouseStatusCard({
 
 function PublicDataSummaryPanel({
   summary,
+  profile,
   isRefreshing,
   refreshMessage,
   onRefresh
 }: {
   summary: HousePublicDataSummary | null;
+  profile: HousePublicDataProfileV1 | null;
   isRefreshing: boolean;
   refreshMessage: PublicDataRefreshMessage | null;
   onRefresh: () => void;
@@ -516,6 +520,53 @@ function PublicDataSummaryPanel({
             {refreshMessage.text}
           </Text>
         ) : null}
+      </Card>
+    );
+  }
+
+  if (profile) {
+    return (
+      <Card>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.taskTitleGroup}>
+            <Text style={styles.cardTitle}>{profile.title}</Text>
+            {profile.subtitle ? (
+              <Text style={styles.metaText}>{profile.subtitle}</Text>
+            ) : null}
+            <Text style={styles.metaText}>
+              {profile.sourceLabel}
+              {profile.fetchedAt ? ` · ${new Date(profile.fetchedAt).toLocaleDateString("da-DK")}` : ""}
+            </Text>
+          </View>
+          {profile.status === "partial" || profile.status === "ambiguous" ? (
+            <Pill tone="warning">
+              {profile.status === "ambiguous" ? "Kræver afklaring" : "Delvist opslag"}
+            </Pill>
+          ) : null}
+        </View>
+
+        <ProfileFactGrid facts={profile.topFacts} />
+
+        <View style={styles.summaryActions}>
+          <SecondaryButton
+            label={refreshButtonLabel}
+            disabled={isRefreshing}
+            onPress={onRefresh}
+          />
+        </View>
+        {refreshMessage ? (
+          <Text style={[styles.refreshMessageText, refreshMessageStyle]}>
+            {refreshMessage.text}
+          </Text>
+        ) : null}
+
+        {profile.sections.map((section, index) => (
+          <ProfileSection
+            key={section.key}
+            section={section}
+            defaultExpanded={index < 2}
+          />
+        ))}
       </Card>
     );
   }
@@ -713,6 +764,128 @@ const publicDataFieldLabels: Record<HousePublicDataSummaryField, string> = {
 
 function formatPublicDataValue(item: HousePublicDataSummaryValue) {
   return item.unit === "m2" ? `${item.value} m²` : `${item.value}`;
+}
+
+function formatProfileFact(fact: HousePublicDataProfileFact) {
+  if (fact.availability === "not_relevant") {
+    return null;
+  }
+
+  if (fact.value !== null && fact.value !== undefined) {
+    return fact.unit === "m2" ? `${fact.value} m²` : `${fact.value}`;
+  }
+
+  if (fact.availability === "source_unavailable") {
+    return "Ikke tilgængeligt fra datakilden";
+  }
+
+  if (fact.availability === "fetch_failed") {
+    return "Kunne ikke hentes ved seneste opdatering";
+  }
+
+  return "Ikke registreret i BBR";
+}
+
+function visibleProfileFacts(facts: HousePublicDataProfileFact[]) {
+  return facts.filter((fact) => fact.availability !== "not_relevant");
+}
+
+function ProfileFactList({ facts }: { facts: HousePublicDataProfileFact[] }) {
+  const visibleFacts = visibleProfileFacts(facts);
+
+  if (visibleFacts.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.infoList}>
+      {visibleFacts.map((fact) => {
+        const value = formatProfileFact(fact);
+
+        return value ? (
+          <InfoRow key={fact.key} label={fact.label} value={value} />
+        ) : null;
+      })}
+    </View>
+  );
+}
+
+function ProfileFactGrid({ facts }: { facts: HousePublicDataProfileFact[] }) {
+  const visibleFacts = visibleProfileFacts(facts).filter(
+    (fact) => fact.availability === "value"
+  );
+
+  if (visibleFacts.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.profileFactGrid}>
+      {visibleFacts.slice(0, 6).map((fact) => (
+        <View key={fact.key} style={styles.profileFactCard}>
+          <Text style={styles.profileFactIcon}>⌂</Text>
+          <Text style={styles.profileFactLabel}>{fact.label}</Text>
+          <Text style={styles.profileFactValue}>{formatProfileFact(fact)}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function ProfileSection({
+  section,
+  defaultExpanded = false
+}: {
+  section: HousePublicDataProfileV1["sections"][number];
+  defaultExpanded?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const visibleFacts = visibleProfileFacts(section.facts);
+  const buildingCount = section.buildings?.length ?? 0;
+
+  if (visibleFacts.length === 0 && buildingCount === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.profileSection}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        onPress={() => setExpanded((current) => !current)}
+        style={({ pressed }) => [
+          styles.profileSectionHeader,
+          pressed ? styles.profileSectionHeaderPressed : null
+        ]}
+      >
+        <Text style={styles.detailTitle}>{section.title}</Text>
+        <Text style={styles.profileSectionIcon}>{expanded ? "−" : "+"}</Text>
+      </Pressable>
+      {expanded ? (
+        <View style={styles.profileSectionBody}>
+          <ProfileFactList facts={section.facts} />
+          {section.buildings?.map((building) => (
+            <View key={building.bbrBuildingId} style={styles.publicBuildingRow}>
+              <Text style={styles.taskRowTitle}>{building.title}</Text>
+              <ProfileFactList facts={building.facts} />
+              {building.units.map((unit) => (
+                <View key={unit.bbrUnitId} style={styles.profileNestedBlock}>
+                  <Text style={styles.detailTitle}>{unit.title}</Text>
+                  <ProfileFactList facts={unit.facts} />
+                </View>
+              ))}
+              {building.floors.map((floor) => (
+                <View key={floor.bbrFloorId} style={styles.profileNestedBlock}>
+                  <Text style={styles.detailTitle}>{floor.title}</Text>
+                  <ProfileFactList facts={floor.facts} />
+                </View>
+              ))}
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 function TaskRow({
@@ -915,6 +1088,7 @@ function DashboardScreen({
 function HouseScreen({
   house,
   publicDataSummary,
+  publicDataProfile,
   tasks,
   onboarding,
   isRefreshingPublicData,
@@ -923,6 +1097,7 @@ function HouseScreen({
 }: {
   house: SavedHouse | null;
   publicDataSummary: HousePublicDataSummary | null;
+  publicDataProfile: HousePublicDataProfileV1 | null;
   tasks: MaintenanceTask[];
   onboarding: React.ComponentProps<typeof HouseOnboarding>;
   isRefreshingPublicData: boolean;
@@ -946,6 +1121,7 @@ function HouseScreen({
 
       <PublicDataSummaryPanel
         summary={publicDataSummary}
+        profile={publicDataProfile}
         isRefreshing={isRefreshingPublicData}
         refreshMessage={publicDataRefreshMessage}
         onRefresh={onRefreshPublicData}
@@ -1476,6 +1652,8 @@ export default function App() {
   const [publicDataSummaries, setPublicDataSummaries] = useState<
     HousePublicDataSummary[]
   >([]);
+  const [publicDataProfile, setPublicDataProfile] =
+    useState<HousePublicDataProfileV1 | null>(null);
   const [selectedHouseId, setSelectedHouseId] = useState<HouseId | null>(null);
   const [tasks, setTasks] = useState<MaintenanceTask[]>([]);
   const [query, setQuery] = useState("");
@@ -1514,6 +1692,7 @@ export default function App() {
     setMoreView("menu");
     setHouses([]);
     setPublicDataSummaries([]);
+    setPublicDataProfile(null);
     setSelectedHouseId(null);
     setTasks([]);
     setQuery("");
@@ -1558,6 +1737,7 @@ export default function App() {
       setProfileName(bootstrapResponse.profile.displayName ?? "");
       setHouses(bootstrapResponse.houses);
       setPublicDataSummaries(bootstrapResponse.publicDataSummaries);
+      setPublicDataProfile(null);
       const nextHouse =
         bootstrapResponse.houses.find(
           (house) => house.id === bootstrapResponse.activeHouseId
@@ -1575,12 +1755,40 @@ export default function App() {
       setError(userFacingError(caughtError));
       setTasks([]);
       setPublicDataSummaries([]);
+      setPublicDataProfile(null);
     } finally {
       if (options?.showGlobalLoading !== false) {
         setLoadingAction(null);
       }
     }
   }, [apiClient, loadTasks]);
+
+  useEffect(() => {
+    if (!selectedHouse || authStatus !== "authenticated") {
+      setPublicDataProfile(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const publicData = await apiClient.getHousePublicData(selectedHouse.id);
+
+        if (!cancelled) {
+          setPublicDataProfile(publicData.profile);
+        }
+      } catch {
+        if (!cancelled) {
+          setPublicDataProfile(null);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient, authStatus, selectedHouse]);
 
   const consumeMagicLinkUrl = useCallback(
     async (url: string | null) => {
@@ -1895,6 +2103,7 @@ export default function App() {
 
     try {
       const publicData = await apiClient.refreshHousePublicData(selectedHouse.id);
+      setPublicDataProfile(publicData.profile);
       await loadApp({ showGlobalLoading: false });
 
       if (
@@ -1980,6 +2189,7 @@ export default function App() {
         <HouseScreen
           house={selectedHouse}
           publicDataSummary={selectedPublicDataSummary}
+          publicDataProfile={publicDataProfile}
           tasks={tasks}
           onboarding={onboardingProps}
           isRefreshingPublicData={loadingAction === "publicData"}
@@ -2743,6 +2953,69 @@ const styles = StyleSheet.create({
     fontSize: 19,
     fontWeight: "900",
     lineHeight: 25
+  },
+  profileFactGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  profileFactCard: {
+    backgroundColor: theme.primaryFaint,
+    borderColor: theme.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 104,
+    padding: 12,
+    rowGap: 5,
+    width: "48%"
+  },
+  profileFactIcon: {
+    color: theme.primary,
+    fontSize: 17,
+    fontWeight: "900"
+  },
+  profileFactLabel: {
+    color: theme.muted,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 16
+  },
+  profileFactValue: {
+    color: theme.text,
+    fontSize: 17,
+    fontWeight: "900",
+    lineHeight: 22
+  },
+  profileSection: {
+    borderTopColor: theme.border,
+    borderTopWidth: 1,
+    paddingTop: 6,
+    rowGap: 8
+  },
+  profileSectionHeader: {
+    alignItems: "center",
+    borderRadius: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 42,
+    paddingHorizontal: 4
+  },
+  profileSectionHeaderPressed: {
+    backgroundColor: theme.primaryFaint
+  },
+  profileSectionIcon: {
+    color: theme.primary,
+    fontSize: 20,
+    fontWeight: "900"
+  },
+  profileSectionBody: {
+    rowGap: 10
+  },
+  profileNestedBlock: {
+    borderTopColor: theme.border,
+    borderTopWidth: 1,
+    paddingTop: 10,
+    rowGap: 8
   },
   detailGroup: {
     borderTopColor: theme.border,

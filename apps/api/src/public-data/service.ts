@@ -1,7 +1,9 @@
 import {
+  buildHousePublicDataProfile,
   buildHousePublicDataSummary,
   type HouseId,
   type HousePublicDataResponseV1,
+  type HousePublicDataWithProfileResponseV1,
   type SavedHouse
 } from "@matriva/shared";
 
@@ -73,6 +75,18 @@ export async function getHousePublicData(userId: string, houseId: string) {
   return getCurrentHousePublicData(userId, houseId);
 }
 
+export async function getHousePublicDataProfile(
+  userId: string,
+  houseId: HouseId
+): Promise<HousePublicDataWithProfileResponseV1> {
+  const publicData = await getHousePublicData(userId, houseId);
+
+  return {
+    ...publicData,
+    profile: buildHousePublicDataProfile(houseId, publicData)
+  };
+}
+
 export async function getHousePublicDataSummary(userId: string, houseId: HouseId) {
   const publicData = await getHousePublicData(userId, houseId);
 
@@ -136,6 +150,19 @@ export async function refreshHousePublicData(
   inProcessRefreshes.set(refreshKey, refresh);
 
   return refresh;
+}
+
+export async function refreshHousePublicDataProfile(
+  userId: string,
+  houseId: HouseId,
+  client = new DatafordelerClient()
+): Promise<HousePublicDataWithProfileResponseV1> {
+  const publicData = await refreshHousePublicData(userId, houseId, client);
+
+  return {
+    ...publicData,
+    profile: buildHousePublicDataProfile(houseId, publicData)
+  };
 }
 
 async function performHousePublicDataRefresh(

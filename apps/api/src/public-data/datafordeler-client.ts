@@ -47,6 +47,7 @@ const addressAndGroundQuery = `
               grundSamletFastEjendom {
                 id_lokalId
                 bfeNummer
+                kommunekode
                 vurderingsejendomsnummer
               }
             }
@@ -66,6 +67,9 @@ const buildingsQuery = `
         byg021BygningensAnvendelse
         byg026Opfoerelsesaar
         byg027OmTilbygningsaar
+        byg032YdervaeggensMateriale
+        byg033Tagdaekningsmateriale
+        byg034SupplerendeYdervaeggensMateriale
         byg038SamletBygningsareal
         byg039BygningensSamledeBoligAreal
         byg040BygningensSamledeErhvervsAreal
@@ -74,6 +78,8 @@ const buildingsQuery = `
         byg043ArealIndbyggetCarport
         byg044ArealIndbyggetUdhus
         byg045ArealIndbyggetUdestueEllerLign
+        byg046SamletArealAfLukkedeOverdaekningerPaaBygningen
+        byg047ArealAfAffaldsrumITerraenniveau
         byg054AntalEtager
         byg056Varmeinstallation
         byg057Opvarmningsmiddel
@@ -102,6 +108,7 @@ const unitsQuery = `
         enh031AntalVaerelser
         enh032Toiletforhold
         enh033Badeforhold
+        enh034Koekkenforhold
         enh066AntalBadevaerelser
         enh068FlexboligTilladelsesart
         enh071AdresseFunktion

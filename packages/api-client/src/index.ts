@@ -16,7 +16,7 @@ import {
   houseDraftOverviewPreviewResponseSchema,
   houseDraftResponseSchema,
   homeBootstrapResponseSchema,
-  housePublicDataResponseV1Schema,
+  housePublicDataWithProfileResponseV1Schema,
   type AddressSearchResponse,
   type AppBootstrapResponse,
   type AuthSessionResponse,
@@ -31,7 +31,7 @@ import {
   type HouseDraftOverviewPreviewResponse,
   type HouseDraftResponse,
   type HouseId,
-  type HousePublicDataResponseV1,
+  type HousePublicDataWithProfileResponseV1,
   type HomeBootstrapResponse,
   type LogoutResponse,
   type MaintenanceTaskResponse,
@@ -81,10 +81,10 @@ export type MatrivaApiClient = {
   getHouse: (houseId: HouseId) => Promise<SavedHouseResponse>;
   getHousePublicData: (
     houseId: HouseId
-  ) => Promise<HousePublicDataResponseV1>;
+  ) => Promise<HousePublicDataWithProfileResponseV1>;
   refreshHousePublicData: (
     houseId: HouseId
-  ) => Promise<HousePublicDataResponseV1>;
+  ) => Promise<HousePublicDataWithProfileResponseV1>;
   listMaintenanceTasks: (
     houseId: HouseId
   ) => Promise<MaintenanceTasksResponse>;
@@ -322,7 +322,7 @@ export function createMatrivaApiClient(
         { headers: authHeaders() }
       );
 
-      return housePublicDataResponseV1Schema.parse(
+      return housePublicDataWithProfileResponseV1Schema.parse(
         await parseApiResponse(response, "Could not load public house data.")
       );
     },
@@ -335,7 +335,7 @@ export function createMatrivaApiClient(
         }
       );
 
-      return housePublicDataResponseV1Schema.parse(
+      return housePublicDataWithProfileResponseV1Schema.parse(
         await parseApiResponse(response, "Could not refresh public house data.")
       );
     },

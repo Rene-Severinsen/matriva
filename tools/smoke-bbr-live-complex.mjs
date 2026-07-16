@@ -76,7 +76,7 @@ function bearer(accessToken) {
 }
 
 function startApi() {
-  return spawn("npm", ["run", "dev:api"], {
+  const child = spawn("npm", ["run", "dev:api"], {
     cwd: process.cwd(),
     detached: process.platform !== "win32",
     env: {
@@ -88,6 +88,11 @@ function startApi() {
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
+  child.stderrLog = "";
+  child.stderr.on("data", (chunk) => {
+    child.stderrLog += String(chunk);
+  });
+  return child;
 }
 
 function stopApi(child) {
@@ -198,6 +203,9 @@ async function verifyPersistence(pool, houseId) {
         is_current,
         raw_payload,
         normalized_payload,
+        bfe_number,
+        property_municipality_code,
+        assessment_property_number,
         provider_error_code,
         provider_error_message_sanitized
       from house_public_data_snapshots
@@ -212,17 +220,77 @@ async function verifyPersistence(pool, houseId) {
   assert(current.raw_payload);
   assert(current.normalized_payload);
   assertNoApiKeyInPayloads(snapshots.rows);
+  assert.equal(current.bfe_number, current.normalized_payload.property.bfeNumber);
+  assert.equal(
+    current.property_municipality_code,
+    current.normalized_payload.property.municipalityCode
+  );
+  assert.equal(
+    current.assessment_property_number,
+    current.normalized_payload.property.assessmentPropertyNumber
+  );
 
   const buildings = await pool.query(
-    "select id, snapshot_id, bbr_building_id from house_public_buildings where snapshot_id = $1",
+    `
+      select
+        id,
+        snapshot_id,
+        bbr_building_id,
+        use_code,
+        construction_year,
+        residential_area_m2,
+        total_building_area_m2,
+        footprint_area_m2,
+        outer_wall_code,
+        roof_code,
+        heating_installation_code,
+        heating_source_code,
+        supplementary_heating_code,
+        raw_normalized
+      from house_public_buildings
+      where snapshot_id = $1
+    `,
     [current.id]
   );
   const units = await pool.query(
-    "select id, snapshot_id, building_id, bbr_unit_id from house_public_units where snapshot_id = $1",
+    `
+      select
+        id,
+        snapshot_id,
+        building_id,
+        bbr_unit_id,
+        use_code,
+        housing_type_code,
+        area_source_code,
+        residential_area_m2,
+        total_area_m2,
+        room_count,
+        bathroom_count,
+        toilet_type_code,
+        bath_type_code,
+        address_function_code,
+        kitchen_type_code
+      from house_public_units
+      where snapshot_id = $1
+    `,
     [current.id]
   );
   const floors = await pool.query(
-    "select id, snapshot_id, building_id, bbr_floor_id from house_public_floors where snapshot_id = $1",
+    `
+      select
+        id,
+        snapshot_id,
+        building_id,
+        bbr_floor_id,
+        designation,
+        total_floor_area_m2,
+        utilised_attic_area_m2,
+        basement_area_m2,
+        legal_residential_basement_area_m2,
+        commercial_basement_area_m2
+      from house_public_floors
+      where snapshot_id = $1
+    `,
     [current.id]
   );
   assert.equal(buildings.rowCount, 9);
@@ -234,6 +302,83 @@ async function verifyPersistence(pool, houseId) {
   assert(floors.rows.every((floor) =>
     buildings.rows.some((building) => building.id === floor.building_id)
   ));
+  assert(buildings.rows.some((building) => building.footprint_area_m2 === 160));
+  assert(units.rows.some((unit) => unit.bathroom_count === 1));
+
+  const parcels = await pool.query(
+    `
+      select
+        cadastral_parcel_id,
+        cadastral_number,
+        owner_district_id,
+        municipality_id,
+        raw_normalized
+      from house_public_parcels
+      where snapshot_id = $1
+    `,
+    [current.id]
+  );
+  assert.equal(parcels.rowCount, current.normalized_payload.parcels.length);
+
+  const normalizedPrimaryBuilding = current.normalized_payload.buildings.find(
+    (building) =>
+      building.bbrBuildingId === current.normalized_payload.selection.primaryBuildingId
+  );
+  assert(normalizedPrimaryBuilding);
+  const primaryBuildingRow = buildings.rows.find(
+    (building) => building.bbr_building_id === normalizedPrimaryBuilding.bbrBuildingId
+  );
+  assert(primaryBuildingRow);
+  assert.equal(primaryBuildingRow.use_code, normalizedPrimaryBuilding.use?.code ?? null);
+  assert.equal(primaryBuildingRow.construction_year, normalizedPrimaryBuilding.constructionYear);
+  assert.equal(primaryBuildingRow.residential_area_m2, normalizedPrimaryBuilding.areas.residentialAreaM2);
+  assert.equal(primaryBuildingRow.total_building_area_m2, normalizedPrimaryBuilding.areas.totalBuildingAreaM2);
+  assert.equal(primaryBuildingRow.footprint_area_m2, normalizedPrimaryBuilding.areas.footprintAreaM2);
+  assert.equal(primaryBuildingRow.outer_wall_code, normalizedPrimaryBuilding.materials.outerWall?.code ?? null);
+  assert.equal(primaryBuildingRow.roof_code, normalizedPrimaryBuilding.materials.roof?.code ?? null);
+  assert.equal(primaryBuildingRow.heating_installation_code, normalizedPrimaryBuilding.heating.installation?.code ?? null);
+  assert.equal(primaryBuildingRow.heating_source_code, normalizedPrimaryBuilding.heating.source?.code ?? null);
+  assert.equal(primaryBuildingRow.supplementary_heating_code, normalizedPrimaryBuilding.heating.supplementary?.code ?? null);
+  assert.deepEqual(primaryBuildingRow.raw_normalized, normalizedPrimaryBuilding);
+
+  const normalizedPrimaryUnit = normalizedPrimaryBuilding.units.find(
+    (unit) => unit.bbrUnitId === current.normalized_payload.selection.primaryUnitId
+  );
+  assert(normalizedPrimaryUnit);
+  const primaryUnitRow = units.rows.find(
+    (unit) => unit.bbr_unit_id === normalizedPrimaryUnit.bbrUnitId
+  );
+  assert(primaryUnitRow);
+  assert.equal(primaryUnitRow.housing_type_code, normalizedPrimaryUnit.housingType?.code ?? null);
+  assert.equal(primaryUnitRow.area_source_code, normalizedPrimaryUnit.areaSource?.code ?? null);
+  assert.equal(primaryUnitRow.residential_area_m2, normalizedPrimaryUnit.areas.residentialAreaM2);
+  assert.equal(primaryUnitRow.total_area_m2, normalizedPrimaryUnit.areas.totalAreaM2);
+  assert.equal(primaryUnitRow.room_count, normalizedPrimaryUnit.roomCount);
+  assert.equal(primaryUnitRow.bathroom_count, normalizedPrimaryUnit.facilities.bathroomCount);
+  assert.equal(primaryUnitRow.toilet_type_code, normalizedPrimaryUnit.facilities.toiletType?.code ?? null);
+  assert.equal(primaryUnitRow.bath_type_code, normalizedPrimaryUnit.facilities.bathType?.code ?? null);
+  assert.equal(primaryUnitRow.kitchen_type_code, normalizedPrimaryUnit.facilities.kitchenType?.code ?? null);
+  assert.equal(primaryUnitRow.address_function_code, normalizedPrimaryUnit.addressFunction?.code ?? null);
+
+  const normalizedFloor = normalizedPrimaryBuilding.floors[0];
+  const floorRow = floors.rows.find(
+    (floor) => floor.bbr_floor_id === normalizedFloor.bbrFloorId
+  );
+  assert(floorRow);
+  assert.equal(floorRow.designation, normalizedFloor.designation);
+  assert.equal(floorRow.total_floor_area_m2, normalizedFloor.totalFloorAreaM2);
+  assert.equal(floorRow.utilised_attic_area_m2, normalizedFloor.utilisedAtticAreaM2);
+  assert.equal(floorRow.basement_area_m2, normalizedFloor.basementAreaM2);
+
+  const normalizedParcel = current.normalized_payload.parcels[0];
+  const parcelRow = parcels.rows.find(
+    (parcel) => parcel.cadastral_parcel_id === normalizedParcel.cadastralParcelId
+  );
+  assert(parcelRow);
+  assert.equal(parcelRow.cadastral_number, normalizedParcel.cadastralNumber);
+  assert.equal(parcelRow.owner_district_id, normalizedParcel.ownerDistrictId);
+  assert.equal(parcelRow.municipality_id, normalizedParcel.municipalityId);
+  assert.deepEqual(parcelRow.raw_normalized, normalizedParcel);
 
   await pool.query(
     `
@@ -321,6 +466,7 @@ async function verifyPersistence(pool, houseId) {
 
 function verifyPublicData(publicData) {
   assert.equal(publicData.contract, "house_public_data.v1");
+  assert.equal(publicData.profile.contract, "house_public_data_profile.v1");
   assert.equal(publicData.status, "success");
   assert.ok(publicData.status);
   assert.ok(publicData.source);
@@ -334,6 +480,7 @@ function verifyPublicData(publicData) {
   assert.ok(Array.isArray(publicData.warnings));
   assert.equal("raw_payload" in publicData, false);
   assert.equal("rawPayload" in publicData, false);
+  assert.equal("raw_payload" in publicData.profile, false);
 
   assert.equal(publicData.address.darAddressId, address.sourceAddressId);
   assert.equal(publicData.selection.primaryBuildingId, "4600cb6a-4f3c-4cb2-872a-3ecb746cf866");
@@ -343,6 +490,11 @@ function verifyPublicData(publicData) {
   assert.equal(publicData.property.bfeNumber, "5537536");
   assert.equal(publicData.buildings.length, 9);
   assert.equal(publicData.productBuildings.length, 6);
+  assert.equal(
+    publicData.profile.sections.some((section) => section.key === "projectedBuildings"),
+    true
+  );
+  assert.equal(publicData.profile.topFacts.some((fact) => fact.key === "heating"), true);
   assert.equal(publicData.buildings.filter((building) => building.lifecycle.code === "2").length, 3);
   assert.equal(publicData.productBuildings.some((building) => building.lifecycle.code === "2"), false);
 
@@ -443,6 +595,25 @@ try {
     method: "POST",
     headers: bearer(session.accessToken)
   });
+  if (refreshed.response.status !== 200) {
+    console.error(
+      JSON.stringify({
+        event: "smoke.bbr.live_complex_refresh_failed",
+        status: refreshed.response.status,
+        body: refreshed.body
+      })
+    );
+    if (child.stderrLog) {
+      console.error(
+        JSON.stringify({
+          event: "smoke.bbr.live_complex_api_stderr",
+          stderr: child.stderrLog
+            .replace(/apiKey=[^&\s]+/g, "apiKey=[redacted]")
+            .slice(-4000)
+        })
+      );
+    }
+  }
   assert.equal(refreshed.response.status, 200);
   const refreshSummary = verifyPublicData(refreshed.body);
 

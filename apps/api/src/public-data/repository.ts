@@ -151,11 +151,14 @@ export async function saveHousePublicDataSnapshot(
           raw_payload,
           raw_payload_hash,
           normalized_payload,
+          bfe_number,
+          property_municipality_code,
+          assessment_property_number,
           is_current
         )
         values (
           $1, $2, $3, 'datafordeler', 'bbr', $4, $5, $6, $7, $8, $9::jsonb,
-          $10, $11::jsonb, $12
+          $10, $11::jsonb, $12, $13, $14, $15
         )
       `,
       [
@@ -170,6 +173,9 @@ export async function saveHousePublicDataSnapshot(
         JSON.stringify(rawPayload),
         normalized.rawPayloadHash,
         JSON.stringify(normalized),
+        normalized.property?.bfeNumber ?? null,
+        normalized.property?.municipalityCode ?? null,
+        normalized.property?.assessmentPropertyNumber ?? null,
         publicDataStatusCanBecomeCurrent(normalized.status)
       ]
     );
@@ -217,11 +223,31 @@ export async function saveHousePublicDataSnapshot(
             lifecycle_code,
             use_code,
             construction_year,
+            remodel_or_extension_year,
             residential_area_m2,
             total_building_area_m2,
+            commercial_area_m2,
+            footprint_area_m2,
+            integrated_garage_m2,
+            integrated_carport_m2,
+            integrated_outbuilding_m2,
+            integrated_conservatory_m2,
+            covered_area_m2,
+            other_area_m2,
+            registered_floor_count,
+            outer_wall_code,
+            roof_code,
+            supplementary_outer_wall_code,
+            heating_installation_code,
+            heating_source_code,
+            supplementary_heating_code,
             raw_normalized
           )
-          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)
+          values (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+            $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+            $21, $22, $23, $24, $25, $26, $27, $28, $29, $30::jsonb
+          )
         `,
         [
           publicBuildingId,
@@ -235,8 +261,24 @@ export async function saveHousePublicDataSnapshot(
           building.lifecycle.code,
           building.use?.code ?? null,
           building.constructionYear,
+          building.remodelOrExtensionYear,
           building.areas.residentialAreaM2,
           building.areas.totalBuildingAreaM2,
+          building.areas.commercialAreaM2,
+          building.areas.footprintAreaM2,
+          building.areas.integratedGarageM2,
+          building.areas.integratedCarportM2,
+          building.areas.integratedOutbuildingM2,
+          building.areas.integratedConservatoryM2,
+          building.areas.coveredAreaM2,
+          building.areas.otherAreaM2,
+          building.registeredFloorCount,
+          building.materials.outerWall?.code ?? null,
+          building.materials.roof?.code ?? null,
+          building.materials.asbestos?.code ?? null,
+          building.heating.installation?.code ?? null,
+          building.heating.source?.code ?? null,
+          building.heating.supplementary?.code ?? null,
           JSON.stringify(building)
         ]
       );
@@ -253,12 +295,31 @@ export async function saveHousePublicDataSnapshot(
               bbr_floor_id,
               lifecycle_code,
               use_code,
+              housing_type_code,
               residential_area_m2,
               total_area_m2,
+              commercial_area_m2,
+              physical_residential_area_m2,
+              physical_commercial_area_m2,
+              area_source_code,
               room_count,
+              bathroom_count,
+              flush_toilet_count,
+              toilet_type_code,
+              bath_type_code,
+              kitchen_type_code,
+              flex_home_permission_code,
+              address_function_code,
+              registered_area_1_m2,
+              registered_area_2_m2,
+              registered_area_3_m2,
               raw_normalized
             )
-            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
+            values (
+              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+              $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+              $21, $22, $23, $24, $25, $26, $27::jsonb
+            )
           `,
           [
             createOpaqueId("pubunt"),
@@ -269,9 +330,24 @@ export async function saveHousePublicDataSnapshot(
             unit.floorId,
             unit.lifecycle.code,
             unit.use?.code ?? null,
+            unit.housingType?.code ?? null,
             unit.areas.residentialAreaM2,
             unit.areas.totalAreaM2,
+            unit.areas.commercialAreaM2,
+            unit.areas.physicalResidentialAreaM2,
+            unit.areas.physicalCommercialAreaM2,
+            unit.areaSource?.code ?? null,
             unit.roomCount,
+            unit.facilities.bathroomCount,
+            unit.facilities.flushToiletCount,
+            unit.facilities.toiletType?.code ?? null,
+            unit.facilities.bathType?.code ?? null,
+            unit.facilities.kitchenType?.code ?? null,
+            unit.flexHomePermission?.code ?? null,
+            unit.addressFunction?.code ?? null,
+            unit.registeredAreaBreakdown?.area1M2 ?? null,
+            unit.registeredAreaBreakdown?.area2M2 ?? null,
+            unit.registeredAreaBreakdown?.area3M2 ?? null,
             JSON.stringify(unit)
           ]
         );
@@ -289,11 +365,15 @@ export async function saveHousePublicDataSnapshot(
               lifecycle_code,
               designation,
               total_floor_area_m2,
+              utilised_attic_area_m2,
               basement_area_m2,
               legal_residential_basement_area_m2,
+              commercial_basement_area_m2,
+              floor_type_code,
+              access_area_m2,
               raw_normalized
             )
-            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
+            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb)
           `,
           [
             createOpaqueId("pubflr"),
@@ -304,8 +384,12 @@ export async function saveHousePublicDataSnapshot(
             floor.lifecycle.code,
             floor.designation,
             floor.totalFloorAreaM2,
+            floor.utilisedAtticAreaM2,
             floor.basementAreaM2,
             floor.legalResidentialBasementAreaM2,
+            floor.commercialBasementAreaM2,
+            floor.type?.code ?? null,
+            floor.accessAreaM2,
             JSON.stringify(floor)
           ]
         );

@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { getDatafordelerRuntimeConfig } from "../apps/api/dist/config/datafordeler.js";
 import { DatafordelerClient } from "../apps/api/dist/public-data/datafordeler-client.js";
 import { mapPublicData } from "../apps/api/dist/public-data/mapper.js";
+import { buildHousePublicDataProfile } from "../packages/shared/dist/index.js";
 
 function loadLocalEnv() {
   const envPath = resolve(".env");
@@ -88,6 +89,7 @@ try {
 }
 
 const mapped = mapPublicData(target, raw);
+const profile = buildHousePublicDataProfile(target.id, mapped);
 const addressBuilding = mapped.buildings.find(
   (building) => building.bbrBuildingId === mapped.selection.primaryBuildingId
 );
@@ -96,15 +98,65 @@ const primaryUnit = addressBuilding?.units.find(
 );
 
 assert.equal(mapped.contract, "house_public_data.v1");
+assert.equal(profile.contract, "house_public_data_profile.v1");
 assert.equal(mapped.address?.darAddressId, target.darAddressId);
 assert.equal(mapped.selection.primaryBuildingStatus, "automatic_address_relation");
 assert.equal(mapped.property?.bfeNumber, "2522814");
+assert.equal(mapped.property?.municipalityCode, "0370");
+assert.equal(mapped.buildings.length, 2);
+assert.equal(mapped.productBuildings.length, 1);
+assert.equal(addressBuilding?.floors.length, 2);
+assert.equal(mapped.parcels.length, 1);
 assert.ok(addressBuilding, "Live BBR smoke requires an address building.");
 assert.equal(addressBuilding?.use?.code, "120");
+assert.equal(addressBuilding?.use?.label, "Fritliggende enfamiliehus");
+assert.equal(addressBuilding?.constructionYear, 1930);
+assert.equal(addressBuilding?.materials.outerWall?.code, "1");
+assert.equal(
+  addressBuilding?.materials.outerWall?.label,
+  "Mursten (tegl, kalksten, cementsten)"
+);
+assert.equal(addressBuilding?.materials.roof?.code, "5");
+assert.equal(addressBuilding?.materials.roof?.label, "Fibercement, herunder asbest");
 assert.equal(primaryUnit?.areas.residentialAreaM2, 122);
+assert.equal(primaryUnit?.roomCount, 4);
+assert.equal(primaryUnit?.facilities.bathroomCount, 1);
+assert.equal(primaryUnit?.housingType?.known, true);
+assert.equal(primaryUnit?.areaSource?.known, true);
+assert.equal(primaryUnit?.facilities.toiletType?.known, true);
+assert.equal(primaryUnit?.facilities.bathType?.known, true);
+assert.equal(primaryUnit?.facilities.kitchenType?.known, true);
 assert.equal(addressBuilding?.heating.installation?.code, "2");
+assert.equal(
+  addressBuilding?.heating.installation?.label,
+  "Centralvarme med én fyringsenhed"
+);
 assert.equal(addressBuilding?.heating.source?.code, "7");
+assert.equal(addressBuilding?.heating.source?.label, "Naturgas");
 assert.equal(addressBuilding?.heating.supplementary?.code, "90");
+assert.equal(addressBuilding?.heating.supplementary?.label, "Ingen supplerende varme");
+assert.equal(mapped.ground?.waterSupply?.known, true);
+assert.equal(mapped.ground?.sewer?.known, true);
+assert.equal(mapped.parcels[0]?.cadastralNumber, "13q");
+assert.equal(mapped.parcels[0]?.availability?.ownerDistrict, "source_unavailable");
+assert.equal(mapped.parcels[0]?.availability?.municipality, "source_unavailable");
+
+const nonConstructedBuilding = mapped.buildings.find(
+  (building) => building.lifecycle.code === "10"
+);
+assert(nonConstructedBuilding, "Ringstedgade smoke requires lifecycle 10 building.");
+assert.equal(nonConstructedBuilding.lifecycle.label, "Fejlregistreret");
+assert.equal(nonConstructedBuilding.lifecycle.known, true);
+assert.equal(nonConstructedBuilding.constructionYear, 1000);
+assert.equal(nonConstructedBuilding.inclusion.exclusionReason, "non_constructed_lifecycle");
+assert.equal(nonConstructedBuilding.availability.heating, "registered_empty");
+assert.equal(nonConstructedBuilding.availability.materials, "registered_empty");
+assert.equal(nonConstructedBuilding.availability.coveredArea, "registered_empty");
+assert.equal(
+  JSON.stringify(profile).includes('"value":1000'),
+  false,
+  "Profile must not present construction year 1000 as a normal year."
+);
 
 console.log(
   JSON.stringify({
@@ -118,6 +170,7 @@ console.log(
     heatingInstallation: addressBuilding?.heating.installation?.code,
     heatingSource: addressBuilding?.heating.source?.code,
     supplementaryHeating: addressBuilding?.heating.supplementary?.code,
+    profileContract: profile.contract,
     endpoint: sanitizedEndpointConfig()
   })
 );

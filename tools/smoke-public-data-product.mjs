@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 import { createMatrivaApiClient } from "../packages/api-client/dist/index.js";
-import { buildHousePublicDataSummary } from "../packages/shared/dist/index.js";
+import {
+  buildHousePublicDataProfile,
+  buildHousePublicDataSummary
+} from "../packages/shared/dist/index.js";
 import { mapPublicData } from "../apps/api/dist/public-data/mapper.js";
 
 const target = {
@@ -130,7 +133,12 @@ async function assertApiClientContract() {
       }
 
       if (url.endsWith(`/v1/houses/${target.id}/public-data/refresh`)) {
-        return response(mapPublicData(target, raw));
+        const publicData = mapPublicData(target, raw);
+
+        return response({
+          ...publicData,
+          profile: buildHousePublicDataProfile(target.id, publicData)
+        });
       }
 
       if (url.endsWith("/v1/app-bootstrap")) {
@@ -212,12 +220,19 @@ async function assertApiClientContract() {
 async function assertProductSemantics() {
   const mapped = mapPublicData(target, raw);
   const summary = buildHousePublicDataSummary(target.id, mapped);
+  const profile = buildHousePublicDataProfile(target.id, mapped);
   const basement = summary.primary.values.find(
     (value) => value.key === "basement_area_m2"
   );
 
   assert.equal(mapped.status, "success");
   assert.equal(summary.status, "available");
+  assert.equal(profile.contract, "house_public_data_profile.v1");
+  assert.equal(profile.topFacts.some((fact) => fact.key === "residential_area"), true);
+  assert.equal(
+    profile.sections.some((section) => section.key === "otherBuildings"),
+    true
+  );
   assert.equal(summary.existingOtherBuildingCount, 1);
   assert.equal(summary.projectedBuildingCount, 1);
   assert.equal(basement?.value, 0, "null/zero semantics must preserve a real 0.");

@@ -88,21 +88,13 @@ function addUnknownCodeWarnings(
   }
 }
 
-function heating(node: DatafordelerNode, prefix: "byg" | "enh") {
+function mapBuildingHeating(node: DatafordelerNode) {
   const installation = lookupCode(
     "heatingInstallation",
-    prefix === "byg"
-      ? node.byg056Varmeinstallation
-      : node.enh132Varmeinstallation
+    node.byg056Varmeinstallation
   );
-  const source = lookupCode(
-    "heatingSource",
-    prefix === "byg" ? node.byg057Opvarmningsmiddel : node.enh133Opvarmningsmiddel
-  );
-  const supplementary = lookupCode(
-    "supplementaryHeating",
-    prefix === "byg" ? node.byg058SupplerendeVarme : node.enh105SupplerendeVarme
-  );
+  const source = lookupCode("heatingSource", node.byg057Opvarmningsmiddel);
+  const supplementary = lookupCode("supplementaryHeating", node.byg058SupplerendeVarme);
   const sourceApplicability: "applicable" | "not_applicable" | "unknown" =
     installation?.code === "1" && source === null
       ? "not_applicable"
@@ -116,6 +108,25 @@ function heating(node: DatafordelerNode, prefix: "byg" | "enh") {
     supplementary,
     sourceApplicability
   };
+}
+
+function sourceUnavailableHeating() {
+  return {
+    installation: null,
+    source: null,
+    supplementary: null,
+    sourceApplicability: "unknown" as const
+  };
+}
+
+function codeAvailability(values: Array<{ code: string } | null | undefined>) {
+  return values.some(Boolean) ? "value" as const : "registered_empty" as const;
+}
+
+function numberAvailability(values: Array<number | null | undefined>) {
+  return values.some((value) => value !== null && value !== undefined)
+    ? "value" as const
+    : "registered_empty" as const;
 }
 
 function inclusionForLifecycle(lifecycleCode: string | null) {
@@ -172,11 +183,25 @@ function mapUnit(unit: DatafordelerNode, buildingId: string): PublicUnit {
     facilities: {
       toiletType: lookupCode("unitToilet", unit.enh032Toiletforhold),
       bathType: lookupCode("unitBath", unit.enh033Badeforhold),
-      kitchenType: lookupCode("unitKitchen", unit.enh034Køkkenforhold),
+      kitchenType: lookupCode("unitKitchen", unit.enh034Koekkenforhold),
       flushToiletCount: intValue(unit, "enh065AntalVandskyllendeToiletter"),
       bathroomCount: intValue(unit, "enh066AntalBadevaerelser")
     },
-    heating: heating(unit, "enh")
+    areaSource: lookupCode("unitAreaSource", unit.enh030KildeTilEnhedensArealer),
+    flexHomePermission: lookupCode("unitFlexHomePermission", unit.enh068FlexboligTilladelsesart),
+    addressFunction: lookupCode("unitAddressFunction", unit.enh071AdresseFunktion),
+    registeredAreaBreakdown: {
+      area1M2: intValue(unit, "enh102HerafAreal1"),
+      area2M2: intValue(unit, "enh103HerafAreal2"),
+      area3M2: intValue(unit, "enh104HerafAreal3")
+    },
+    availability: {
+      flushToiletCount: "source_unavailable",
+      heating: "source_unavailable",
+      floorType: "not_relevant",
+      accessArea: "not_relevant"
+    },
+    heating: sourceUnavailableHeating()
   };
 }
 
@@ -202,7 +227,11 @@ function mapFloor(floor: DatafordelerNode, buildingId: string): PublicFloor {
       "eta023ArealAfLovligBeboelseIKaelder"
     ),
     accessAreaM2: intValue(floor, "eta025Adgangsareal"),
-    commercialBasementAreaM2: intValue(floor, "eta026ErhvervIKaelder")
+    commercialBasementAreaM2: intValue(floor, "eta026ErhvervIKaelder"),
+    availability: {
+      type: "source_unavailable",
+      accessArea: "source_unavailable"
+    }
   };
 }
 
@@ -267,28 +296,26 @@ export function mapPublicData(
         parcelsById.set(parcelId, {
           cadastralParcelId: parcelId,
           cadastralNumber: stringValue(parcel, "matrikelnummer"),
-          ownerDistrictId: stringValue(
-            relationNodes(parcel, "ejerlav")[0],
-            "id_lokalId"
-          ),
-          municipalityId: stringValue(
-            relationNodes(parcel, "kommune")[0],
-            "id_lokalId"
-          )
+          ownerDistrictId: null,
+          municipalityId: null,
+          availability: {
+            ownerDistrict: "source_unavailable",
+            municipality: "source_unavailable"
+          }
         });
       }
     }
 
-    const buildingHeating = heating(building, "byg");
+    const buildingHeating = mapBuildingHeating(building);
     const buildingUse = lookupCode("buildingUse", building.byg021BygningensAnvendelse);
     const outerWall = lookupCode(
       "outerWallMaterial",
-      building.byg032YdervæggensMateriale
+      building.byg032YdervaeggensMateriale
     );
-    const roof = lookupCode("roofMaterial", building.byg033Tagdækningsmateriale);
+    const roof = lookupCode("roofMaterial", building.byg033Tagdaekningsmateriale);
     const asbestos = lookupCode(
       "asbestosMaterial",
-      building.byg034SupplerendeYdervæggensMateriale
+      building.byg034SupplerendeYdervaeggensMateriale
     );
 
     addUnknownCodeWarnings(warnings, `buildings.${buildingId}`, [
@@ -322,6 +349,9 @@ export function mapPublicData(
         unit.facilities.toiletType,
         unit.facilities.bathType,
         unit.facilities.kitchenType,
+        unit.areaSource ?? null,
+        unit.flexHomePermission ?? null,
+        unit.addressFunction ?? null,
         unit.heating.installation,
         unit.heating.source,
         unit.heating.supplementary
@@ -360,14 +390,28 @@ export function mapPublicData(
           building,
           "byg045ArealIndbyggetUdestueEllerLign"
         ),
-        otherAreaM2: intValue(building, "byg047ArealAfAffaldsrumITerrænniveau"),
+        otherAreaM2: intValue(building, "byg047ArealAfAffaldsrumITerraenniveau"),
         coveredAreaM2: intValue(
           building,
-          "byg046SamletArealAfLukkedeOverdækningerPåBygningen"
+          "byg046SamletArealAfLukkedeOverdaekningerPaaBygningen"
         )
       },
       registeredFloorCount: intValue(building, "byg054AntalEtager"),
       heating: buildingHeating,
+      availability: {
+        materials: codeAvailability([outerWall, roof, asbestos]),
+        coveredArea: numberAvailability([
+          intValue(
+            building,
+            "byg046SamletArealAfLukkedeOverdaekningerPaaBygningen"
+          )
+        ]),
+        heating: codeAvailability([
+          buildingHeating.installation,
+          buildingHeating.source,
+          buildingHeating.supplementary
+        ])
+      },
       units,
       floors
     };
@@ -454,10 +498,7 @@ export function mapPublicData(
       bfeNumber,
       propertyType: lookupCode("propertyType", property?.sfeEjendomstype),
       status: lookupCode("lifecycle", property?.sfeStatus),
-      municipalityCode: stringValue(
-        relationNodes(property, "kommuneinddeling")[0],
-        "kommunekode"
-      ),
+      municipalityCode: stringValue(property, "kommunekode"),
       assessmentPropertyNumber: stringValue(
         property,
         "vurderingsejendomsnummer"

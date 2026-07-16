@@ -1189,6 +1189,16 @@ export const publicCodeValueSchema = z.object({
 
 export type PublicCodeValue = z.infer<typeof publicCodeValueSchema>;
 
+export const publicDataAvailabilitySchema = z.enum([
+  "value",
+  "registered_empty",
+  "source_unavailable",
+  "fetch_failed",
+  "not_relevant"
+]);
+
+export type PublicDataAvailability = z.infer<typeof publicDataAvailabilitySchema>;
+
 export const publicAddressSchema = z.object({
   label: z.string().min(1),
   darAddressId: z.string().min(1),
@@ -1217,7 +1227,13 @@ export const publicParcelSchema = z.object({
   cadastralParcelId: z.string().min(1),
   cadastralNumber: z.string().min(1).nullable(),
   ownerDistrictId: z.string().min(1).nullable(),
-  municipalityId: z.string().min(1).nullable()
+  municipalityId: z.string().min(1).nullable(),
+  availability: z
+    .object({
+      ownerDistrict: publicDataAvailabilitySchema,
+      municipality: publicDataAvailabilitySchema
+    })
+    .optional()
 });
 
 const inclusionDecisionSchema = z.object({
@@ -1254,6 +1270,24 @@ export const publicUnitSchema = z.object({
     flushToiletCount: z.number().int().nonnegative().nullable(),
     bathroomCount: z.number().int().nonnegative().nullable()
   }),
+  areaSource: publicCodeValueSchema.nullable().optional(),
+  flexHomePermission: publicCodeValueSchema.nullable().optional(),
+  addressFunction: publicCodeValueSchema.nullable().optional(),
+  registeredAreaBreakdown: z
+    .object({
+      area1M2: z.number().int().nonnegative().nullable(),
+      area2M2: z.number().int().nonnegative().nullable(),
+      area3M2: z.number().int().nonnegative().nullable()
+    })
+    .optional(),
+  availability: z
+    .object({
+      flushToiletCount: publicDataAvailabilitySchema,
+      heating: publicDataAvailabilitySchema,
+      floorType: publicDataAvailabilitySchema,
+      accessArea: publicDataAvailabilitySchema
+    })
+    .optional(),
   heating: z.object({
     installation: publicCodeValueSchema.nullable(),
     source: publicCodeValueSchema.nullable(),
@@ -1275,7 +1309,13 @@ export const publicFloorSchema = z.object({
   basementAreaM2: z.number().int().nonnegative().nullable(),
   legalResidentialBasementAreaM2: z.number().int().nonnegative().nullable(),
   accessAreaM2: z.number().int().nonnegative().nullable(),
-  commercialBasementAreaM2: z.number().int().nonnegative().nullable()
+  commercialBasementAreaM2: z.number().int().nonnegative().nullable(),
+  availability: z
+    .object({
+      type: publicDataAvailabilitySchema,
+      accessArea: publicDataAvailabilitySchema
+    })
+    .optional()
 });
 
 export type PublicFloor = z.infer<typeof publicFloorSchema>;
@@ -1313,6 +1353,13 @@ export const publicBuildingSchema = z.object({
     supplementary: publicCodeValueSchema.nullable(),
     sourceApplicability: z.enum(["applicable", "not_applicable", "unknown"])
   }),
+  availability: z
+    .object({
+      materials: publicDataAvailabilitySchema,
+      coveredArea: publicDataAvailabilitySchema,
+      heating: publicDataAvailabilitySchema
+    })
+    .optional(),
   units: z.array(publicUnitSchema),
   floors: z.array(publicFloorSchema)
 });
@@ -1460,6 +1507,16 @@ function buildingArea(building: PublicBuilding) {
   );
 }
 
+const minimumPresentedConstructionYear = 1100;
+
+export function presentableConstructionYear(year: number | null | undefined) {
+  return year !== null &&
+    year !== undefined &&
+    year >= minimumPresentedConstructionYear
+    ? year
+    : null;
+}
+
 export function buildHousePublicDataSummary(
   houseId: HouseId,
   publicData: HousePublicDataResponseV1
@@ -1505,10 +1562,12 @@ export function buildHousePublicDataSummary(
               unit: "m2"
             }
           : null,
-        displayBuilding?.constructionYear
+        presentableConstructionYear(displayBuilding?.constructionYear)
           ? {
               key: "construction_year",
-              value: displayBuilding.constructionYear
+              value: presentableConstructionYear(
+                displayBuilding?.constructionYear
+              ) as number
             }
           : null,
         primaryUnit?.roomCount !== null && primaryUnit?.roomCount !== undefined
@@ -1589,8 +1648,11 @@ export function buildHousePublicDataSummary(
         buildingArea(building) !== null
           ? { key: "area_m2", value: buildingArea(building) as number, unit: "m2" }
           : null,
-        building.constructionYear
-          ? { key: "construction_year", value: building.constructionYear }
+        presentableConstructionYear(building.constructionYear)
+          ? {
+              key: "construction_year",
+              value: presentableConstructionYear(building.constructionYear) as number
+            }
           : null
       ])
     })),
@@ -1603,6 +1665,460 @@ export function buildHousePublicDataSummary(
     warnings: publicData.warnings
   });
 }
+
+export const housePublicDataProfileFactSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  value: z.union([z.string().min(1), z.number().int().nonnegative()]).nullable(),
+  unit: z.literal("m2").optional(),
+  availability: publicDataAvailabilitySchema
+});
+
+export type HousePublicDataProfileFact = z.infer<
+  typeof housePublicDataProfileFactSchema
+>;
+
+export const housePublicDataProfileSectionSchema = z.object({
+  key: z.enum([
+    "location",
+    "propertyIdentity",
+    "primaryBuilding",
+    "primaryUnit",
+    "heating",
+    "materials",
+    "areas",
+    "floorsAndBasement",
+    "otherBuildings",
+    "projectedBuildings",
+    "groundAndParcels",
+    "sourceAndQuality"
+  ]),
+  title: z.string().min(1),
+  facts: z.array(housePublicDataProfileFactSchema),
+  buildings: z
+    .array(
+      z.object({
+        bbrBuildingId: z.string().min(1),
+        title: z.string().min(1),
+        facts: z.array(housePublicDataProfileFactSchema),
+        units: z.array(
+          z.object({
+            bbrUnitId: z.string().min(1),
+            title: z.string().min(1),
+            facts: z.array(housePublicDataProfileFactSchema)
+          })
+        ),
+        floors: z.array(
+          z.object({
+            bbrFloorId: z.string().min(1),
+            title: z.string().min(1),
+            facts: z.array(housePublicDataProfileFactSchema)
+          })
+        )
+      })
+    )
+    .optional()
+});
+
+export const housePublicDataProfileV1Schema = z.object({
+  contract: z.literal("house_public_data_profile.v1"),
+  houseId: houseIdSchema,
+  status: housePublicDataSummaryStatusSchema,
+  sourceLabel: z.literal("Registreret i BBR"),
+  fetchedAt: z.string().datetime().nullable(),
+  title: z.string().min(1),
+  subtitle: z.string().min(1).nullable(),
+  topFacts: z.array(housePublicDataProfileFactSchema),
+  sections: z.array(housePublicDataProfileSectionSchema),
+  warnings: z.array(publicDataWarningSchema)
+});
+
+export type HousePublicDataProfileV1 = z.infer<
+  typeof housePublicDataProfileV1Schema
+>;
+
+function availabilityForValue(
+  value: string | number | null | undefined,
+  fallback: PublicDataAvailability = "registered_empty"
+): PublicDataAvailability {
+  if (value !== null && value !== undefined && value !== "") {
+    return "value";
+  }
+
+  return fallback;
+}
+
+function profileFact(
+  key: string,
+  label: string,
+  value: string | number | null | undefined,
+  unit?: "m2",
+  fallbackAvailability: PublicDataAvailability = "registered_empty"
+): HousePublicDataProfileFact {
+  return {
+    key,
+    label,
+    value: value ?? null,
+    ...(unit ? { unit } : {}),
+    availability: availabilityForValue(value, fallbackAvailability)
+  };
+}
+
+function codeFact(
+  key: string,
+  label: string,
+  value: PublicCodeValue | null | undefined,
+  fallbackAvailability: PublicDataAvailability = "registered_empty"
+) {
+  return profileFact(
+    key,
+    label,
+    value?.label ?? value?.code ?? null,
+    undefined,
+    fallbackAvailability
+  );
+}
+
+function profileStatus(status: HousePublicDataResponseV1["status"]) {
+  return status === "success"
+    ? "available"
+    : status === "fetching"
+      ? "loading"
+      : status === "partial" || status === "ambiguous"
+        ? status
+        : status;
+}
+
+function buildingProfileFacts(building: PublicBuilding) {
+  return [
+    codeFact("use", "Anvendelse", building.use),
+    profileFact("building_number", "Bygningsnr.", building.number),
+    profileFact(
+      "construction_year",
+      "Opført",
+      presentableConstructionYear(building.constructionYear)
+    ),
+    profileFact(
+      "remodel_year",
+      "Om-/tilbygget",
+      presentableConstructionYear(building.remodelOrExtensionYear)
+    ),
+    profileFact("area", "Areal", buildingArea(building), "m2"),
+    profileFact("footprint_area", "Bebygget areal", building.areas.footprintAreaM2, "m2"),
+    codeFact("outer_wall", "Ydervæg", building.materials.outerWall),
+    codeFact("roof", "Tag", building.materials.roof),
+    codeFact("heating", "Varme", building.heating.installation)
+  ];
+}
+
+function unitProfileFacts(unit: PublicUnit) {
+  return [
+    codeFact("housing_type", "Boligtype", unit.housingType),
+    codeFact("use", "Anvendelse", unit.use),
+    profileFact("residential_area", "Boligareal", unit.areas.residentialAreaM2, "m2"),
+    profileFact("total_area", "Samlet areal", unit.areas.totalAreaM2, "m2"),
+    profileFact("commercial_area", "Erhvervsareal", unit.areas.commercialAreaM2, "m2"),
+    profileFact(
+      "physical_residential_area",
+      "Fysisk boligareal",
+      unit.areas.physicalResidentialAreaM2,
+      "m2"
+    ),
+    profileFact(
+      "physical_commercial_area",
+      "Fysisk erhvervsareal",
+      unit.areas.physicalCommercialAreaM2,
+      "m2"
+    ),
+    profileFact("rooms", "Værelser", unit.roomCount),
+    codeFact("toilet", "Toiletforhold", unit.facilities.toiletType),
+    codeFact("bath", "Badeforhold", unit.facilities.bathType),
+    profileFact("bathrooms", "Badeværelser", unit.facilities.bathroomCount),
+    codeFact("kitchen", "Køkkenforhold", unit.facilities.kitchenType),
+    codeFact("area_source", "Areal-kilde", unit.areaSource),
+    codeFact("flex_home", "Flexbolig", unit.flexHomePermission),
+    codeFact("address_function", "Adressefunktion", unit.addressFunction)
+  ];
+}
+
+function floorProfileFacts(floor: PublicFloor) {
+  return [
+    profileFact("designation", "Betegnelse", floor.designation),
+    codeFact("type", "Etagetype", floor.type, floor.availability?.type ?? "registered_empty"),
+    profileFact("total_area", "Samlet etageareal", floor.totalFloorAreaM2, "m2"),
+    profileFact("attic_area", "Udnyttet tagetage", floor.utilisedAtticAreaM2, "m2"),
+    profileFact("basement_area", "Kælderareal", floor.basementAreaM2, "m2"),
+    profileFact(
+      "legal_basement_residential_area",
+      "Lovligt boligareal i kælder",
+      floor.legalResidentialBasementAreaM2,
+      "m2"
+    ),
+    profileFact(
+      "commercial_basement_area",
+      "Erhverv i kælder",
+      floor.commercialBasementAreaM2,
+      "m2"
+    ),
+    profileFact(
+      "access_area",
+      "Adgangsareal",
+      floor.accessAreaM2,
+      "m2",
+      floor.availability?.accessArea ?? "registered_empty"
+    )
+  ];
+}
+
+export function buildHousePublicDataProfile(
+  houseId: HouseId,
+  publicData: HousePublicDataResponseV1
+): HousePublicDataProfileV1 {
+  const primaryBuilding =
+    publicData.selection.primaryBuildingStatus === "automatic_address_relation"
+      ? publicData.productBuildings.find(
+          (building) =>
+            building.bbrBuildingId === publicData.selection.primaryBuildingId
+        ) ?? null
+      : null;
+  const primaryUnit =
+    primaryBuilding && publicData.selection.primaryUnitStatus === "automatic_unambiguous"
+      ? primaryBuilding.units.find(
+          (unit) => unit.bbrUnitId === publicData.selection.primaryUnitId
+        ) ?? null
+      : null;
+  const displayBuilding = primaryBuilding ?? publicData.productBuildings[0] ?? null;
+  const existingOtherBuildings = publicData.productBuildings.filter(
+    (building) => building.bbrBuildingId !== displayBuilding?.bbrBuildingId
+  );
+  const projectedBuildings = publicData.buildings.filter(
+    (building) => building.inclusion.exclusionReason === "projected"
+  );
+  const basementArea = displayBuilding
+    ? firstNumber(displayBuilding.floors.map((floor) => floor.basementAreaM2))
+    : null;
+
+  const sections: HousePublicDataProfileV1["sections"] = [
+    {
+      key: "location",
+      title: "Lokation",
+      facts: [
+        profileFact("address", "Adresse", publicData.address?.label ?? null),
+        profileFact("postal_code", "Postnr.", publicData.address?.postalCode ?? null),
+        profileFact("postal_district", "By", publicData.address?.postalDistrict ?? null)
+      ]
+    },
+    {
+      key: "propertyIdentity",
+      title: "Ejendom",
+      facts: [
+        profileFact("bfe", "BFE", publicData.property?.bfeNumber ?? null),
+        profileFact(
+          "assessment_property_number",
+          "Vurderingsejendomsnr.",
+          publicData.property?.assessmentPropertyNumber ?? null
+        ),
+        codeFact("property_type", "Ejendomstype", publicData.property?.propertyType ?? null),
+        profileFact("municipality", "Kommune", publicData.property?.municipalityCode ?? null)
+      ]
+    },
+    {
+      key: "primaryUnit",
+      title: "Boligen",
+      facts: primaryUnit ? unitProfileFacts(primaryUnit) : []
+    },
+    {
+      key: "primaryBuilding",
+      title: "Bygningen",
+      facts: displayBuilding
+        ? [
+            ...buildingProfileFacts(displayBuilding),
+            profileFact("commercial_area", "Erhvervsareal", displayBuilding.areas.commercialAreaM2, "m2"),
+            profileFact("floor_count", "Etager", displayBuilding.registeredFloorCount),
+            profileFact("garage", "Integreret garage", displayBuilding.areas.integratedGarageM2, "m2"),
+            profileFact("carport", "Integreret carport", displayBuilding.areas.integratedCarportM2, "m2"),
+            profileFact("outbuilding", "Integreret udhus", displayBuilding.areas.integratedOutbuildingM2, "m2"),
+            profileFact("conservatory", "Integreret udestue", displayBuilding.areas.integratedConservatoryM2, "m2"),
+            profileFact("covered_area", "Lukkede overdækninger", displayBuilding.areas.coveredAreaM2, "m2"),
+            profileFact("other_area", "Øvrigt areal", displayBuilding.areas.otherAreaM2, "m2")
+          ]
+        : []
+    },
+    {
+      key: "materials",
+      title: "Materialer",
+      facts: displayBuilding
+        ? [
+            codeFact("outer_wall", "Ydervæg", displayBuilding.materials.outerWall),
+            codeFact("roof", "Tag", displayBuilding.materials.roof),
+            codeFact("supplementary", "Supplerende materiale", displayBuilding.materials.asbestos)
+          ]
+        : []
+    },
+    {
+      key: "heating",
+      title: "Varme",
+      facts: displayBuilding
+        ? [
+            codeFact("installation", "Varmeinstallation", displayBuilding.heating.installation),
+            codeFact("source", "Opvarmningsmiddel", displayBuilding.heating.source),
+            codeFact("supplementary", "Supplerende varme", displayBuilding.heating.supplementary)
+          ]
+        : []
+    },
+    {
+      key: "areas",
+      title: "Arealer",
+      facts: [
+        ...(primaryUnit ? unitProfileFacts(primaryUnit).filter((fact) => fact.key.includes("area")) : []),
+        ...(displayBuilding
+          ? [
+              profileFact("building_total", "Samlet bygningsareal", displayBuilding.areas.totalBuildingAreaM2, "m2"),
+              profileFact("building_residential", "Bygningens boligareal", displayBuilding.areas.residentialAreaM2, "m2"),
+              profileFact("building_commercial", "Bygningens erhvervsareal", displayBuilding.areas.commercialAreaM2, "m2"),
+              profileFact("footprint", "Bebygget areal", displayBuilding.areas.footprintAreaM2, "m2")
+            ]
+          : [])
+      ]
+    },
+    {
+      key: "floorsAndBasement",
+      title: "Etager og kælder",
+      facts: [profileFact("basement_area", "Kælderareal", basementArea, "m2")],
+      buildings: displayBuilding
+        ? [
+            {
+              bbrBuildingId: displayBuilding.bbrBuildingId,
+              title: buildingDisplayTitle(displayBuilding),
+              facts: [],
+              units: [],
+              floors: displayBuilding.floors.map((floor) => ({
+                bbrFloorId: floor.bbrFloorId,
+                title: floor.designation ?? "Etage",
+                facts: floorProfileFacts(floor)
+              }))
+            }
+          ]
+        : []
+    },
+    {
+      key: "otherBuildings",
+      title: "Andre bygninger",
+      facts: [profileFact("count", "Eksisterende bygninger", existingOtherBuildings.length)],
+      buildings: existingOtherBuildings.map((building) => ({
+        bbrBuildingId: building.bbrBuildingId,
+        title: buildingDisplayTitle(building),
+        facts: buildingProfileFacts(building),
+        units: building.units.map((unit) => ({
+          bbrUnitId: unit.bbrUnitId,
+          title: unit.housingType?.label ?? unit.use?.label ?? "Enhed",
+          facts: unitProfileFacts(unit)
+        })),
+        floors: building.floors.map((floor) => ({
+          bbrFloorId: floor.bbrFloorId,
+          title: floor.designation ?? "Etage",
+          facts: floorProfileFacts(floor)
+        }))
+      }))
+    },
+    {
+      key: "projectedBuildings",
+      title: "Projekterede bygninger",
+      facts: [profileFact("count", "Projekterede bygninger", projectedBuildings.length)],
+      buildings: projectedBuildings.map((building) => ({
+        bbrBuildingId: building.bbrBuildingId,
+        title: buildingDisplayTitle(building),
+        facts: buildingProfileFacts(building),
+        units: [],
+        floors: []
+      }))
+    },
+    {
+      key: "groundAndParcels",
+      title: "Grund og matrikel",
+      facts: [
+        codeFact("water_supply", "Vandforsyning", publicData.ground?.waterSupply ?? null),
+        codeFact("sewer", "Afløb", publicData.ground?.sewer ?? null),
+        profileFact("ground_id", "BBR grund-id", publicData.ground?.bbrGroundId ?? null),
+        ...publicData.parcels.flatMap((parcel, index) => [
+          profileFact(`parcel_${index + 1}`, "Matrikelnummer", parcel.cadastralNumber),
+          profileFact(
+            `owner_district_${index + 1}`,
+            "Ejerlav",
+            parcel.ownerDistrictId,
+            undefined,
+            parcel.availability?.ownerDistrict ?? "registered_empty"
+          ),
+          profileFact(
+            `municipality_${index + 1}`,
+            "Kommune",
+            parcel.municipalityId,
+            undefined,
+            parcel.availability?.municipality ?? "registered_empty"
+          )
+        ])
+      ]
+    },
+    {
+      key: "sourceAndQuality",
+      title: "Datakilde og kvalitet",
+      facts: [
+        profileFact("source", "Kilde", "Registreret i BBR"),
+        profileFact("status", "Status", publicData.status),
+        profileFact("fetched_at", "Senest opdateret", publicData.source.fetchedAt),
+        profileFact("warning_count", "Mangler/advarsler", publicData.warnings.length),
+        profileFact(
+          "source_unavailable_count",
+          "Ikke tilgængeligt fra datakilden",
+          publicData.warnings.filter((warning) => warning.code === "optional_field_unavailable").length
+        ),
+        profileFact(
+          "note",
+          "Bemærkning",
+          "Registreringer kan afvige fra husets faktiske forhold."
+        )
+      ]
+    }
+  ];
+
+  return housePublicDataProfileV1Schema.parse({
+    contract: "house_public_data_profile.v1",
+    houseId,
+    status: profileStatus(publicData.status),
+    sourceLabel: "Registreret i BBR",
+    fetchedAt: publicData.source.fetchedAt,
+    title: publicData.address?.label ?? "Husprofil",
+    subtitle: displayBuilding ? buildingDisplayTitle(displayBuilding) : null,
+    topFacts: [
+      codeFact("housing_type", "Boligtype", primaryUnit?.housingType ?? displayBuilding?.use ?? null),
+      profileFact(
+        "residential_area",
+        "Boligareal",
+        primaryUnit?.areas.residentialAreaM2 ?? displayBuilding?.areas.residentialAreaM2,
+        "m2"
+      ),
+      profileFact(
+        "construction_year",
+        "Byggeår",
+        presentableConstructionYear(displayBuilding?.constructionYear)
+      ),
+      profileFact("rooms", "Værelser", primaryUnit?.roomCount),
+      codeFact("heating", "Varme", displayBuilding?.heating.installation ?? null),
+      profileFact("cadastral_number", "Matrikel", publicData.parcels[0]?.cadastralNumber ?? null)
+    ],
+    sections,
+    warnings: publicData.warnings
+  });
+}
+
+export const housePublicDataWithProfileResponseV1Schema =
+  housePublicDataResponseV1Schema.extend({
+    profile: housePublicDataProfileV1Schema
+  });
+
+export type HousePublicDataWithProfileResponseV1 = z.infer<
+  typeof housePublicDataWithProfileResponseV1Schema
+>;
 
 export const featureKeySchema = z.enum([
   "documents.maxCount",

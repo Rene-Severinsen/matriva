@@ -16,6 +16,7 @@ import {
   enrichHouseDraftResponseSchema,
   healthResponseSchema,
   housePublicDataResponseV1Schema,
+  housePublicDataWithProfileResponseV1Schema,
   houseDraftIdSchema,
   houseDraftOverviewPreviewResponseSchema,
   houseDraftResponseSchema,
@@ -62,8 +63,10 @@ import {
 } from "./db.ts";
 import {
   getHousePublicData,
+  getHousePublicDataProfile,
   getHousePublicDataSummaries,
   refreshHousePublicData,
+  refreshHousePublicDataProfile,
   startHousePublicDataRefreshAfterHouseCreated
 } from "./public-data/service.ts";
 
@@ -565,8 +568,12 @@ const server = createServer((request, response) => {
 
       try {
         const userId = await requireUserId(request);
-        const publicData = await getHousePublicData(userId, parsedHouseId.data);
-        writeJson(response, 200, housePublicDataResponseV1Schema.parse(publicData));
+        const publicData = await getHousePublicDataProfile(userId, parsedHouseId.data);
+        writeJson(
+          response,
+          200,
+          housePublicDataWithProfileResponseV1Schema.parse(publicData)
+        );
       } catch (error) {
         writeUnknownApiError(response, error);
       }
@@ -595,11 +602,15 @@ const server = createServer((request, response) => {
 
       try {
         const userId = await requireUserId(request);
-        const publicData = await refreshHousePublicData(
+        const publicData = await refreshHousePublicDataProfile(
           userId,
           parsedHouseId.data
         );
-        writeJson(response, 200, housePublicDataResponseV1Schema.parse(publicData));
+        writeJson(
+          response,
+          200,
+          housePublicDataWithProfileResponseV1Schema.parse(publicData)
+        );
       } catch (error) {
         writeUnknownApiError(response, error);
       }

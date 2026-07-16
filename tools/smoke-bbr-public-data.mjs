@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 
+import { buildHousePublicDataSummary } from "../packages/shared/dist/index.js";
 import {
   lookupCode,
   normalizeExternalCode
@@ -173,6 +174,33 @@ optionalFieldRaw.unitsByBuildingId["4600cb6a-4f3c-4cb2-872a-3ecb746cf866"] = [
   }
 ];
 const optionalFieldMapped = mapPublicData(target, optionalFieldRaw);
+const summary = buildHousePublicDataSummary(target.id, optionalFieldMapped);
+
+assert.equal(summary.contract, "house_public_data_summary.v1");
+assert.equal(summary.status, "available");
+assert.equal(summary.sourceLabel, "Registreret i BBR");
+assert.equal(summary.primary.title, "Fritliggende enfamiliehus");
+assert.deepEqual(
+  summary.primary.values.map((value) => value.key),
+  [
+    "use",
+    "residential_area_m2",
+    "construction_year",
+    "room_count",
+    "bathroom_count",
+    "basement_area_m2",
+    "heating_installation",
+    "supplementary_heating",
+    "other_existing_building_count"
+  ]
+);
+assert.equal(
+  summary.primary.values.some((value) => value.value === "Ukendt"),
+  false
+);
+assert.equal(summary.existingOtherBuildingCount, 1);
+assert.equal(summary.otherBuildings[0].title, "Garage");
+assert.equal(summary.projectedBuildingCount, 1);
 assert.equal(optionalFieldMapped.status, "success");
 assert.equal(
   optionalFieldMapped.selection.primaryUnitStatus,

@@ -62,7 +62,9 @@ import {
 } from "./db.ts";
 import {
   getHousePublicData,
-  refreshHousePublicData
+  getHousePublicDataSummaries,
+  refreshHousePublicData,
+  startHousePublicDataRefreshAfterHouseCreated
 } from "./public-data/service.ts";
 
 const port = Number.parseInt(process.env.PORT ?? "4000", 10);
@@ -404,7 +406,19 @@ const server = createServer((request, response) => {
     void (async () => {
       try {
         const userId = await requireUserId(request);
-        writeJson(response, 200, appBootstrapResponseSchema.parse(await buildAppBootstrap(userId)));
+        const bootstrap = await buildAppBootstrap(userId);
+        const publicDataSummaries = await getHousePublicDataSummaries(
+          userId,
+          bootstrap.houses
+        );
+        writeJson(
+          response,
+          200,
+          appBootstrapResponseSchema.parse({
+            ...bootstrap,
+            publicDataSummaries
+          })
+        );
       } catch (error) {
         writeUnknownApiError(response, error);
       }
@@ -519,6 +533,7 @@ const server = createServer((request, response) => {
 
         const userId = await requireUserId(request);
         const house = await createSavedHouse(userId, parsedRequest.data.selectedAddress);
+        startHousePublicDataRefreshAfterHouseCreated(userId, house.id);
         writeJson(
           response,
           201,

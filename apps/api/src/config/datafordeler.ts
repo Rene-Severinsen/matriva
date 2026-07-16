@@ -1,3 +1,7 @@
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 type DatafordelerAuthMode = "api_key" | "oauth" | "missing" | "unsupported";
 
 type DatafordelerConfigStatus = {
@@ -13,6 +17,52 @@ export const DATAFORDELER_DEFAULT_GRAPHQL_URL =
   "https://graphql.datafordeler.dk/flexibleCurrent/v1";
 
 const supportedAuthModes = new Set(["api_key"]);
+
+function loadLocalEnvForDevelopment() {
+  if (process.env.NODE_ENV === "production") {
+    return;
+  }
+
+  const configDirectory = dirname(fileURLToPath(import.meta.url));
+  const envCandidates = [
+    resolve(".env"),
+    resolve(configDirectory, "../../.env"),
+    resolve(configDirectory, "../../../../.env")
+  ];
+  const envPath = envCandidates.find((candidate) => existsSync(candidate));
+
+  if (!envPath) {
+    return;
+  }
+
+  const lines = readFileSync(envPath, "utf8").split(/\r?\n/);
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = trimmed.indexOf("=");
+
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    const value = trimmed
+      .slice(separatorIndex + 1)
+      .trim()
+      .replace(/^["']|["']$/g, "");
+
+    if (!process.env[key]) {
+      process.env[key] = value;
+    }
+  }
+}
+
+loadLocalEnvForDevelopment();
 
 function isConfigured(value: string | undefined): value is string {
   return typeof value === "string" && normalizeEnvValue(value).length > 0;

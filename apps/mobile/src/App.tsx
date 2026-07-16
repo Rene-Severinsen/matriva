@@ -27,6 +27,9 @@ import {
   type CreateMaintenanceTaskRequest,
   type CurrentUser,
   type HouseId,
+  type HousePublicDataSummary,
+  type HousePublicDataSummaryField,
+  type HousePublicDataSummaryValue,
   type MaintenanceTask,
   type SavedHouse,
   type SelectedAddressInput,
@@ -39,10 +42,14 @@ import { matrivaApiConfig } from "./config/api";
 import { clearStoredSession, readStoredSession, writeStoredSession } from "./auth/sessionStorage";
 
 type TabKey = "dashboard" | "house" | "maintenance" | "documents" | "more";
-type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" | "logout";
+type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" | "publicData" | "logout";
 type AuthStatus = "restoring" | "anonymous" | "authenticated";
 type MoreView = "menu" | "profile";
 type UnauthenticatedStep = "welcome" | "create" | "login";
+type PublicDataRefreshMessage = {
+  tone: "success" | "warning";
+  text: string;
+};
 
 type Tab = {
   key: TabKey;
@@ -413,10 +420,17 @@ function EmptyState({
 }
 
 function HouseStatusCard({
-  house
+  house,
+  publicDataSummary
 }: {
   house: SavedHouse;
+  publicDataSummary?: HousePublicDataSummary | null;
 }) {
+  const hasPublicData =
+    publicDataSummary?.status === "available" ||
+    publicDataSummary?.status === "partial" ||
+    publicDataSummary?.status === "ambiguous";
+
   return (
     <Card variant="plain">
       <View style={styles.houseHeroTop}>
@@ -430,8 +444,153 @@ function HouseStatusCard({
       </View>
       <View style={styles.pillRow}>
         <Pill>Gemt hus</Pill>
-        <Pill tone="warning">Boligdata er endnu ikke verificeret</Pill>
+        <Pill tone={hasPublicData ? "default" : "warning"}>
+          {hasPublicData ? publicDataSummary.sourceLabel : "Afventer BBR"}
+        </Pill>
       </View>
+    </Card>
+  );
+}
+
+function PublicDataSummaryPanel({
+  summary,
+  isRefreshing,
+  refreshMessage,
+  onRefresh
+}: {
+  summary: HousePublicDataSummary | null;
+  isRefreshing: boolean;
+  refreshMessage: PublicDataRefreshMessage | null;
+  onRefresh: () => void;
+}) {
+  const refreshButtonLabel = isRefreshing ? "Opdaterer..." : "Opdater BBR";
+  const refreshMessageStyle =
+    refreshMessage?.tone === "success" ? styles.successText : styles.refreshWarningText;
+
+  if (!summary || summary.status === "not_started" || summary.status === "loading") {
+    return (
+      <Card>
+        <Text style={styles.cardTitle}>BBR-oplysninger</Text>
+        <Text style={styles.bodyText}>
+          Matriva henter offentlige oplysninger automatisk efter huset er gemt.
+        </Text>
+        <Text style={styles.metaText}>Registreret i BBR</Text>
+        <View style={styles.summaryActions}>
+          <SecondaryButton
+            label={refreshButtonLabel}
+            disabled={isRefreshing}
+            onPress={onRefresh}
+          />
+        </View>
+        {refreshMessage ? (
+          <Text style={[styles.refreshMessageText, refreshMessageStyle]}>
+            {refreshMessage.text}
+          </Text>
+        ) : null}
+      </Card>
+    );
+  }
+
+  if (
+    summary.status === "not_found" ||
+    summary.status === "temporarily_unavailable" ||
+    summary.status === "failed"
+  ) {
+    return (
+      <Card>
+        <Text style={styles.cardTitle}>BBR-oplysninger</Text>
+        <Text style={styles.bodyText}>
+          Matriva kunne ikke hente offentlige oplysninger lige nu. Dit gemte hus er
+          stadig oprettet.
+        </Text>
+        <Text style={styles.metaText}>Registreret i BBR</Text>
+        <View style={styles.summaryActions}>
+          <SecondaryButton
+            label={refreshButtonLabel}
+            disabled={isRefreshing}
+            onPress={onRefresh}
+          />
+        </View>
+        {refreshMessage ? (
+          <Text style={[styles.refreshMessageText, refreshMessageStyle]}>
+            {refreshMessage.text}
+          </Text>
+        ) : null}
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <View style={styles.cardHeaderRow}>
+        <View style={styles.taskTitleGroup}>
+          <Text style={styles.cardTitle}>Husprofil</Text>
+          <Text style={styles.metaText}>{summary.sourceLabel}</Text>
+        </View>
+        {summary.status === "partial" || summary.status === "ambiguous" ? (
+          <Pill tone="warning">
+            {summary.status === "ambiguous" ? "Kræver afklaring" : "Delvist opslag"}
+          </Pill>
+        ) : null}
+      </View>
+
+      {summary.primary.title ? (
+        <Text style={styles.publicDataTitle}>{summary.primary.title}</Text>
+      ) : null}
+
+      {summary.primary.values.length > 0 ? (
+        <View style={styles.infoList}>
+          {summary.primary.values.map((item) => (
+            <InfoRow
+              key={item.key}
+              label={publicDataFieldLabels[item.key]}
+              value={formatPublicDataValue(item)}
+            />
+          ))}
+        </View>
+      ) : null}
+
+      {summary.existingOtherBuildingCount > 0 ? (
+        <View style={styles.detailGroup}>
+          <Text style={styles.detailTitle}>
+            Øvrige bygninger registreret i BBR
+          </Text>
+          {summary.otherBuildings.map((building) => (
+            <View key={building.bbrBuildingId} style={styles.publicBuildingRow}>
+              <Text style={styles.taskRowTitle}>{building.title}</Text>
+              {building.values.map((item) => (
+                <Text key={item.key} style={styles.metaText}>
+                  {publicDataFieldLabels[item.key]}: {formatPublicDataValue(item)}
+                </Text>
+              ))}
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {summary.projectedBuildingCount > 0 ? (
+        <Text style={styles.metaText}>
+          Der findes også {summary.projectedBuildingCount} projekterede bygninger
+          registreret i BBR.
+        </Text>
+      ) : null}
+
+      {summary.missingDataNotice ? (
+        <Text style={styles.metaText}>{summary.missingDataNotice}</Text>
+      ) : null}
+
+      <View style={styles.summaryActions}>
+        <SecondaryButton
+          label={refreshButtonLabel}
+          disabled={isRefreshing}
+          onPress={onRefresh}
+        />
+      </View>
+      {refreshMessage ? (
+        <Text style={[styles.refreshMessageText, refreshMessageStyle]}>
+          {refreshMessage.text}
+        </Text>
+      ) : null}
     </Card>
   );
 }
@@ -536,6 +695,24 @@ function InfoRow({
       <Text style={styles.infoValue}>{value}</Text>
     </View>
   );
+}
+
+const publicDataFieldLabels: Record<HousePublicDataSummaryField, string> = {
+  use: "Anvendelse",
+  residential_area_m2: "Boligareal",
+  construction_year: "Opførelsesår",
+  room_count: "Værelser",
+  bathroom_count: "Badeværelser",
+  basement_area_m2: "Kælderareal",
+  heating_installation: "Varmeinstallation",
+  heating_source: "Opvarmningsmiddel",
+  supplementary_heating: "Supplerende varme",
+  other_existing_building_count: "Øvrige bygninger",
+  area_m2: "Areal"
+};
+
+function formatPublicDataValue(item: HousePublicDataSummaryValue) {
+  return item.unit === "m2" ? `${item.value} m²` : `${item.value}`;
 }
 
 function TaskRow({
@@ -680,12 +857,14 @@ function HouseOnboarding({
 
 function DashboardScreen({
   house,
+  publicDataSummary,
   tasks,
   onboarding,
   onCreateTask,
   onOpenTasks
 }: {
   house: SavedHouse | null;
+  publicDataSummary: HousePublicDataSummary | null;
   tasks: MaintenanceTask[];
   onboarding: React.ComponentProps<typeof HouseOnboarding>;
   onCreateTask: () => void;
@@ -720,7 +899,7 @@ function DashboardScreen({
         subtitle="Det vigtigste om dit hus lige nu."
       />
 
-      <HouseStatusCard house={house} />
+      <HouseStatusCard house={house} publicDataSummary={publicDataSummary} />
 
       <MaintenanceSummary
         activeTasks={activeTasks}
@@ -735,12 +914,20 @@ function DashboardScreen({
 
 function HouseScreen({
   house,
+  publicDataSummary,
   tasks,
-  onboarding
+  onboarding,
+  isRefreshingPublicData,
+  publicDataRefreshMessage,
+  onRefreshPublicData
 }: {
   house: SavedHouse | null;
+  publicDataSummary: HousePublicDataSummary | null;
   tasks: MaintenanceTask[];
   onboarding: React.ComponentProps<typeof HouseOnboarding>;
+  isRefreshingPublicData: boolean;
+  publicDataRefreshMessage: PublicDataRefreshMessage | null;
+  onRefreshPublicData: () => void;
 }) {
   if (!house) {
     return <HouseOnboarding {...onboarding} />;
@@ -755,16 +942,20 @@ function HouseScreen({
         subtitle="Profilen for det hus, Matriva holder øje med."
       />
 
-      <HouseStatusCard house={house} />
+      <HouseStatusCard house={house} publicDataSummary={publicDataSummary} />
+
+      <PublicDataSummaryPanel
+        summary={publicDataSummary}
+        isRefreshing={isRefreshingPublicData}
+        refreshMessage={publicDataRefreshMessage}
+        onRefresh={onRefreshPublicData}
+      />
 
       <Card>
-        <Text style={styles.cardTitle}>Boligstatus</Text>
-        <Text style={styles.bodyText}>
-          Matriva har gemt huset. Boligdata er endnu ikke verificeret.
-        </Text>
+        <Text style={styles.cardTitle}>Matriva-status</Text>
+        <Text style={styles.bodyText}>Matriva har gemt huset.</Text>
         <View style={styles.infoList}>
           <InfoRow label="Adresse" value={house.addressLabel} />
-          <InfoRow label="Datagrundlag" value="Afventer verificering" />
           <InfoRow
             label="Vedligehold"
             value={
@@ -1282,6 +1473,9 @@ export default function App() {
   const [moreView, setMoreView] = useState<MoreView>("menu");
   const [loadingAction, setLoadingAction] = useState<LoadingAction | null>("app");
   const [houses, setHouses] = useState<SavedHouse[]>([]);
+  const [publicDataSummaries, setPublicDataSummaries] = useState<
+    HousePublicDataSummary[]
+  >([]);
   const [selectedHouseId, setSelectedHouseId] = useState<HouseId | null>(null);
   const [tasks, setTasks] = useState<MaintenanceTask[]>([]);
   const [query, setQuery] = useState("");
@@ -1296,8 +1490,14 @@ export default function App() {
   const [taskDescription, setTaskDescription] = useState("");
   const [taskDeadline, setTaskDeadline] = useState("");
   const [taskFormError, setTaskFormError] = useState<string | null>(null);
+  const [publicDataRefreshMessage, setPublicDataRefreshMessage] =
+    useState<PublicDataRefreshMessage | null>(null);
 
   const selectedHouse = houses.find((house) => house.id === selectedHouseId) ?? houses[0] ?? null;
+  const selectedPublicDataSummary =
+    publicDataSummaries.find(
+      (summary) => summary.houseId === selectedHouse?.id
+    ) ?? null;
 
   function resetUnauthenticatedFlowState() {
     accessTokenRef.current = null;
@@ -1313,6 +1513,7 @@ export default function App() {
     setActiveTab("dashboard");
     setMoreView("menu");
     setHouses([]);
+    setPublicDataSummaries([]);
     setSelectedHouseId(null);
     setTasks([]);
     setQuery("");
@@ -1327,6 +1528,7 @@ export default function App() {
     setTaskDescription("");
     setTaskDeadline("");
     setTaskFormError(null);
+    setPublicDataRefreshMessage(null);
     setLoadingAction(null);
   }
 
@@ -1344,8 +1546,10 @@ export default function App() {
     await writeStoredSession(tokens);
   }
 
-  const loadApp = useCallback(async () => {
-    setLoadingAction("app");
+  const loadApp = useCallback(async (options?: { showGlobalLoading?: boolean }) => {
+    if (options?.showGlobalLoading !== false) {
+      setLoadingAction("app");
+    }
     setError(null);
 
     try {
@@ -1353,6 +1557,7 @@ export default function App() {
       setBootstrap(bootstrapResponse);
       setProfileName(bootstrapResponse.profile.displayName ?? "");
       setHouses(bootstrapResponse.houses);
+      setPublicDataSummaries(bootstrapResponse.publicDataSummaries);
       const nextHouse =
         bootstrapResponse.houses.find(
           (house) => house.id === bootstrapResponse.activeHouseId
@@ -1369,8 +1574,11 @@ export default function App() {
     } catch (caughtError) {
       setError(userFacingError(caughtError));
       setTasks([]);
+      setPublicDataSummaries([]);
     } finally {
-      setLoadingAction(null);
+      if (options?.showGlobalLoading !== false) {
+        setLoadingAction(null);
+      }
     }
   }, [apiClient, loadTasks]);
 
@@ -1671,6 +1879,56 @@ export default function App() {
     }
   }
 
+  async function refreshPublicData() {
+    if (loadingAction === "publicData") {
+      return;
+    }
+
+    if (!selectedHouse) {
+      setError("Tilføj et hus, før du opdaterer BBR-oplysninger.");
+      return;
+    }
+
+    setLoadingAction("publicData");
+    setError(null);
+    setPublicDataRefreshMessage(null);
+
+    try {
+      const publicData = await apiClient.refreshHousePublicData(selectedHouse.id);
+      await loadApp({ showGlobalLoading: false });
+
+      if (
+        publicData.status === "success" ||
+        publicData.status === "partial" ||
+        publicData.status === "ambiguous"
+      ) {
+        setPublicDataRefreshMessage({
+          tone: "success",
+          text: "BBR-oplysninger er opdateret."
+        });
+      } else if (publicData.status === "not_found") {
+        setPublicDataRefreshMessage({
+          tone: "warning",
+          text: "BBR fandt ikke oplysninger for adressen."
+        });
+      } else {
+        setPublicDataRefreshMessage({
+          tone: "warning",
+          text: "BBR-oplysninger kunne ikke hentes lige nu. Prøv igen senere."
+        });
+      }
+    } catch (caughtError) {
+      const message = userFacingError(caughtError);
+      setPublicDataRefreshMessage({
+        tone: "warning",
+        text: message
+      });
+      setError(message);
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
   const onboardingProps: React.ComponentProps<typeof HouseOnboarding> = {
     query,
     suggestions,
@@ -1702,6 +1960,7 @@ export default function App() {
       return (
         <DashboardScreen
           house={selectedHouse}
+          publicDataSummary={selectedPublicDataSummary}
           tasks={tasks}
           onboarding={onboardingProps}
           onCreateTask={() => {
@@ -1717,7 +1976,17 @@ export default function App() {
     }
 
     if (activeTab === "house") {
-      return <HouseScreen house={selectedHouse} tasks={tasks} onboarding={onboardingProps} />;
+      return (
+        <HouseScreen
+          house={selectedHouse}
+          publicDataSummary={selectedPublicDataSummary}
+          tasks={tasks}
+          onboarding={onboardingProps}
+          isRefreshingPublicData={loadingAction === "publicData"}
+          publicDataRefreshMessage={publicDataRefreshMessage}
+          onRefreshPublicData={() => void refreshPublicData()}
+        />
+      );
     }
 
     if (activeTab === "maintenance") {
@@ -2332,6 +2601,20 @@ const styles = StyleSheet.create({
   warningText: {
     color: theme.warning
   },
+  refreshMessageText: {
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 18
+  },
+  refreshWarningText: {
+    color: theme.warning
+  },
+  successText: {
+    color: "#047857",
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 18
+  },
   summaryHeader: {
     alignItems: "flex-start",
     columnGap: 12,
@@ -2454,6 +2737,30 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     lineHeight: 21
+  },
+  publicDataTitle: {
+    color: theme.text,
+    fontSize: 19,
+    fontWeight: "900",
+    lineHeight: 25
+  },
+  detailGroup: {
+    borderTopColor: theme.border,
+    borderTopWidth: 1,
+    paddingTop: 12,
+    rowGap: 10
+  },
+  detailTitle: {
+    color: theme.text,
+    fontSize: 15,
+    fontWeight: "800",
+    lineHeight: 20
+  },
+  publicBuildingRow: {
+    backgroundColor: theme.primaryFaint,
+    borderRadius: 8,
+    padding: 12,
+    rowGap: 4
   },
   formHeader: {
     rowGap: 4

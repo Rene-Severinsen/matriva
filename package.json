@@ -19,6 +19,7 @@
     "smoke:api:dev": "node tools/smoke-api-dev.mjs",
     "smoke:api:routes": "node tools/smoke-api-routes.mjs",
     "smoke:bbr": "npm run build && node tools/smoke-bbr-public-data.mjs",
+    "smoke:public-data:product": "npm run build && node tools/smoke-public-data-product.mjs",
     "smoke:bbr:live": "npm run build && node tools/smoke-bbr-live.mjs",
     "smoke:bbr:live:complex": "npm run build && node tools/smoke-bbr-live-complex.mjs",
     "check": "npm run check:no-firebase && npm run check:secrets && npm run typecheck && npm run lint",

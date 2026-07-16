@@ -1349,6 +1349,261 @@ export type HousePublicDataResponseV1 = z.infer<
   typeof housePublicDataResponseV1Schema
 >;
 
+export const housePublicDataSummaryStatusSchema = z.enum([
+  "not_started",
+  "loading",
+  "available",
+  "partial",
+  "ambiguous",
+  "not_found",
+  "temporarily_unavailable",
+  "failed"
+]);
+
+export type HousePublicDataSummaryStatus = z.infer<
+  typeof housePublicDataSummaryStatusSchema
+>;
+
+export const housePublicDataSummaryFieldSchema = z.enum([
+  "use",
+  "residential_area_m2",
+  "construction_year",
+  "room_count",
+  "bathroom_count",
+  "basement_area_m2",
+  "heating_installation",
+  "heating_source",
+  "supplementary_heating",
+  "other_existing_building_count",
+  "area_m2"
+]);
+
+export type HousePublicDataSummaryField = z.infer<
+  typeof housePublicDataSummaryFieldSchema
+>;
+
+export const housePublicDataSummaryValueSchema = z.object({
+  key: housePublicDataSummaryFieldSchema,
+  value: z.union([z.string().min(1), z.number().int().nonnegative()]),
+  unit: z.literal("m2").optional()
+});
+
+export type HousePublicDataSummaryValue = z.infer<
+  typeof housePublicDataSummaryValueSchema
+>;
+
+export const housePublicDataSummaryBuildingSchema = z.object({
+  bbrBuildingId: z.string().min(1),
+  title: z.string().min(1),
+  values: z.array(housePublicDataSummaryValueSchema)
+});
+
+export type HousePublicDataSummaryBuilding = z.infer<
+  typeof housePublicDataSummaryBuildingSchema
+>;
+
+export const housePublicDataSummarySchema = z.object({
+  contract: z.literal("house_public_data_summary.v1"),
+  houseId: houseIdSchema,
+  status: housePublicDataSummaryStatusSchema,
+  sourceLabel: z.literal("Registreret i BBR"),
+  fetchedAt: z.string().datetime().nullable(),
+  primary: z.object({
+    bbrBuildingId: z.string().min(1).nullable(),
+    title: z.string().min(1).nullable(),
+    values: z.array(housePublicDataSummaryValueSchema)
+  }),
+  otherBuildings: z.array(housePublicDataSummaryBuildingSchema),
+  existingOtherBuildingCount: z.number().int().nonnegative(),
+  projectedBuildingCount: z.number().int().nonnegative(),
+  missingDataNotice: z.string().min(1).nullable(),
+  warnings: z.array(publicDataWarningSchema)
+});
+
+export type HousePublicDataSummary = z.infer<
+  typeof housePublicDataSummarySchema
+>;
+
+function publicCodeLabel(value: PublicCodeValue | null | undefined) {
+  return value?.label ?? null;
+}
+
+function firstNumber(values: Array<number | null | undefined>) {
+  return values.find(
+    (value): value is number => value !== null && value !== undefined
+  ) ?? null;
+}
+
+function compactValues(
+  values: Array<HousePublicDataSummaryValue | null>
+): HousePublicDataSummaryValue[] {
+  return values.filter(
+    (value): value is HousePublicDataSummaryValue => value !== null
+  );
+}
+
+function buildingDisplayTitle(building: PublicBuilding) {
+  const useLabel = publicCodeLabel(building.use);
+
+  if (useLabel) {
+    return useLabel;
+  }
+
+  return building.number ? `Bygning ${building.number}` : "Bygning";
+}
+
+function buildingArea(building: PublicBuilding) {
+  return (
+    building.areas.residentialAreaM2 ??
+    building.areas.totalBuildingAreaM2 ??
+    null
+  );
+}
+
+export function buildHousePublicDataSummary(
+  houseId: HouseId,
+  publicData: HousePublicDataResponseV1
+): HousePublicDataSummary {
+  const primaryBuilding =
+    publicData.selection.primaryBuildingStatus === "automatic_address_relation"
+      ? publicData.productBuildings.find(
+          (building) =>
+            building.bbrBuildingId === publicData.selection.primaryBuildingId
+        ) ?? null
+      : null;
+  const primaryUnit =
+    primaryBuilding && publicData.selection.primaryUnitStatus === "automatic_unambiguous"
+      ? primaryBuilding.units.find(
+          (unit) => unit.bbrUnitId === publicData.selection.primaryUnitId
+        ) ?? null
+      : null;
+  const displayBuilding =
+    primaryBuilding ??
+    (publicData.status === "ambiguous" ? null : publicData.productBuildings[0]) ??
+    null;
+  const basementArea = displayBuilding
+    ? firstNumber(displayBuilding.floors.map((floor) => floor.basementAreaM2))
+    : null;
+  const existingOtherBuildings = publicData.productBuildings.filter(
+    (building) => building.bbrBuildingId !== displayBuilding?.bbrBuildingId
+  );
+  const projectedBuildingCount = publicData.buildings.filter(
+    (building) => building.inclusion.exclusionReason === "projected"
+  ).length;
+  const primaryValues = primaryBuilding
+    ? compactValues([
+        publicCodeLabel(displayBuilding?.use)
+          ? { key: "use", value: publicCodeLabel(displayBuilding?.use) as string }
+          : null,
+        primaryUnit?.areas.residentialAreaM2 ??
+        displayBuilding?.areas.residentialAreaM2
+          ? {
+              key: "residential_area_m2",
+              value:
+                (primaryUnit?.areas.residentialAreaM2 ??
+                  displayBuilding?.areas.residentialAreaM2) as number,
+              unit: "m2"
+            }
+          : null,
+        displayBuilding?.constructionYear
+          ? {
+              key: "construction_year",
+              value: displayBuilding.constructionYear
+            }
+          : null,
+        primaryUnit?.roomCount !== null && primaryUnit?.roomCount !== undefined
+          ? { key: "room_count", value: primaryUnit.roomCount }
+          : null,
+        primaryUnit?.facilities.bathroomCount !== null &&
+        primaryUnit?.facilities.bathroomCount !== undefined
+          ? {
+              key: "bathroom_count",
+              value: primaryUnit.facilities.bathroomCount
+            }
+          : null,
+        basementArea !== null
+          ? { key: "basement_area_m2", value: basementArea, unit: "m2" }
+          : null,
+        publicCodeLabel(primaryUnit?.heating.installation ?? displayBuilding?.heating.installation)
+          ? {
+              key: "heating_installation",
+              value: publicCodeLabel(
+                primaryUnit?.heating.installation ??
+                  displayBuilding?.heating.installation
+              ) as string
+            }
+          : null,
+        publicCodeLabel(primaryUnit?.heating.source ?? displayBuilding?.heating.source)
+          ? {
+              key: "heating_source",
+              value: publicCodeLabel(
+                primaryUnit?.heating.source ?? displayBuilding?.heating.source
+              ) as string
+            }
+          : null,
+        publicCodeLabel(
+          primaryUnit?.heating.supplementary ??
+            displayBuilding?.heating.supplementary
+        )
+          ? {
+              key: "supplementary_heating",
+              value: publicCodeLabel(
+                primaryUnit?.heating.supplementary ??
+                  displayBuilding?.heating.supplementary
+              ) as string
+            }
+          : null,
+        {
+          key: "other_existing_building_count",
+          value: existingOtherBuildings.length
+        }
+      ])
+    : [];
+  const status =
+    publicData.status === "success"
+      ? "available"
+      : publicData.status === "fetching"
+        ? "loading"
+      : publicData.status === "partial" || publicData.status === "ambiguous"
+        ? publicData.status
+        : publicData.status;
+
+  return housePublicDataSummarySchema.parse({
+    contract: "house_public_data_summary.v1",
+    houseId,
+    status,
+    sourceLabel: "Registreret i BBR",
+    fetchedAt: publicData.source.fetchedAt,
+    primary: {
+      bbrBuildingId: displayBuilding?.bbrBuildingId ?? null,
+      title: displayBuilding ? buildingDisplayTitle(displayBuilding) : null,
+      values: primaryValues
+    },
+    otherBuildings: existingOtherBuildings.map((building) => ({
+      bbrBuildingId: building.bbrBuildingId,
+      title: buildingDisplayTitle(building),
+      values: compactValues([
+        publicCodeLabel(building.use)
+          ? { key: "use", value: publicCodeLabel(building.use) as string }
+          : null,
+        buildingArea(building) !== null
+          ? { key: "area_m2", value: buildingArea(building) as number, unit: "m2" }
+          : null,
+        building.constructionYear
+          ? { key: "construction_year", value: building.constructionYear }
+          : null
+      ])
+    })),
+    existingOtherBuildingCount: existingOtherBuildings.length,
+    projectedBuildingCount,
+    missingDataNotice:
+      displayBuilding && primaryValues.length < 10
+        ? "Nogle oplysninger er ikke registreret i BBR."
+        : null,
+    warnings: publicData.warnings
+  });
+}
+
 export const featureKeySchema = z.enum([
   "documents.maxCount",
   "documents.maxStorageMb",
@@ -1430,6 +1685,7 @@ export const appBootstrapResponseSchema = z.object({
   }),
   houses: z.array(savedHouseSchema),
   activeHouseId: houseIdSchema.nullable(),
+  publicDataSummaries: z.array(housePublicDataSummarySchema).default([]),
   entitlements: entitlementsSchema,
   cards: z.array(homeCardSchema),
   generatedAt: z.string().datetime()

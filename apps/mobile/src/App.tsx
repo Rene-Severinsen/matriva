@@ -156,6 +156,19 @@ function isActiveMaintenanceTask(task: MaintenanceTask) {
   return task.status !== "done" && task.status !== "dismissed";
 }
 
+function isTaskOverdueForDisplay(task: MaintenanceTask) {
+  if (task.status === "overdue" || !!task.timing.daysOverdue) {
+    return true;
+  }
+
+  return (
+    isActiveMaintenanceTask(task) &&
+    task.timing.type === "specific_deadline" &&
+    !!task.timing.dueDate &&
+    task.timing.dueDate < todayDateOnly()
+  );
+}
+
 function formatTiming(task: MaintenanceTask) {
   if (task.timing.type === "seasonal_window" && task.timing.season) {
     const seasonLabels: Record<NonNullable<MaintenanceTask["timing"]["season"]>, string> = {
@@ -314,26 +327,32 @@ function PrimaryButton({
   label,
   loading,
   disabled,
+  compact,
   onPress
 }: {
   label: string;
   loading?: boolean;
   disabled?: boolean;
+  compact?: boolean;
   onPress: () => void;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       disabled={disabled || loading}
+      hitSlop={compact ? 4 : undefined}
       onPress={onPress}
       style={({ pressed }) => [
         styles.primaryButton,
+        compact ? styles.compactFormButton : null,
         pressed && !disabled && !loading ? styles.primaryButtonPressed : null,
         disabled || loading ? styles.disabled : null
       ]}
     >
       {loading ? <ActivityIndicator color="#FFFFFF" /> : null}
-      <Text style={styles.primaryButtonText}>{label}</Text>
+      <Text style={[styles.primaryButtonText, compact ? styles.compactFormButtonText : null]}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -341,24 +360,30 @@ function PrimaryButton({
 function SecondaryButton({
   label,
   disabled,
+  compact,
   onPress
 }: {
   label: string;
   disabled?: boolean;
+  compact?: boolean;
   onPress: () => void;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       disabled={disabled}
+      hitSlop={compact ? 4 : undefined}
       onPress={onPress}
       style={({ pressed }) => [
         styles.secondaryButton,
+        compact ? styles.compactFormButton : null,
         pressed && !disabled ? styles.secondaryButtonPressed : null,
         disabled ? styles.disabled : null
       ]}
     >
-      <Text style={styles.secondaryButtonText}>{label}</Text>
+      <Text style={[styles.secondaryButtonText, compact ? styles.compactFormButtonText : null]}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -489,7 +514,7 @@ function HouseStatusCard({
         </View>
         <View style={styles.houseHeroText}>
           <Text style={styles.houseLabel}>Dit gemte hus</Text>
-          <Text style={styles.houseTitle}>{house.addressLabel}</Text>
+          <Text style={styles.houseAddress}>{house.addressLabel}</Text>
         </View>
       </View>
       <View style={styles.pillRow}>
@@ -709,6 +734,7 @@ function MaintenanceSummary({
 }) {
   const taskPreview = overdueTasks[0] ?? upcomingTasks[0] ?? activeTasks[0] ?? null;
   const taskPreviewDescription = taskPreview ? visibleTaskDescription(taskPreview) : null;
+  const taskPreviewIsOverdue = taskPreview ? isTaskOverdueForDisplay(taskPreview) : false;
 
   return (
     <Card>
@@ -752,13 +778,9 @@ function MaintenanceSummary({
               <Text style={styles.taskTiming}>{formatTiming(taskPreview)}</Text>
             </View>
             <Pill
-              tone={
-                taskPreview.status === "overdue" || !!taskPreview.timing.daysOverdue
-                  ? "warning"
-                  : "default"
-              }
+              tone={taskPreviewIsOverdue ? "warning" : "default"}
             >
-              {formatStatus(taskPreview.status)}
+              {formatStatus(taskPreviewIsOverdue ? "overdue" : taskPreview.status)}
             </Pill>
           </View>
           {taskPreviewDescription ? (
@@ -825,7 +847,7 @@ const overviewFactOrder = [
 
 const overviewFactLabels: Record<(typeof overviewFactOrder)[number], string> = {
   housing_type: "Boligtype",
-  residential_area: "Boligareal",
+  residential_area: "Samlet areal",
   construction_year: "Byggeår",
   rooms: "Værelser",
   heating: "Varme",
@@ -868,8 +890,20 @@ function compactHouseType(value: string) {
     return "Rækkehus";
   }
 
-  if (lower.includes("lejlighed") || lower.includes("beboelseslejlighed")) {
-    return "Boligenhed";
+  if (lower.includes("ejerlejlighed")) {
+    return "Ejerlejlighed";
+  }
+
+  if (lower.includes("etagebolig") || lower.includes("flerfamiliehus")) {
+    return "Lejlighed";
+  }
+
+  if (lower.includes("egentlig beboelseslejlighed")) {
+    return "Bolig";
+  }
+
+  if (lower.includes("lejlighed")) {
+    return "Lejlighed";
   }
 
   if (lower.includes("sommer")) {
@@ -917,6 +951,59 @@ function productFactValue(fact: HousePublicDataProfileFact | undefined) {
   }
 
   return formatted;
+}
+
+function productHouseTypeValue(
+  unitHousingFact: HousePublicDataProfileFact | undefined,
+  buildingUseFact: HousePublicDataProfileFact | undefined
+) {
+  const preferredFact =
+    buildingUseFact?.availability === "value" ? buildingUseFact : unitHousingFact;
+
+  if (!preferredFact || preferredFact.availability !== "value") {
+    return "Ikke registreret";
+  }
+
+  const formatted = formatProfileFact(preferredFact);
+  return formatted ? compactHouseType(formatted) : "Ikke registreret";
+}
+
+function productHeatingValue(
+  installationFact: HousePublicDataProfileFact | undefined,
+  sourceFact: HousePublicDataProfileFact | undefined
+) {
+  const installation = productFactValue(installationFact);
+  const source =
+    sourceFact?.availability === "value" ? formatProfileFact(sourceFact) : null;
+
+  if (!source) {
+    return installation;
+  }
+
+  return installation === "Ikke registreret" ? source : `${installation} · ${source}`;
+}
+
+function numericProfileFactValue(fact: HousePublicDataProfileFact | undefined) {
+  return fact?.availability === "value" && typeof fact.value === "number"
+    ? fact.value
+    : null;
+}
+
+function productTotalAreaValue(
+  buildingAreaFact: HousePublicDataProfileFact | undefined,
+  residentialAreaFact: HousePublicDataProfileFact | undefined,
+  basementAreaFact: HousePublicDataProfileFact | undefined
+) {
+  const mainArea =
+    numericProfileFactValue(buildingAreaFact) ??
+    numericProfileFactValue(residentialAreaFact);
+  const basementArea = numericProfileFactValue(basementAreaFact);
+
+  if (mainArea === null && basementArea === null) {
+    return "Ikke registreret";
+  }
+
+  return `${(mainArea ?? 0) + (basementArea ?? 0)} m²`;
 }
 
 function updatedAtLabel(value: string | null | undefined) {
@@ -1087,8 +1174,8 @@ function TaskRow({
   onComplete: (task: MaintenanceTask) => void;
   onOpen: (task: MaintenanceTask) => void;
 }) {
-  const isOverdue = task.status === "overdue" || !!task.timing.daysOverdue;
-  const showStatus = isOverdue || task.status === "due" || task.status === "suggested";
+  const isOverdue = isTaskOverdueForDisplay(task);
+  const displayStatus: MaintenanceTask["status"] = isOverdue ? "overdue" : task.status;
   const description = visibleTaskDescription(task);
   const priceText =
     task.priceAmountMinor !== null ? formatDkkPrice(task.priceAmountMinor, task.priceCurrency) : null;
@@ -1121,9 +1208,7 @@ function TaskRow({
         {priceText ? <Text style={styles.metaText}>Pris · {priceText}</Text> : null}
         <Text style={styles.metaText}>{formatSource(task.source)}</Text>
       </Pressable>
-      {showStatus ? (
-        <Pill tone={isOverdue ? "warning" : "default"}>{formatStatus(task.status)}</Pill>
-      ) : null}
+      <Pill tone={isOverdue ? "warning" : "default"}>{formatStatus(displayStatus)}</Pill>
     </View>
   );
 }
@@ -1253,13 +1338,14 @@ function DashboardScreen({
     );
   }
 
-  const overdueTasks = tasks.filter(
-    (task) => task.status === "overdue" || !!task.timing.daysOverdue
-  );
-  const upcomingTasks = tasks.filter(
-    (task) => task.timing.daysUntilDue !== undefined && task.timing.daysUntilDue <= 30
-  );
   const activeTasks = tasks.filter(isActiveMaintenanceTask);
+  const overdueTasks = activeTasks.filter(isTaskOverdueForDisplay);
+  const upcomingTasks = activeTasks.filter(
+    (task) =>
+      !isTaskOverdueForDisplay(task) &&
+      task.timing.daysUntilDue !== undefined &&
+      task.timing.daysUntilDue <= 30
+  );
 
   return (
     <View style={styles.stack}>
@@ -1571,10 +1657,31 @@ function HouseScreen({
   }
 
   const factMap = new Map(publicDataProfile?.topFacts.map((fact) => [fact.key, fact]));
+  const buildingUseFact = publicDataProfile?.sections
+    .find((section) => section.key === "primaryBuilding")
+    ?.facts.find((fact) => fact.key === "use");
+  const heatingSourceFact = publicDataProfile?.sections
+    .find((section) => section.key === "heating")
+    ?.facts.find((fact) => fact.key === "source");
+  const buildingTotalAreaFact = publicDataProfile?.sections
+    .find((section) => section.key === "areas")
+    ?.facts.find((fact) => fact.key === "building_total");
+  const basementAreaFact = publicDataProfile?.sections
+    .find((section) => section.key === "floorsAndBasement")
+    ?.facts.find((fact) => fact.key === "basement_area");
   const latestImprovements = improvements.slice(0, 2);
+  const houseTypeValue = productHouseTypeValue(
+    factMap.get("housing_type"),
+    buildingUseFact
+  );
+  const totalAreaValue = productTotalAreaValue(
+    buildingTotalAreaFact,
+    factMap.get("residential_area"),
+    basementAreaFact
+  );
   const identityType =
-    productFactValue(factMap.get("housing_type")) !== "Ikke registreret"
-      ? productFactValue(factMap.get("housing_type"))
+    houseTypeValue !== "Ikke registreret"
+      ? houseTypeValue
       : publicDataSummary?.primary.title ?? "Hus";
 
   return (
@@ -1618,18 +1725,29 @@ function HouseScreen({
       </View>
 
       <View style={styles.overviewGrid}>
-        {overviewFactOrder.map((key) => (
-          <View
-            accessible
-            accessibilityLabel={`${overviewFactLabels[key]}: ${productFactValue(factMap.get(key))}`}
-            key={key}
-            style={styles.overviewFactCard}
-          >
-            <Text style={styles.overviewFactIcon}>{overviewFactIcons[key]}</Text>
-            <Text style={styles.overviewFactLabel}>{overviewFactLabels[key]}</Text>
-            <Text style={styles.overviewFactValue}>{productFactValue(factMap.get(key))}</Text>
-          </View>
-        ))}
+        {overviewFactOrder.map((key) => {
+          const value =
+            key === "housing_type"
+              ? houseTypeValue
+              : key === "residential_area"
+                ? totalAreaValue
+                : key === "heating"
+                  ? productHeatingValue(factMap.get(key), heatingSourceFact)
+                  : productFactValue(factMap.get(key));
+
+          return (
+            <View
+              accessible
+              accessibilityLabel={`${overviewFactLabels[key]}: ${value}`}
+              key={key}
+              style={styles.overviewFactCard}
+            >
+              <Text style={styles.overviewFactIcon}>{overviewFactIcons[key]}</Text>
+              <Text style={styles.overviewFactLabel}>{overviewFactLabels[key]}</Text>
+              <Text style={styles.overviewFactValue}>{value}</Text>
+            </View>
+          );
+        })}
       </View>
 
       <Pressable
@@ -1787,6 +1905,32 @@ const maintenanceFilters: Array<{ key: MaintenanceFilter; label: string }> = [
   { key: "all", label: "Alle" }
 ];
 
+const maintenanceComponentOptions = [
+  { key: "", label: "Ingen" },
+  { key: "roof", label: "Tag" },
+  { key: "facade", label: "Facade" },
+  { key: "windows_doors", label: "Vinduer og døre" },
+  { key: "foundation_plinth", label: "Fundament og sokkel" },
+  { key: "installations", label: "Installationer" },
+  { key: "heating_ventilation", label: "Varme og ventilation" },
+  { key: "interior", label: "Indvendigt" },
+  { key: "kitchen", label: "Køkken" },
+  { key: "bathroom", label: "Bad" },
+  { key: "outdoor_areas", label: "Udearealer" },
+  { key: "garage_carport", label: "Garage og carport" },
+  { key: "other", label: "Andet" }
+] as const;
+
+function maintenanceComponentLabel(componentKey: string | null | undefined) {
+  if (!componentKey) {
+    return null;
+  }
+
+  return (
+    maintenanceComponentOptions.find((option) => option.key === componentKey)?.label ?? null
+  );
+}
+
 function taskMatchesFilter(task: MaintenanceTask, filter: MaintenanceFilter) {
   if (filter === "all") {
     return true;
@@ -1861,12 +2005,13 @@ function RecommendationCard({
 }
 
 function MaintenanceHistoryRow({ entry }: { entry: MaintenanceHistoryEntry }) {
+  const componentLabel = maintenanceComponentLabel(entry.componentKey);
   const meta = [
     formatDisplayDate(entry.completedDate),
     entry.priceAmountMinor !== null
       ? formatDkkPrice(entry.priceAmountMinor, entry.priceCurrency)
       : null,
-    entry.componentKey ? `Bygningsdel: ${entry.componentKey}` : null
+    componentLabel ? `Bygningsdel: ${componentLabel}` : null
   ].filter(Boolean);
 
   return (
@@ -1878,23 +2023,41 @@ function MaintenanceHistoryRow({ entry }: { entry: MaintenanceHistoryEntry }) {
   );
 }
 
+type MaintenanceRecurrenceInterval = NonNullable<
+  MaintenanceTask["recurrence"]
+>["interval"];
+
+const maintenanceRecurrenceOptions: ReadonlyArray<{
+  key: MaintenanceRecurrenceInterval | "";
+  label: string;
+  detailLabel: string | null;
+}> = [
+  { key: "", label: "Gentages ikke", detailLabel: null },
+  { key: "monthly", label: "Månedligt", detailLabel: "Gentages månedligt" },
+  { key: "quarterly", label: "Hver 3. måned", detailLabel: "Gentages hver 3. måned" },
+  { key: "half_yearly", label: "Hvert halve år", detailLabel: "Gentages hvert halve år" },
+  { key: "yearly", label: "Årligt", detailLabel: "Gentages årligt" },
+  { key: "every_2_years", label: "Hvert 2. år", detailLabel: "Gentages hvert 2. år" },
+  { key: "every_3_years", label: "Hvert 3. år", detailLabel: "Gentages hvert 3. år" },
+  { key: "every_5_years", label: "Hvert 5. år", detailLabel: "Gentages hvert 5. år" },
+  { key: "every_10_years", label: "Hvert 10. år", detailLabel: "Gentages hvert 10. år" }
+];
+
+function recurrenceForInterval(
+  interval: MaintenanceRecurrenceInterval | ""
+): MaintenanceTask["recurrence"] {
+  return interval ? { interval, anchor: "completed_date" } : null;
+}
+
 function recurrenceLabel(recurrence: MaintenanceTask["recurrence"]) {
   if (!recurrence) {
     return null;
   }
 
-  const labels: Record<NonNullable<MaintenanceTask["recurrence"]>["interval"], string> = {
-    monthly: "Gentages månedligt",
-    quarterly: "Gentages hver 3. måned",
-    half_yearly: "Gentages hvert halve år",
-    yearly: "Gentages årligt",
-    every_2_years: "Gentages hvert 2. år",
-    every_3_years: "Gentages hvert 3. år",
-    every_5_years: "Gentages hvert 5. år",
-    every_10_years: "Gentages hvert 10. år"
-  };
-
-  return labels[recurrence.interval];
+  return (
+    maintenanceRecurrenceOptions.find((option) => option.key === recurrence.interval)
+      ?.detailLabel ?? null
+  );
 }
 
 function sourceLabel(source: MaintenanceTask["source"]) {
@@ -1936,6 +2099,8 @@ function MaintenanceScreen({
   description,
   deadline,
   price,
+  componentKey,
+  recurrenceInterval,
   formError,
   isSaving,
   onShowForm,
@@ -1945,6 +2110,8 @@ function MaintenanceScreen({
   onTitleChange,
   onDescriptionChange,
   onPriceChange,
+  onComponentKeyChange,
+  onRecurrenceIntervalChange,
   onDeadlineSelect,
   onDeadlineClear,
   onCompleteTask,
@@ -1979,6 +2146,8 @@ function MaintenanceScreen({
   description: string;
   deadline: string;
   price: string;
+  componentKey: string;
+  recurrenceInterval: MaintenanceRecurrenceInterval | "";
   formError: string | null;
   isSaving: boolean;
   onShowForm: () => void;
@@ -1988,6 +2157,8 @@ function MaintenanceScreen({
   onTitleChange: (title: string) => void;
   onDescriptionChange: (description: string) => void;
   onPriceChange: (price: string) => void;
+  onComponentKeyChange: (componentKey: string) => void;
+  onRecurrenceIntervalChange: (interval: MaintenanceRecurrenceInterval | "") => void;
   onDeadlineSelect: (deadline: string) => void;
   onDeadlineClear: () => void;
   onCompleteTask: (task: MaintenanceTask) => void;
@@ -2000,9 +2171,12 @@ function MaintenanceScreen({
   const [detailDescription, setDetailDescription] = useState("");
   const [detailDeadline, setDetailDeadline] = useState("");
   const [detailPrice, setDetailPrice] = useState("");
+  const [detailComponentKey, setDetailComponentKey] = useState("");
+  const [detailRecurrenceInterval, setDetailRecurrenceInterval] = useState<
+    MaintenanceRecurrenceInterval | ""
+  >("");
   const [isTaskEditing, setIsTaskEditing] = useState(false);
   const [showDetailDatePicker, setShowDetailDatePicker] = useState(false);
-  const [showMoveDatePicker, setShowMoveDatePicker] = useState(false);
 
   useEffect(() => {
     if (!selectedTask) {
@@ -2010,9 +2184,10 @@ function MaintenanceScreen({
       setDetailDescription("");
       setDetailDeadline("");
       setDetailPrice("");
+      setDetailComponentKey("");
+      setDetailRecurrenceInterval("");
       setIsTaskEditing(false);
       setShowDetailDatePicker(false);
-      setShowMoveDatePicker(false);
       return;
     }
 
@@ -2022,9 +2197,10 @@ function MaintenanceScreen({
       selectedTask.timing.type === "specific_deadline" ? selectedTask.timing.dueDate ?? "" : ""
     );
     setDetailPrice(editablePriceValue(selectedTask.priceAmountMinor));
+    setDetailComponentKey(selectedTask.componentKey ?? "");
+    setDetailRecurrenceInterval(selectedTask.recurrence?.interval ?? "");
     setIsTaskEditing(false);
     setShowDetailDatePicker(false);
-    setShowMoveDatePicker(false);
   }, [selectedTask?.id]);
 
   if (!house) {
@@ -2043,9 +2219,9 @@ function MaintenanceScreen({
   const years = Array.from(
     new Set(history.map((entry) => Number(entry.completedDate.slice(0, 4))))
   ).sort((a, b) => b - a);
-  const components = Array.from(
-    new Set(history.flatMap((entry) => (entry.componentKey ? [entry.componentKey] : [])))
-  ).sort();
+  const components = maintenanceComponentOptions.filter(
+    (option) => option.key && history.some((entry) => entry.componentKey === option.key)
+  );
   const filteredHistory = history.filter((entry) => {
     if (historyYearFilter && Number(entry.completedDate.slice(0, 4)) !== historyYearFilter) {
       return false;
@@ -2060,6 +2236,8 @@ function MaintenanceScreen({
 
   if (view === "taskDetail" && selectedTask) {
     const recurrenceText = recurrenceLabel(selectedTask.recurrence);
+    const componentLabel = maintenanceComponentLabel(selectedTask.componentKey);
+    const sourceText = sourceLabel(selectedTask.source);
     const dateText =
       selectedTask.timing.type === "specific_deadline" && selectedTask.timing.dueDate
         ? formatDisplayDate(selectedTask.timing.dueDate)
@@ -2072,7 +2250,6 @@ function MaintenanceScreen({
     return (
       <View style={styles.stack}>
         <SecondaryButton label="Tilbage" onPress={onBackToMaintenance} />
-        <SectionHeader title={selectedTask.title} subtitle={formatSource(selectedTask.source)} />
         {isTaskEditing ? (
           <View style={styles.taskList}>
             <Text style={styles.label}>Titel</Text>
@@ -2090,7 +2267,68 @@ function MaintenanceScreen({
               style={[styles.input, styles.textArea]}
               value={detailDescription}
             />
-            <Text style={styles.label}>Dato</Text>
+            <Text style={styles.label}>Pris</Text>
+            <View style={styles.priceInputRow}>
+              <TextInput
+                accessibilityLabel="Pris"
+                keyboardType="decimal-pad"
+                onChangeText={setDetailPrice}
+                placeholder="0,00"
+                placeholderTextColor={theme.muted}
+                style={[styles.input, styles.priceInput]}
+                value={detailPrice}
+              />
+              <Text style={styles.metaText}>kr.</Text>
+            </View>
+            <Text style={styles.label}>Bygningsdel</Text>
+            <View style={styles.choiceWrap}>
+              {maintenanceComponentOptions.map((option) => {
+                const selected = detailComponentKey === option.key;
+
+                return (
+                  <Pressable
+                    accessibilityRole="button"
+                    key={option.key || "none"}
+                    onPress={() => setDetailComponentKey(option.key)}
+                    style={[styles.choiceChip, selected ? styles.choiceChipSelected : null]}
+                  >
+                    <Text
+                      style={[
+                        styles.choiceChipText,
+                        selected ? styles.choiceChipTextSelected : null
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={styles.label}>Gentagelse</Text>
+            <View style={styles.choiceWrap}>
+              {maintenanceRecurrenceOptions.map((option) => {
+                const selected = detailRecurrenceInterval === option.key;
+
+                return (
+                  <Pressable
+                    accessibilityRole="button"
+                    key={option.key || "none"}
+                    onPress={() => setDetailRecurrenceInterval(option.key)}
+                    style={[styles.choiceChip, selected ? styles.choiceChipSelected : null]}
+                  >
+                    <Text
+                      style={[
+                        styles.choiceChipText,
+                        selected ? styles.choiceChipTextSelected : null
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={styles.label}>Deadline</Text>
             <Pressable
               accessibilityRole="button"
               onPress={() => setShowDetailDatePicker(true)}
@@ -2114,22 +2352,9 @@ function MaintenanceScreen({
                 setShowDetailDatePicker(false);
               }}
             />
-            <Text style={styles.label}>Pris</Text>
-            <View style={styles.priceInputRow}>
-              <TextInput
-                accessibilityLabel="Pris"
-                keyboardType="decimal-pad"
-                onChangeText={setDetailPrice}
-                placeholder="0,00"
-                placeholderTextColor={theme.muted}
-                style={[styles.input, styles.priceInput]}
-                value={detailPrice}
-              />
-              <Text style={styles.metaText}>kr.</Text>
-            </View>
-            {recurrenceText ? <Text style={styles.metaText}>{recurrenceText}</Text> : null}
-            <View style={styles.buttonRow}>
+            <View style={[styles.buttonRow, styles.compactFormActions]}>
               <PrimaryButton
+                compact
                 label="Gem"
                 loading={isSaving}
                 onPress={() => {
@@ -2147,12 +2372,15 @@ function MaintenanceScreen({
                       ? { type: "specific_deadline", dueDate: detailDeadline }
                       : { type: "none" },
                     priceAmountMinor: parsedPrice.amountMinor,
-                    priceCurrency: "DKK"
+                    priceCurrency: "DKK",
+                    componentKey: detailComponentKey || null,
+                    recurrence: recurrenceForInterval(detailRecurrenceInterval)
                   });
                   setIsTaskEditing(false);
                 }}
               />
               <SecondaryButton
+                compact
                 label="Annuller"
                 onPress={() => {
                   setDetailTitle(selectedTask.title);
@@ -2163,58 +2391,62 @@ function MaintenanceScreen({
                       : ""
                   );
                   setDetailPrice(editablePriceValue(selectedTask.priceAmountMinor));
+                  setDetailComponentKey(selectedTask.componentKey ?? "");
+                  setDetailRecurrenceInterval(selectedTask.recurrence?.interval ?? "");
                   setIsTaskEditing(false);
                 }}
               />
             </View>
           </View>
         ) : (
-          <View style={styles.taskList}>
-            <Text style={styles.sectionEyebrow}>Opgave</Text>
+          <View style={styles.taskDetailCard}>
+            <View style={styles.taskDetailHeader}>
+              <Text style={[styles.detailTitle, styles.taskDetailTitle]}>
+                {selectedTask.title}
+              </Text>
+              <Pill>{formatStatus(selectedTask.status)}</Pill>
+            </View>
+            {sourceText ? <Text style={styles.taskTiming}>{sourceText}</Text> : null}
             <Text style={styles.taskTiming}>{dateText}</Text>
             {selectedTask.description ? (
               <Text style={styles.compactBodyText}>{selectedTask.description}</Text>
             ) : null}
             {priceText ? <Text style={styles.metaText}>Pris · {priceText}</Text> : null}
-            {recurrenceText ? <Text style={styles.metaText}>{recurrenceText}</Text> : null}
-            {selectedTask.componentKey ? (
-              <Text style={styles.metaText}>Bygningsdel · {selectedTask.componentKey}</Text>
+            {recurrenceText || componentLabel ? (
+              <View style={styles.pillRow}>
+                {recurrenceText ? <Pill>{recurrenceText}</Pill> : null}
+                {componentLabel ? <Pill>{`Bygningsdel · ${componentLabel}`}</Pill> : null}
+              </View>
             ) : null}
-            <Pill>{formatStatus(selectedTask.status)}</Pill>
           </View>
         )}
         {!isTaskEditing ? (
-          <View style={styles.taskList}>
-            <View style={styles.buttonRow}>
-              <PrimaryButton
-                label="Markér udført"
-                loading={completingTaskId === selectedTask.id}
-                onPress={() => onCompleteTask(selectedTask)}
-              />
-              <SecondaryButton label="Rediger" onPress={() => setIsTaskEditing(true)} />
-            </View>
-            <View style={styles.buttonRow}>
-              <SecondaryButton label="Flyt opgave" onPress={() => setShowMoveDatePicker(true)} />
-              <SecondaryButton label="Slet opgave" onPress={() => onDeleteTask(selectedTask)} />
-            </View>
+          <View style={styles.compactActionRow}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setIsTaskEditing(true)}
+              style={({ pressed }) => [
+                styles.compactActionButton,
+                pressed ? styles.secondaryButtonPressed : null
+              ]}
+            >
+              <Text style={styles.compactActionText}>Rediger</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => onDeleteTask(selectedTask)}
+              style={({ pressed }) => [
+                styles.compactActionButton,
+                styles.compactDangerButton,
+                pressed ? styles.compactDangerButtonPressed : null
+              ]}
+            >
+              <Text style={[styles.compactActionText, styles.compactDangerText]}>
+                Slet opgave
+              </Text>
+            </Pressable>
           </View>
         ) : null}
-        <DeadlineDatePicker
-          visible={showMoveDatePicker}
-          selectedDate={
-            selectedTask.timing.type === "specific_deadline"
-              ? selectedTask.timing.dueDate ?? ""
-              : ""
-          }
-          onClose={() => setShowMoveDatePicker(false)}
-          onClear={() => setShowMoveDatePicker(false)}
-          onSelect={(value) => {
-            setShowMoveDatePicker(false);
-            onUpdateTask(selectedTask, {
-              timing: { type: "specific_deadline", dueDate: value }
-            });
-          }}
-        />
       </View>
     );
   }
@@ -2225,7 +2457,9 @@ function MaintenanceScreen({
       historyDetail.priceAmountMinor !== null
         ? `Pris · ${formatDkkPrice(historyDetail.priceAmountMinor, historyDetail.priceCurrency)}`
         : null,
-      historyDetail.componentKey ? `Bygningsdel · ${historyDetail.componentKey}` : null
+      maintenanceComponentLabel(historyDetail.componentKey)
+        ? `Bygningsdel · ${maintenanceComponentLabel(historyDetail.componentKey)}`
+        : null
     ].filter(Boolean);
     const recurrenceText = recurrenceLabel(historyDetail.recurrence);
     const sourceText = sourceLabel(historyDetail.source);
@@ -2304,12 +2538,12 @@ function MaintenanceScreen({
             {components.map((component) => (
               <Pressable
                 accessibilityRole="button"
-                key={component}
-                onPress={() => onHistoryComponentFilterChange(component)}
-                style={[styles.filterChip, historyComponentFilter === component ? styles.filterChipSelected : null]}
+                key={component.key}
+                onPress={() => onHistoryComponentFilterChange(component.key)}
+                style={[styles.filterChip, historyComponentFilter === component.key ? styles.filterChipSelected : null]}
               >
-                <Text style={[styles.filterChipText, historyComponentFilter === component ? styles.filterChipTextSelected : null]}>
-                  {component}
+                <Text style={[styles.filterChipText, historyComponentFilter === component.key ? styles.filterChipTextSelected : null]}>
+                  {component.label}
                 </Text>
               </Pressable>
             ))}
@@ -2428,7 +2662,9 @@ function MaintenanceScreen({
           <View style={styles.formHeader}>
             <View>
               <Text style={styles.cardTitle}>Ny vedligeholdelsesopgave</Text>
-              <Text style={styles.compactBodyText}>Tilføj titel, eventuel note, deadline og pris.</Text>
+              <Text style={styles.compactBodyText}>
+                Tilføj titel, eventuel note, pris, bygningsdel, gentagelse og deadline.
+              </Text>
             </View>
           </View>
           <View style={styles.formSection}>
@@ -2473,6 +2709,68 @@ function MaintenanceScreen({
             </View>
           </View>
           <View style={styles.formSection}>
+            <Text style={styles.label}>Bygningsdel</Text>
+            <View style={styles.choiceWrap}>
+              {maintenanceComponentOptions.map((option) => {
+                const selected = componentKey === option.key;
+
+                return (
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={isSaving}
+                    key={option.key || "none"}
+                    onPress={() => onComponentKeyChange(option.key)}
+                    style={[
+                      styles.choiceChip,
+                      selected ? styles.choiceChipSelected : null,
+                      isSaving ? styles.disabled : null
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.choiceChipText,
+                        selected ? styles.choiceChipTextSelected : null
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+          <View style={styles.formSection}>
+            <Text style={styles.label}>Gentagelse</Text>
+            <View style={styles.choiceWrap}>
+              {maintenanceRecurrenceOptions.map((option) => {
+                const selected = recurrenceInterval === option.key;
+
+                return (
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={isSaving}
+                    key={option.key || "none"}
+                    onPress={() => onRecurrenceIntervalChange(option.key)}
+                    style={[
+                      styles.choiceChip,
+                      selected ? styles.choiceChipSelected : null,
+                      isSaving ? styles.disabled : null
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.choiceChipText,
+                        selected ? styles.choiceChipTextSelected : null
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+          <View style={styles.formSection}>
             <Text style={styles.label}>Deadline</Text>
             <Pressable
               accessibilityRole="button"
@@ -2507,9 +2805,14 @@ function MaintenanceScreen({
             ) : null}
           </View>
           {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
-          <View style={styles.buttonRow}>
-            <SecondaryButton label="Annuller" disabled={isSaving} onPress={onCancelForm} />
-            <PrimaryButton label="Gem opgave" loading={isSaving} onPress={onSave} />
+          <View style={[styles.buttonRow, styles.compactFormActions]}>
+            <SecondaryButton
+              compact
+              label="Annuller"
+              disabled={isSaving}
+              onPress={onCancelForm}
+            />
+            <PrimaryButton compact label="Gem opgave" loading={isSaving} onPress={onSave} />
           </View>
         </Card>
       ) : null}
@@ -3044,6 +3347,10 @@ export default function App() {
   const [taskDescription, setTaskDescription] = useState("");
   const [taskDeadline, setTaskDeadline] = useState("");
   const [taskPrice, setTaskPrice] = useState("");
+  const [taskComponentKey, setTaskComponentKey] = useState("");
+  const [taskRecurrenceInterval, setTaskRecurrenceInterval] = useState<
+    MaintenanceRecurrenceInterval | ""
+  >("");
   const [taskFormError, setTaskFormError] = useState<string | null>(null);
   const [improvementTitle, setImprovementTitle] = useState("");
   const [improvementYear, setImprovementYear] = useState("");
@@ -3103,6 +3410,8 @@ export default function App() {
     setTaskDescription("");
     setTaskDeadline("");
     setTaskPrice("");
+    setTaskComponentKey("");
+    setTaskRecurrenceInterval("");
     setTaskFormError(null);
     setImprovementTitle("");
     setImprovementYear("");
@@ -3481,6 +3790,8 @@ export default function App() {
     setTaskDescription("");
     setTaskDeadline("");
     setTaskPrice("");
+    setTaskComponentKey("");
+    setTaskRecurrenceInterval("");
     setTaskFormError(null);
     setShowTaskForm(false);
     setShowDeadlinePicker(false);
@@ -3522,7 +3833,11 @@ export default function App() {
         ? { type: "specific_deadline", dueDate: trimmedDeadline }
         : { type: "none" },
       priceAmountMinor: parsedPrice.amountMinor,
-      priceCurrency: "DKK"
+      priceCurrency: "DKK",
+      ...(taskComponentKey ? { componentKey: taskComponentKey } : {}),
+      ...(taskRecurrenceInterval
+        ? { recurrence: recurrenceForInterval(taskRecurrenceInterval) }
+        : {})
     };
 
     setLoadingAction("task");
@@ -3732,6 +4047,27 @@ export default function App() {
     } finally {
       setCompletingTaskId(null);
     }
+  }
+
+  function confirmCompleteTask(task: MaintenanceTask) {
+    const dueDate =
+      task.timing.type === "specific_deadline" ? task.timing.dueDate : undefined;
+    const currentYear = new Date().getFullYear();
+    const dueYear = dueDate ? Number(dueDate.slice(0, 4)) : currentYear;
+
+    if (!dueDate || dueYear === currentYear) {
+      void completeTask(task);
+      return;
+    }
+
+    Alert.alert(
+      `Deadline er uden for ${currentYear}`,
+      `Opgaven har deadline ${formatDisplayDate(dueDate)}. Vil du markere den som udført i ${currentYear}?`,
+      [
+        { text: "Annuller", style: "cancel" },
+        { text: "Udfør alligevel", onPress: () => void completeTask(task) }
+      ]
+    );
   }
 
   async function updateTask(
@@ -4239,6 +4575,8 @@ export default function App() {
           description={taskDescription}
           deadline={taskDeadline}
           price={taskPrice}
+          componentKey={taskComponentKey}
+          recurrenceInterval={taskRecurrenceInterval}
           formError={taskFormError}
           isSaving={loadingAction === "task"}
           onShowForm={() => setShowTaskForm(true)}
@@ -4254,6 +4592,14 @@ export default function App() {
             setTaskPrice(value);
             setTaskFormError(null);
           }}
+          onComponentKeyChange={(value) => {
+            setTaskComponentKey(value);
+            setTaskFormError(null);
+          }}
+          onRecurrenceIntervalChange={(value) => {
+            setTaskRecurrenceInterval(value);
+            setTaskFormError(null);
+          }}
           onDeadlineSelect={(value) => {
             setTaskDeadline(value);
             setTaskFormError(null);
@@ -4264,7 +4610,7 @@ export default function App() {
             setTaskFormError(null);
             setShowDeadlinePicker(false);
           }}
-          onCompleteTask={(task) => void completeTask(task)}
+          onCompleteTask={confirmCompleteTask}
           onAcceptRecommendation={(recommendation) => void acceptRecommendation(recommendation)}
           onDismissRecommendation={(recommendation) => void dismissRecommendation(recommendation)}
           onSave={() => void saveTask()}
@@ -4700,12 +5046,12 @@ const styles = StyleSheet.create({
     borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
-    columnGap: 12,
+    columnGap: 8,
     flexDirection: "row",
     justifyContent: "space-between",
-    minHeight: 54,
-    paddingHorizontal: 14,
-    paddingVertical: 11
+    minHeight: 44,
+    paddingHorizontal: 12,
+    paddingVertical: 7
   },
   dateFieldPressed: {
     backgroundColor: theme.primaryFaint,
@@ -4721,13 +5067,13 @@ const styles = StyleSheet.create({
     fontWeight: "700"
   },
   dateFieldValue: {
-    color: theme.text,
+    color: theme.muted,
     fontSize: 15,
-    fontWeight: "800"
+    fontWeight: "700"
   },
   dateFieldIcon: {
     color: theme.primary,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "900"
   },
   clearDateButton: {
@@ -5044,6 +5390,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "flex-end"
   },
+  compactFormActions: {
+    alignItems: "center",
+    columnGap: 8,
+    minHeight: 44
+  },
+  compactFormButton: {
+    minHeight: 36,
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  compactFormButtonText: {
+    fontSize: 13
+  },
   houseHeroTop: {
     alignItems: "center",
     columnGap: 14,
@@ -5070,12 +5429,6 @@ const styles = StyleSheet.create({
     color: theme.muted,
     fontSize: 12,
     fontWeight: "800"
-  },
-  houseTitle: {
-    color: theme.text,
-    fontSize: 20,
-    fontWeight: "900",
-    lineHeight: 26
   },
   infoList: {
     borderTopColor: theme.border,
@@ -5365,6 +5718,56 @@ const styles = StyleSheet.create({
   choiceChipTextSelected: {
     color: theme.primary,
     fontWeight: "800"
+  },
+  taskDetailCard: {
+    backgroundColor: theme.surface,
+    borderRadius: 8,
+    padding: 12,
+    rowGap: 8,
+    shadowColor: "#101828",
+    shadowOffset: { height: 3, width: 0 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10
+  },
+  taskDetailHeader: {
+    alignItems: "flex-start",
+    columnGap: 10,
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  taskDetailTitle: {
+    flex: 1,
+    flexShrink: 1
+  },
+  compactActionRow: {
+    alignItems: "center",
+    columnGap: 8,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-end"
+  },
+  compactActionButton: {
+    alignItems: "center",
+    backgroundColor: theme.primarySoft,
+    borderRadius: 8,
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: 12,
+    paddingVertical: 8
+  },
+  compactDangerButton: {
+    backgroundColor: "#FEF2F2"
+  },
+  compactDangerButtonPressed: {
+    backgroundColor: "#FEE2E2"
+  },
+  compactActionText: {
+    color: theme.primary,
+    fontSize: 13,
+    fontWeight: "800"
+  },
+  compactDangerText: {
+    color: "#B42318"
   },
   formHeader: {
     rowGap: 4

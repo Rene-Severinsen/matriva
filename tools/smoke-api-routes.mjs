@@ -138,6 +138,28 @@ async function fetchJsonWithStatus(path, options = {}) {
   }
 }
 
+async function fetchRawWithStatus(path, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+
+  try {
+    const response = await fetch(`${baseUrl}${path}`, {
+      ...options,
+      signal: controller.signal
+    });
+    const body = Buffer.from(await response.arrayBuffer());
+
+    return {
+      status: response.status,
+      ok: response.ok,
+      body,
+      contentType: response.headers.get("content-type")
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
@@ -281,6 +303,58 @@ function assertMaintenanceTask(body, houseId, expectedStatus = "planned") {
   if (expectedStatus === "done") {
     assertIsoDate(body.task.completedAt, "Maintenance task completedAt");
   }
+}
+
+function assertHouseImprovement(body, houseId) {
+  assert(
+    body?.improvement?.id?.startsWith("impr_"),
+    "House improvement must include an impr_ ID."
+  );
+  assert(
+    body.improvement.houseId === houseId,
+    "House improvement must belong to the saved house."
+  );
+  assert(
+    body.improvement.title === "Nye vinduer",
+    "House improvement title must persist."
+  );
+  assert(
+    body.improvement.improvementYear === 2024,
+    "House improvement year must persist."
+  );
+  assert(
+    body.improvement.category === "windows_doors",
+    "House improvement category must persist."
+  );
+  assert(
+    body.improvement.documentReference === "Faktura i dokumentarkiv",
+    "House improvement document reference must persist."
+  );
+  assertIsoDate(body.improvement.createdAt, "House improvement createdAt");
+  assertIsoDate(body.improvement.updatedAt, "House improvement updatedAt");
+}
+
+function assertHousePhoto(body, houseId, expectedSize) {
+  assert(body?.photo?.id?.startsWith("media_"), "House photo must include a media_ ID.");
+  assert(body.photo.houseId === houseId, "House photo must belong to the saved house.");
+  assert(body.photo.mediaType === "house_photo", "House photo media type must persist.");
+  assert(body.photo.mimeType === "image/png", "House photo MIME type must persist.");
+  assert(body.photo.sizeBytes === expectedSize, "House photo size must persist.");
+  assert(
+    typeof body.photo.storageKey === "string" && body.photo.storageKey.length > 0,
+    "House photo storage key must persist."
+  );
+  assert(
+    typeof body.photo.contentPath === "string" &&
+      body.photo.contentPath.endsWith("/photo/content"),
+    "House photo must expose authenticated API content path."
+  );
+  assert(
+    !("contentBase64" in body.photo),
+    "House photo response must not echo base64 payload."
+  );
+  assertIsoDate(body.photo.createdAt, "House photo createdAt");
+  assertIsoDate(body.photo.updatedAt, "House photo updatedAt");
 }
 
 function assertOverviewPreview(body, houseDraftId) {
@@ -616,6 +690,122 @@ async function runSmoke(child) {
       invalidTiming.body?.code === "maintenance_task_request_invalid",
     "Invalid maintenance timing must be rejected."
   );
+
+  const improvement = await fetchJson(
+    `/v1/houses/${savedHouse.house.id}/improvements`,
+    {
+      method: "POST",
+      headers: authHeaders(authSession, {
+        "content-type": "application/json"
+      }),
+      body: JSON.stringify({
+        title: "Nye vinduer",
+        description: "Monteret 3-lags energiruder i stueetagen.",
+        category: "windows_doors",
+        improvementYear: 2024,
+        documentReference: "Faktura i dokumentarkiv",
+        costAmountMinor: 12500000,
+        costCurrency: "DKK"
+      })
+    }
+  );
+  assertHouseImprovement(improvement, savedHouse.house.id);
+
+  const improvements = await fetchJson(
+    `/v1/houses/${savedHouse.house.id}/improvements`,
+    { headers: authHeaders(authSession) }
+  );
+  assert(
+    improvements.improvements[0]?.id === improvement.improvement.id,
+    "Improvement list must be newest first and include the created improvement."
+  );
+
+  const invalidImprovement = await fetchJsonWithStatus(
+    `/v1/houses/${savedHouse.house.id}/improvements`,
+    {
+      method: "POST",
+      headers: authHeaders(authSession, {
+        "content-type": "application/json"
+      }),
+      body: JSON.stringify({
+        title: "Mangler år"
+      })
+    }
+  );
+  assert(
+    invalidImprovement.status === 400 &&
+      invalidImprovement.body?.code === "house_improvement_request_invalid",
+    "Invalid improvement payload must be rejected."
+  );
+
+  const otherSession = await createAuthSession();
+  const notOwnedImprovements = await fetchJsonWithStatus(
+    `/v1/houses/${savedHouse.house.id}/improvements`,
+    { headers: authHeaders(otherSession) }
+  );
+  assert(
+    notOwnedImprovements.status === 404 &&
+      notOwnedImprovements.body?.code === "house_not_found",
+    "Improvement list must reject houses outside the current user."
+  );
+
+  const pngBytes = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+    "base64"
+  );
+  const uploadedPhoto = await fetchJson(
+    `/v1/houses/${savedHouse.house.id}/photo`,
+    {
+      method: "PUT",
+      headers: authHeaders(authSession, {
+        "content-type": "application/json"
+      }),
+      body: JSON.stringify({
+        fileName: "house.png",
+        mimeType: "image/png",
+        sizeBytes: pngBytes.byteLength,
+        width: 1,
+        height: 1,
+        contentBase64: pngBytes.toString("base64")
+      })
+    }
+  );
+  assertHousePhoto(uploadedPhoto, savedHouse.house.id, pngBytes.byteLength);
+
+  const currentPhoto = await fetchJson(
+    `/v1/houses/${savedHouse.house.id}/photo`,
+    { headers: authHeaders(authSession) }
+  );
+  assertHousePhoto(currentPhoto, savedHouse.house.id, pngBytes.byteLength);
+
+  const photoContent = await fetchRawWithStatus(
+    `/v1/houses/${savedHouse.house.id}/photo/content`,
+    { headers: authHeaders(authSession) }
+  );
+  assert(photoContent.status === 200, "House photo content must be readable by owner.");
+  assert(photoContent.contentType === "image/png", "House photo content type must match.");
+  assert(
+    photoContent.body.equals(pngBytes),
+    "House photo content must match the uploaded bytes."
+  );
+
+  const notOwnedPhoto = await fetchJsonWithStatus(
+    `/v1/houses/${savedHouse.house.id}/photo`,
+    { headers: authHeaders(otherSession) }
+  );
+  assert(
+    notOwnedPhoto.status === 404 && notOwnedPhoto.body?.code === "house_not_found",
+    "House photo metadata must reject houses outside the current user."
+  );
+
+  const removedPhoto = await fetchJson(
+    `/v1/houses/${savedHouse.house.id}/photo`,
+    {
+      method: "DELETE",
+      headers: authHeaders(authSession)
+    }
+  );
+  assert(removedPhoto.photo === null, "House photo removal must return a null photo.");
 
   const overviewPreview = await fetchJson(
     `/v1/house-drafts/${houseDraft.houseDraft.id}/overview-preview`,

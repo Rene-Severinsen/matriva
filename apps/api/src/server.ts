@@ -1,6 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { dirname, extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   addressSearchQuerySchema,
@@ -10,11 +13,15 @@ import {
   authSessionResponseSchema,
   consumeMagicLinkRequestSchema,
   currentUserResponseSchema,
+  createHouseImprovementRequestSchema,
   createMaintenanceTaskRequestSchema,
   createSavedHouseRequestSchema,
   enrichHouseDraftRequestSchema,
   enrichHouseDraftResponseSchema,
   healthResponseSchema,
+  houseImprovementResponseSchema,
+  houseImprovementsResponseSchema,
+  housePhotoResponseSchema,
   housePublicDataResponseV1Schema,
   housePublicDataWithProfileResponseV1Schema,
   houseDraftIdSchema,
@@ -33,6 +40,7 @@ import {
   savedHousesResponseSchema,
   selectedAddressInputSchema,
   taskIdSchema,
+  uploadHousePhotoRequestSchema,
   updateProfileRequestSchema,
   updateProfileResponseSchema,
   updateMaintenanceTaskStatusRequestSchema
@@ -46,17 +54,22 @@ import {
   authPublicResponse,
   buildAppBootstrap,
   consumeMagicLinkToken,
+  createHouseImprovement,
   createMaintenanceTaskForHouse,
   createMagicLinkToken,
   createSavedHouse,
   getProfileForUser,
+  getCurrentHousePhoto,
   getSavedHouse,
   getUserById,
   listMaintenanceTasksForHouse,
+  listHouseImprovements,
   listSavedHouses,
   logoutSession,
   migrateDatabase,
   refreshSession,
+  removeHousePhoto,
+  replaceHousePhoto,
   updateMaintenanceTaskStatus,
   updateProfile,
   validateAuthRuntimeConfig
@@ -74,6 +87,9 @@ const port = Number.parseInt(process.env.PORT ?? "4000", 10);
 const host = process.env.HOST ?? "127.0.0.1";
 const dawaAddressSearchUrl = "https://api.dataforsyningen.dk/adresser";
 const dawaTimeoutMs = 2500;
+const localMediaStorageRoot =
+  process.env.MATRIVA_MEDIA_STORAGE_DIR ??
+  join(dirname(fileURLToPath(import.meta.url)), "..", "..", "var", "media");
 
 type DawaAddress = {
   id?: unknown;
@@ -97,6 +113,19 @@ type DawaAddress = {
 function writeJson(response: ServerResponse, status: number, body: unknown) {
   response.writeHead(status, { "content-type": "application/json" });
   response.end(JSON.stringify(body));
+}
+
+function writeBinary(
+  response: ServerResponse,
+  status: number,
+  body: Buffer,
+  contentType: string
+) {
+  response.writeHead(status, {
+    "content-type": contentType,
+    "cache-control": "private, max-age=300"
+  });
+  response.end(body);
 }
 
 function writeApiError(
@@ -226,6 +255,51 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   }
 
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+function mediaExtension(mimeType: string) {
+  if (mimeType === "image/png") {
+    return ".png";
+  }
+
+  if (mimeType === "image/heic") {
+    return ".heic";
+  }
+
+  if (mimeType === "image/heif") {
+    return ".heif";
+  }
+
+  return ".jpg";
+}
+
+function mediaStorageKey(houseId: string, mimeType: string) {
+  return join(
+    "houses",
+    houseId,
+    "photos",
+    `${Date.now()}-${randomBytes(8).toString("hex")}${mediaExtension(mimeType)}`
+  );
+}
+
+function mediaStoragePath(storageKey: string) {
+  const normalized = storageKey.replace(/^[/\\]+/, "");
+
+  if (normalized.includes("..") || extname(normalized).length === 0) {
+    throw new ApiError(400, "media_storage_key_invalid", "Media storage key is invalid.");
+  }
+
+  return join(localMediaStorageRoot, normalized);
+}
+
+async function writeLocalMedia(storageKey: string, content: Buffer) {
+  const path = mediaStoragePath(storageKey);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, content, { flag: "wx" });
+}
+
+async function readLocalMedia(storageKey: string) {
+  return readFile(mediaStoragePath(storageKey));
 }
 
 async function fetchDawaAddresses(query: string): Promise<DawaAddress[]> {
@@ -776,6 +850,233 @@ const server = createServer((request, response) => {
           parsedRequest.data.status
         );
         writeJson(response, 200, maintenanceTaskResponseSchema.parse({ task }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const houseImprovementsMatch =
+    /^\/v1\/houses\/([^/]+)\/improvements$/.exec(request.url ?? "");
+
+  if (request.method === "GET" && houseImprovementsMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(houseImprovementsMatch[1]);
+
+      if (!parsedHouseId.success) {
+        writeApiError(
+          response,
+          400,
+          "house_improvements_house_id_invalid",
+          "Improvement routes require a valid house_ ID."
+        );
+        return;
+      }
+
+      try {
+        const userId = await requireUserId(request);
+        const improvements = await listHouseImprovements(userId, parsedHouseId.data);
+        writeJson(
+          response,
+          200,
+          houseImprovementsResponseSchema.parse({
+            improvements,
+            generatedAt: new Date().toISOString()
+          })
+        );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "POST" && houseImprovementsMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(houseImprovementsMatch[1]);
+
+      if (!parsedHouseId.success) {
+        writeApiError(
+          response,
+          400,
+          "house_improvement_house_id_invalid",
+          "Improvement creation requires a valid house_ ID."
+        );
+        return;
+      }
+
+      try {
+        const payload = await readJsonBody(request);
+        const parsedRequest =
+          createHouseImprovementRequestSchema.safeParse(payload);
+
+        if (!parsedRequest.success) {
+          writeApiError(
+            response,
+            400,
+            "house_improvement_request_invalid",
+            "Forbedringen kræver titel og år eller dato."
+          );
+          return;
+        }
+
+        const userId = await requireUserId(request);
+        const improvement = await createHouseImprovement(
+          userId,
+          parsedHouseId.data,
+          parsedRequest.data
+        );
+        writeJson(
+          response,
+          201,
+          houseImprovementResponseSchema.parse({ improvement })
+        );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const housePhotoMatch = /^\/v1\/houses\/([^/]+)\/photo$/.exec(request.url ?? "");
+
+  if (request.method === "GET" && housePhotoMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(housePhotoMatch[1]);
+
+      if (!parsedHouseId.success) {
+        writeApiError(
+          response,
+          400,
+          "house_photo_house_id_invalid",
+          "House photo routes require a valid house_ ID."
+        );
+        return;
+      }
+
+      try {
+        const userId = await requireUserId(request);
+        const photo = await getCurrentHousePhoto(userId, parsedHouseId.data);
+        writeJson(response, 200, housePhotoResponseSchema.parse({ photo }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "PUT" && housePhotoMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(housePhotoMatch[1]);
+
+      if (!parsedHouseId.success) {
+        writeApiError(
+          response,
+          400,
+          "house_photo_house_id_invalid",
+          "House photo upload requires a valid house_ ID."
+        );
+        return;
+      }
+
+      try {
+        const payload = await readJsonBody(request);
+        const parsedRequest = uploadHousePhotoRequestSchema.safeParse(payload);
+
+        if (!parsedRequest.success) {
+          writeApiError(
+            response,
+            400,
+            "house_photo_request_invalid",
+            "Husfoto kræver en gyldig billedfil."
+          );
+          return;
+        }
+
+        const userId = await requireUserId(request);
+        const content = Buffer.from(parsedRequest.data.contentBase64, "base64");
+
+        if (content.byteLength !== parsedRequest.data.sizeBytes) {
+          writeApiError(
+            response,
+            400,
+            "house_photo_size_mismatch",
+            "Husfotoets størrelse matcher ikke uploaden."
+          );
+          return;
+        }
+
+        const storageKey = mediaStorageKey(parsedHouseId.data, parsedRequest.data.mimeType);
+        await writeLocalMedia(storageKey, content);
+        const photo = await replaceHousePhoto(userId, parsedHouseId.data, {
+          mimeType: parsedRequest.data.mimeType,
+          sizeBytes: parsedRequest.data.sizeBytes,
+          ...(parsedRequest.data.width ? { width: parsedRequest.data.width } : {}),
+          ...(parsedRequest.data.height ? { height: parsedRequest.data.height } : {}),
+          storageKey
+        });
+        writeJson(response, 200, housePhotoResponseSchema.parse({ photo }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "DELETE" && housePhotoMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(housePhotoMatch[1]);
+
+      if (!parsedHouseId.success) {
+        writeApiError(
+          response,
+          400,
+          "house_photo_house_id_invalid",
+          "House photo removal requires a valid house_ ID."
+        );
+        return;
+      }
+
+      try {
+        const userId = await requireUserId(request);
+        await removeHousePhoto(userId, parsedHouseId.data);
+        writeJson(response, 200, housePhotoResponseSchema.parse({ photo: null }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const housePhotoContentMatch =
+    /^\/v1\/houses\/([^/]+)\/photo\/content$/.exec(request.url ?? "");
+
+  if (request.method === "GET" && housePhotoContentMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(housePhotoContentMatch[1]);
+
+      if (!parsedHouseId.success) {
+        writeApiError(
+          response,
+          400,
+          "house_photo_content_house_id_invalid",
+          "House photo content requires a valid house_ ID."
+        );
+        return;
+      }
+
+      try {
+        const userId = await requireUserId(request);
+        const photo = await getCurrentHousePhoto(userId, parsedHouseId.data);
+
+        if (!photo) {
+          writeApiError(response, 404, "house_photo_not_found", "Husfoto blev ikke fundet.");
+          return;
+        }
+
+        const content = await readLocalMedia(photo.storageKey);
+        writeBinary(response, 200, content, photo.mimeType);
       } catch (error) {
         writeUnknownApiError(response, error);
       }

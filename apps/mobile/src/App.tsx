@@ -24,9 +24,13 @@ import { createMatrivaApiClient } from "@matriva/api-client";
 import {
   type AddressSuggestion,
   type AppBootstrapResponse,
+  type CreateHouseImprovementRequest,
   type CreateMaintenanceTaskRequest,
   type CurrentUser,
   type HouseId,
+  type HouseImprovement,
+  type HouseImprovementCategory,
+  type HouseMedia,
   type HousePublicDataProfileFact,
   type HousePublicDataProfileV1,
   type HousePublicDataSummary,
@@ -44,9 +48,10 @@ import { matrivaApiConfig } from "./config/api";
 import { clearStoredSession, readStoredSession, writeStoredSession } from "./auth/sessionStorage";
 
 type TabKey = "dashboard" | "house" | "maintenance" | "documents" | "more";
-type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" | "publicData" | "logout";
+type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" | "publicData" | "improvement" | "photo" | "logout";
 type AuthStatus = "restoring" | "anonymous" | "authenticated";
 type MoreView = "menu" | "profile";
+type HouseView = "overview" | "details" | "improvements" | "addImprovement";
 type UnauthenticatedStep = "welcome" | "create" | "login";
 type PublicDataRefreshMessage = {
   tone: "success" | "warning";
@@ -766,6 +771,146 @@ function formatPublicDataValue(item: HousePublicDataSummaryValue) {
   return item.unit === "m2" ? `${item.value} m²` : `${item.value}`;
 }
 
+const overviewFactOrder = [
+  "housing_type",
+  "residential_area",
+  "construction_year",
+  "rooms",
+  "heating",
+  "cadastral_number"
+] as const;
+
+const overviewFactLabels: Record<(typeof overviewFactOrder)[number], string> = {
+  housing_type: "Boligtype",
+  residential_area: "Boligareal",
+  construction_year: "Byggeår",
+  rooms: "Værelser",
+  heating: "Varme",
+  cadastral_number: "Matrikel"
+};
+
+const overviewFactIcons: Record<(typeof overviewFactOrder)[number], string> = {
+  housing_type: "⌂",
+  residential_area: "⌗",
+  construction_year: "◷",
+  rooms: "▦",
+  heating: "♨",
+  cadastral_number: "⌖"
+};
+
+const improvementCategoryLabels: Record<HouseImprovementCategory, string> = {
+  windows_doors: "Vinduer og døre",
+  roof: "Tag",
+  heating_energy: "Varme og energi",
+  kitchen: "Køkken",
+  bathroom: "Badeværelse",
+  installations: "Installationer",
+  extension: "Tilbygning",
+  outdoor: "Udendørs",
+  other: "Andet"
+};
+
+const improvementCategories = Object.entries(improvementCategoryLabels) as Array<
+  [HouseImprovementCategory, string]
+>;
+
+function compactHouseType(value: string) {
+  const lower = value.toLowerCase();
+
+  if (lower.includes("fritliggende") || lower.includes("enfamiliehus")) {
+    return "Villa";
+  }
+
+  if (lower.includes("række") || lower.includes("kæde")) {
+    return "Rækkehus";
+  }
+
+  if (lower.includes("lejlighed") || lower.includes("beboelseslejlighed")) {
+    return "Boligenhed";
+  }
+
+  if (lower.includes("sommer")) {
+    return "Sommerhus";
+  }
+
+  return value.length > 28 ? value.slice(0, 25).trimEnd() + "..." : value;
+}
+
+function compactHeating(value: string) {
+  const lower = value.toLowerCase();
+
+  if (lower.includes("fjernvarme")) {
+    return "Fjernvarme";
+  }
+
+  if (lower.includes("varmepumpe")) {
+    return "Varmepumpe";
+  }
+
+  if (lower.includes("centralvarme")) {
+    return "Centralvarme";
+  }
+
+  return value.length > 28 ? value.slice(0, 25).trimEnd() + "..." : value;
+}
+
+function productFactValue(fact: HousePublicDataProfileFact | undefined) {
+  if (!fact || fact.availability !== "value") {
+    return "Ikke registreret";
+  }
+
+  const formatted = formatProfileFact(fact);
+
+  if (!formatted) {
+    return "Ikke registreret";
+  }
+
+  if (fact.key === "housing_type") {
+    return compactHouseType(formatted);
+  }
+
+  if (fact.key === "heating") {
+    return compactHeating(formatted);
+  }
+
+  return formatted;
+}
+
+function updatedAtLabel(value: string | null | undefined) {
+  if (!value) {
+    return "Ikke opdateret endnu";
+  }
+
+  return `Opdateret ${new Date(value).toLocaleDateString("da-DK")}`;
+}
+
+function improvementDateLabel(improvement: HouseImprovement) {
+  if (improvement.improvementDate) {
+    return formatDisplayDate(improvement.improvementDate);
+  }
+
+  return improvement.improvementYear ? `${improvement.improvementYear}` : "Ikke dateret";
+}
+
+function improvementMeta(improvement: HouseImprovement) {
+  const parts = [improvementDateLabel(improvement)];
+
+  if (improvement.documentReference) {
+    parts.push("Dokument vedhæftet");
+  }
+
+  if (improvement.costAmountMinor !== null && improvement.costCurrency) {
+    parts.push(
+      new Intl.NumberFormat("da-DK", {
+        style: "currency",
+        currency: improvement.costCurrency
+      }).format(improvement.costAmountMinor / 100)
+    );
+  }
+
+  return parts.join(" · ");
+}
+
 function formatProfileFact(fact: HousePublicDataProfileFact) {
   if (fact.availability === "not_relevant") {
     return null;
@@ -1089,59 +1234,494 @@ function HouseScreen({
   house,
   publicDataSummary,
   publicDataProfile,
-  tasks,
+  improvements,
+  housePhoto,
+  housePhotoUri,
+  housePhotoHeaders,
   onboarding,
+  houseView,
+  improvementTitle,
+  improvementYear,
+  improvementDescription,
+  improvementCategory,
+  improvementDocumentReference,
+  improvementCost,
+  improvementFormError,
+  photoError,
   isRefreshingPublicData,
+  isLoadingImprovements,
+  isSavingImprovement,
+  isUploadingPhoto,
   publicDataRefreshMessage,
-  onRefreshPublicData
+  onOpenDetails,
+  onOpenImprovements,
+  onOpenAddImprovement,
+  onBackToHouse,
+  onRefreshPublicData,
+  onOpenDocuments,
+  onAddHousePhoto,
+  onTakeHousePhoto,
+  onRemoveHousePhoto,
+  onImprovementTitleChange,
+  onImprovementYearChange,
+  onImprovementDescriptionChange,
+  onImprovementCategoryChange,
+  onImprovementDocumentReferenceChange,
+  onImprovementCostChange,
+  onSaveImprovement
 }: {
   house: SavedHouse | null;
   publicDataSummary: HousePublicDataSummary | null;
   publicDataProfile: HousePublicDataProfileV1 | null;
-  tasks: MaintenanceTask[];
+  improvements: HouseImprovement[];
+  housePhoto: HouseMedia | null;
+  housePhotoUri: string | null;
+  housePhotoHeaders: Record<string, string> | undefined;
   onboarding: React.ComponentProps<typeof HouseOnboarding>;
+  houseView: HouseView;
+  improvementTitle: string;
+  improvementYear: string;
+  improvementDescription: string;
+  improvementCategory: HouseImprovementCategory | "";
+  improvementDocumentReference: string;
+  improvementCost: string;
+  improvementFormError: string | null;
+  photoError: string | null;
   isRefreshingPublicData: boolean;
+  isLoadingImprovements: boolean;
+  isSavingImprovement: boolean;
+  isUploadingPhoto: boolean;
   publicDataRefreshMessage: PublicDataRefreshMessage | null;
+  onOpenDetails: () => void;
+  onOpenImprovements: () => void;
+  onOpenAddImprovement: () => void;
+  onBackToHouse: () => void;
   onRefreshPublicData: () => void;
+  onOpenDocuments: () => void;
+  onAddHousePhoto: () => void;
+  onTakeHousePhoto: () => void;
+  onRemoveHousePhoto: () => void;
+  onImprovementTitleChange: (value: string) => void;
+  onImprovementYearChange: (value: string) => void;
+  onImprovementDescriptionChange: (value: string) => void;
+  onImprovementCategoryChange: (value: HouseImprovementCategory | "") => void;
+  onImprovementDocumentReferenceChange: (value: string) => void;
+  onImprovementCostChange: (value: string) => void;
+  onSaveImprovement: () => void;
 }) {
   if (!house) {
     return <HouseOnboarding {...onboarding} />;
   }
 
-  const activeTasks = tasks.filter(isActiveMaintenanceTask);
+  if (houseView === "details") {
+    return (
+      <View style={styles.stack}>
+        <View style={styles.screenTitleRow}>
+          <SectionHeader title="Boligoplysninger" subtitle="Detaljer fra BBR." />
+          <SecondaryButton label="Tilbage" onPress={onBackToHouse} />
+        </View>
+        <Card>
+          {publicDataProfile ? (
+            <>
+              <Text style={styles.cardTitle}>{publicDataProfile.title}</Text>
+              {publicDataProfile.subtitle ? (
+                <Text style={styles.compactBodyText}>{publicDataProfile.subtitle}</Text>
+              ) : null}
+              <Text style={styles.metaText}>
+                {publicDataProfile.sourceLabel} · {updatedAtLabel(publicDataProfile.fetchedAt)}
+              </Text>
+              {publicDataProfile.sections.map((section, index) => (
+                <ProfileSection
+                  key={section.key}
+                  section={section}
+                  defaultExpanded={index < 2}
+                />
+              ))}
+              <View style={styles.summaryActions}>
+                <SecondaryButton
+                  label={isRefreshingPublicData ? "Opdaterer..." : "Opdater BBR"}
+                  disabled={isRefreshingPublicData}
+                  onPress={onRefreshPublicData}
+                />
+              </View>
+              {publicDataRefreshMessage ? (
+                <Text
+                  style={[
+                    styles.refreshMessageText,
+                    publicDataRefreshMessage.tone === "success"
+                      ? styles.successText
+                      : styles.refreshWarningText
+                  ]}
+                >
+                  {publicDataRefreshMessage.text}
+                </Text>
+              ) : null}
+            </>
+          ) : (
+            <EmptyState
+              compact
+              title="Boligoplysninger hentes"
+              body="Matriva viser detaljerne her, når BBR-profilen er klar."
+            />
+          )}
+        </Card>
+      </View>
+    );
+  }
+
+  if (houseView === "improvements") {
+    return (
+      <View style={styles.stack}>
+        <View style={styles.screenTitleRow}>
+          <SectionHeader title="Forbedringer" subtitle="Husets historik, nyeste først." />
+          <SecondaryButton label="Tilbage" onPress={onBackToHouse} />
+        </View>
+        <PrimaryButton label="+ Tilføj forbedring" onPress={onOpenAddImprovement} />
+        {isLoadingImprovements ? (
+          <Card>
+            <ActivityIndicator color={theme.primary} />
+            <Text style={styles.compactBodyText}>Henter forbedringer...</Text>
+          </Card>
+        ) : improvements.length === 0 ? (
+          <EmptyState
+            title="Ingen forbedringer registreret endnu."
+            body="Tilføj renoveringer og større ændringer, så husets historik følger med."
+          />
+        ) : (
+          <View style={styles.taskList}>
+            {improvements.map((improvement) => (
+              <ImprovementCard key={improvement.id} improvement={improvement} />
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  if (houseView === "addImprovement") {
+    return (
+      <View style={styles.stack}>
+        <View style={styles.screenTitleRow}>
+          <SectionHeader title="Tilføj forbedring" subtitle="Gem en renovering eller større ændring." />
+          <SecondaryButton label="Tilbage" disabled={isSavingImprovement} onPress={onBackToHouse} />
+        </View>
+        <Card variant="plain">
+          <View style={styles.formSection}>
+            <Text style={styles.label}>Titel</Text>
+            <TextInput
+              accessibilityLabel="Titel på forbedring"
+              editable={!isSavingImprovement}
+              onChangeText={onImprovementTitleChange}
+              placeholder="Fx Nye vinduer"
+              placeholderTextColor={theme.muted}
+              style={styles.input}
+              value={improvementTitle}
+            />
+          </View>
+          <View style={styles.formSection}>
+            <Text style={styles.label}>År</Text>
+            <TextInput
+              accessibilityLabel="År for forbedring"
+              editable={!isSavingImprovement}
+              inputMode="numeric"
+              keyboardType="number-pad"
+              maxLength={4}
+              onChangeText={onImprovementYearChange}
+              placeholder="2024"
+              placeholderTextColor={theme.muted}
+              style={styles.input}
+              value={improvementYear}
+            />
+          </View>
+          <View style={styles.formSection}>
+            <Text style={styles.label}>Kategori</Text>
+            <View style={styles.choiceWrap}>
+              {improvementCategories.map(([key, label]) => {
+                const selected = improvementCategory === key;
+
+                return (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    key={key}
+                    disabled={isSavingImprovement}
+                    onPress={() => onImprovementCategoryChange(selected ? "" : key)}
+                    style={({ pressed }) => [
+                      styles.choiceChip,
+                      selected ? styles.choiceChipSelected : null,
+                      pressed && !isSavingImprovement ? styles.choiceChipPressed : null
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.choiceChipText,
+                        selected ? styles.choiceChipTextSelected : null
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+          <View style={styles.formSection}>
+            <Text style={styles.label}>Beskrivelse</Text>
+            <TextInput
+              accessibilityLabel="Beskrivelse af forbedring"
+              editable={!isSavingImprovement}
+              multiline
+              onChangeText={onImprovementDescriptionChange}
+              placeholder="Valgfrit"
+              placeholderTextColor={theme.muted}
+              style={[styles.input, styles.textArea]}
+              value={improvementDescription}
+            />
+          </View>
+          <View style={styles.formSection}>
+            <Text style={styles.label}>Dokumentreference</Text>
+            <TextInput
+              accessibilityLabel="Dokumentreference"
+              editable={!isSavingImprovement}
+              onChangeText={onImprovementDocumentReferenceChange}
+              placeholder="Fx Faktura i dokumentarkiv"
+              placeholderTextColor={theme.muted}
+              style={styles.input}
+              value={improvementDocumentReference}
+            />
+          </View>
+          <View style={styles.formSection}>
+            <Text style={styles.label}>Udgift</Text>
+            <TextInput
+              accessibilityLabel="Udgift i kroner"
+              editable={!isSavingImprovement}
+              inputMode="decimal"
+              keyboardType="decimal-pad"
+              onChangeText={onImprovementCostChange}
+              placeholder="Valgfrit beløb i kr."
+              placeholderTextColor={theme.muted}
+              style={styles.input}
+              value={improvementCost}
+            />
+          </View>
+          {improvementFormError ? (
+            <Text style={styles.errorText}>{improvementFormError}</Text>
+          ) : null}
+          <PrimaryButton
+            label="Gem forbedring"
+            loading={isSavingImprovement}
+            disabled={isSavingImprovement}
+            onPress={onSaveImprovement}
+          />
+        </Card>
+      </View>
+    );
+  }
+
+  const factMap = new Map(publicDataProfile?.topFacts.map((fact) => [fact.key, fact]));
+  const latestImprovements = improvements.slice(0, 2);
+  const identityType =
+    productFactValue(factMap.get("housing_type")) !== "Ikke registreret"
+      ? productFactValue(factMap.get("housing_type"))
+      : publicDataSummary?.primary.title ?? "Hus";
 
   return (
     <View style={styles.stack}>
-      <SectionHeader
-        title="Mit hus"
-        subtitle="Profilen for det hus, Matriva holder øje med."
-      />
-
-      <HouseStatusCard house={house} publicDataSummary={publicDataSummary} />
-
-      <PublicDataSummaryPanel
-        summary={publicDataSummary}
-        profile={publicDataProfile}
-        isRefreshing={isRefreshingPublicData}
-        refreshMessage={publicDataRefreshMessage}
-        onRefresh={onRefreshPublicData}
-      />
-
-      <Card>
-        <Text style={styles.cardTitle}>Matriva-status</Text>
-        <Text style={styles.bodyText}>Matriva har gemt huset.</Text>
-        <View style={styles.infoList}>
-          <InfoRow label="Adresse" value={house.addressLabel} />
-          <InfoRow
-            label="Vedligehold"
-            value={
-              activeTasks.length === 1
-                ? "1 aktiv opgave"
-                : `${activeTasks.length} aktive opgaver`
-            }
+      <View style={styles.houseDashboardHeader}>
+        <View style={styles.screenTitleRow}>
+          <SectionHeader title="Mit hus" />
+          <HousePhotoMenu
+            hasPhoto={!!housePhoto}
+            isUploading={isUploadingPhoto}
+            onAddPhoto={onAddHousePhoto}
+            onTakePhoto={onTakeHousePhoto}
+            onRemovePhoto={onRemoveHousePhoto}
+            onRefreshPublicData={onRefreshPublicData}
           />
         </View>
-      </Card>
+        {housePhoto ? (
+          <Image
+            accessibilityIgnoresInvertColors
+            accessibilityLabel="Foto af huset"
+            resizeMode="cover"
+            source={{
+              uri: housePhotoUri ?? "",
+              headers: housePhotoHeaders
+            }}
+            style={styles.housePhoto}
+          />
+        ) : null}
+        <View style={styles.houseIdentity}>
+          <Text style={styles.houseAddress}>{house.addressLabel}</Text>
+          <Text style={styles.houseMeta}>
+            {identityType} · {updatedAtLabel(publicDataProfile?.fetchedAt ?? publicDataSummary?.fetchedAt)}
+          </Text>
+          {publicDataProfile?.status === "partial" || publicDataProfile?.status === "ambiguous" ? (
+            <Text style={styles.houseStatusMeta}>
+              {publicDataProfile.status === "ambiguous" ? "BBR kræver afklaring" : "Delvist BBR-opslag"}
+            </Text>
+          ) : null}
+          {photoError ? <Text style={styles.errorText}>{photoError}</Text> : null}
+        </View>
+      </View>
+
+      <View style={styles.overviewGrid}>
+        {overviewFactOrder.map((key) => (
+          <View
+            accessible
+            accessibilityLabel={`${overviewFactLabels[key]}: ${productFactValue(factMap.get(key))}`}
+            key={key}
+            style={styles.overviewFactCard}
+          >
+            <Text style={styles.overviewFactIcon}>{overviewFactIcons[key]}</Text>
+            <Text style={styles.overviewFactLabel}>{overviewFactLabels[key]}</Text>
+            <Text style={styles.overviewFactValue}>{productFactValue(factMap.get(key))}</Text>
+          </View>
+        ))}
+      </View>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Se alle boligoplysninger"
+        onPress={onOpenDetails}
+        style={({ pressed }) => [styles.linkRow, pressed ? styles.linkRowPressed : null]}
+      >
+        <Text style={styles.linkRowText}>Se alle boligoplysninger</Text>
+        <Text style={styles.linkRowIcon}>›</Text>
+      </Pressable>
+
+      <View style={styles.sectionBlock}>
+        <View style={styles.inlineSectionHeader}>
+          <Text style={styles.inlineSectionTitle}>Forbedringer</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Se alle forbedringer"
+            onPress={onOpenImprovements}
+            style={({ pressed }) => [styles.textLinkButton, pressed ? styles.loginTextActionPressed : null]}
+          >
+            <Text style={styles.textLink}>Se alle</Text>
+          </Pressable>
+        </View>
+        {isLoadingImprovements ? (
+          <Card>
+            <ActivityIndicator color={theme.primary} />
+            <Text style={styles.compactBodyText}>Henter forbedringer...</Text>
+          </Card>
+        ) : latestImprovements.length > 0 ? (
+          latestImprovements.map((improvement) => (
+            <ImprovementCard key={improvement.id} improvement={improvement} />
+          ))
+        ) : (
+          <EmptyState
+            compact
+            title="Ingen forbedringer registreret endnu."
+            body="Tilføj renoveringer og større ændringer, så husets historik følger med."
+          />
+        )}
+        <SecondaryButton label="+ Tilføj forbedring" onPress={onOpenAddImprovement} />
+      </View>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Åbn dokumentarkiv"
+        onPress={onOpenDocuments}
+        style={({ pressed }) => [styles.documentArchiveRow, pressed ? styles.linkRowPressed : null]}
+      >
+        <View style={styles.taskTitleGroup}>
+          <Text style={styles.cardTitle}>Dokumentarkiv</Text>
+          <Text style={styles.compactBodyText}>
+            Se boligpapirer, kvitteringer og dokumentation
+          </Text>
+        </View>
+        <Text style={styles.linkRowIcon}>›</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function HousePhotoMenu({
+  hasPhoto,
+  isUploading,
+  onAddPhoto,
+  onTakePhoto,
+  onRemovePhoto,
+  onRefreshPublicData
+}: {
+  hasPhoto: boolean;
+  isUploading: boolean;
+  onAddPhoto: () => void;
+  onTakePhoto: () => void;
+  onRemovePhoto: () => void;
+  onRefreshPublicData: () => void;
+}) {
+  return (
+    <View style={styles.houseMenu}>
+      <SecondaryButton
+        label={isUploading ? "Uploader..." : hasPhoto ? "Skift husfoto" : "Tilføj husfoto"}
+        disabled={isUploading}
+        onPress={onAddPhoto}
+      />
+      <View style={styles.houseMenuInline}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Tag husfoto"
+          disabled={isUploading}
+          onPress={onTakePhoto}
+          style={({ pressed }) => [
+            styles.iconAction,
+            pressed && !isUploading ? styles.secondaryButtonPressed : null,
+            isUploading ? styles.disabled : null
+          ]}
+        >
+          <Text style={styles.iconActionText}>◎</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Opdater BBR"
+          disabled={isUploading}
+          onPress={onRefreshPublicData}
+          style={({ pressed }) => [
+            styles.iconAction,
+            pressed && !isUploading ? styles.secondaryButtonPressed : null
+          ]}
+        >
+          <Text style={styles.iconActionText}>↻</Text>
+        </Pressable>
+        {hasPhoto ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Fjern husfoto"
+            disabled={isUploading}
+            onPress={onRemovePhoto}
+            style={({ pressed }) => [
+              styles.iconAction,
+              pressed && !isUploading ? styles.secondaryButtonPressed : null,
+              isUploading ? styles.disabled : null
+            ]}
+          >
+            <Text style={styles.iconActionText}>×</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function ImprovementCard({ improvement }: { improvement: HouseImprovement }) {
+  return (
+    <View style={styles.improvementCard}>
+      <View style={styles.cardHeaderRow}>
+        <View style={styles.taskTitleGroup}>
+          <Text style={styles.taskRowTitle}>{improvement.title}</Text>
+          {improvement.description ? (
+            <Text style={styles.compactBodyText}>{improvement.description}</Text>
+          ) : null}
+          <Text style={styles.metaText}>{improvementMeta(improvement)}</Text>
+        </View>
+        {improvement.category ? (
+          <Pill>{improvementCategoryLabels[improvement.category]}</Pill>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -1647,6 +2227,7 @@ export default function App() {
   const [profileName, setProfileName] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
   const [moreView, setMoreView] = useState<MoreView>("menu");
+  const [houseView, setHouseView] = useState<HouseView>("overview");
   const [loadingAction, setLoadingAction] = useState<LoadingAction | null>("app");
   const [houses, setHouses] = useState<SavedHouse[]>([]);
   const [publicDataSummaries, setPublicDataSummaries] = useState<
@@ -1656,6 +2237,8 @@ export default function App() {
     useState<HousePublicDataProfileV1 | null>(null);
   const [selectedHouseId, setSelectedHouseId] = useState<HouseId | null>(null);
   const [tasks, setTasks] = useState<MaintenanceTask[]>([]);
+  const [improvements, setImprovements] = useState<HouseImprovement[]>([]);
+  const [housePhoto, setHousePhoto] = useState<HouseMedia | null>(null);
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<AddressSuggestion | null>(null);
@@ -1668,6 +2251,17 @@ export default function App() {
   const [taskDescription, setTaskDescription] = useState("");
   const [taskDeadline, setTaskDeadline] = useState("");
   const [taskFormError, setTaskFormError] = useState<string | null>(null);
+  const [improvementTitle, setImprovementTitle] = useState("");
+  const [improvementYear, setImprovementYear] = useState("");
+  const [improvementDescription, setImprovementDescription] = useState("");
+  const [improvementCategory, setImprovementCategory] = useState<
+    HouseImprovementCategory | ""
+  >("");
+  const [improvementDocumentReference, setImprovementDocumentReference] =
+    useState("");
+  const [improvementCost, setImprovementCost] = useState("");
+  const [improvementFormError, setImprovementFormError] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const [publicDataRefreshMessage, setPublicDataRefreshMessage] =
     useState<PublicDataRefreshMessage | null>(null);
 
@@ -1690,11 +2284,14 @@ export default function App() {
     setProfileName("");
     setActiveTab("dashboard");
     setMoreView("menu");
+    setHouseView("overview");
     setHouses([]);
     setPublicDataSummaries([]);
     setPublicDataProfile(null);
     setSelectedHouseId(null);
     setTasks([]);
+    setImprovements([]);
+    setHousePhoto(null);
     setQuery("");
     setSuggestions([]);
     setSelectedAddress(null);
@@ -1707,6 +2304,14 @@ export default function App() {
     setTaskDescription("");
     setTaskDeadline("");
     setTaskFormError(null);
+    setImprovementTitle("");
+    setImprovementYear("");
+    setImprovementDescription("");
+    setImprovementCategory("");
+    setImprovementDocumentReference("");
+    setImprovementCost("");
+    setImprovementFormError(null);
+    setPhotoError(null);
     setPublicDataRefreshMessage(null);
     setLoadingAction(null);
   }
@@ -1715,6 +2320,23 @@ export default function App() {
     async (houseId: HouseId) => {
       const response = await apiClient.listMaintenanceTasks(houseId);
       setTasks(response.tasks);
+    },
+    [apiClient]
+  );
+
+  const loadHouseImprovements = useCallback(
+    async (houseId: HouseId) => {
+      const response = await apiClient.listHouseImprovements(houseId);
+      setImprovements(response.improvements);
+    },
+    [apiClient]
+  );
+
+  const loadHousePhoto = useCallback(
+    async (houseId: HouseId) => {
+      const response = await apiClient.getHousePhoto(houseId);
+      setHousePhoto(response.photo);
+      setPhotoError(null);
     },
     [apiClient]
   );
@@ -1747,13 +2369,21 @@ export default function App() {
       setSelectedHouseId(nextHouse?.id ?? null);
 
       if (bootstrapResponse.onboarding.state === "complete" && nextHouse) {
-        await loadTasks(nextHouse.id);
+        await Promise.all([
+          loadTasks(nextHouse.id),
+          loadHouseImprovements(nextHouse.id),
+          loadHousePhoto(nextHouse.id)
+        ]);
       } else {
         setTasks([]);
+        setImprovements([]);
+        setHousePhoto(null);
       }
     } catch (caughtError) {
       setError(userFacingError(caughtError));
       setTasks([]);
+      setImprovements([]);
+      setHousePhoto(null);
       setPublicDataSummaries([]);
       setPublicDataProfile(null);
     } finally {
@@ -1761,7 +2391,7 @@ export default function App() {
         setLoadingAction(null);
       }
     }
-  }, [apiClient, loadTasks]);
+  }, [apiClient, loadHouseImprovements, loadHousePhoto, loadTasks]);
 
   useEffect(() => {
     if (!selectedHouse || authStatus !== "authenticated") {
@@ -2066,6 +2696,179 @@ export default function App() {
     }
   }
 
+  function resetImprovementForm() {
+    setImprovementTitle("");
+    setImprovementYear("");
+    setImprovementDescription("");
+    setImprovementCategory("");
+    setImprovementDocumentReference("");
+    setImprovementCost("");
+    setImprovementFormError(null);
+  }
+
+  async function saveImprovement() {
+    if (!selectedHouse) {
+      setImprovementFormError("Tilføj et hus, før du opretter en forbedring.");
+      return;
+    }
+
+    const title = improvementTitle.trim();
+    const year = Number(improvementYear.trim());
+    const costText = improvementCost.trim().replace(",", ".");
+
+    if (!title) {
+      setImprovementFormError("Titel er påkrævet.");
+      return;
+    }
+
+    if (!Number.isInteger(year) || year < 1700 || year > 2200) {
+      setImprovementFormError("Skriv et gyldigt år.");
+      return;
+    }
+
+    const parsedCostAmountMinor = costText
+      ? Math.round(Number(costText) * 100)
+      : undefined;
+
+    if (
+      costText &&
+      (
+        parsedCostAmountMinor === undefined ||
+        !Number.isFinite(parsedCostAmountMinor) ||
+        parsedCostAmountMinor < 0
+      )
+    ) {
+      setImprovementFormError("Udgift skal være et gyldigt beløb.");
+      return;
+    }
+
+    const payload: CreateHouseImprovementRequest = {
+      title,
+      improvementYear: year,
+      ...(improvementDescription.trim()
+        ? { description: improvementDescription.trim() }
+        : {}),
+      ...(improvementCategory ? { category: improvementCategory } : {}),
+      ...(improvementDocumentReference.trim()
+        ? { documentReference: improvementDocumentReference.trim() }
+        : {}),
+      ...(parsedCostAmountMinor !== undefined
+        ? { costAmountMinor: parsedCostAmountMinor, costCurrency: "DKK" }
+        : {})
+    };
+
+    setLoadingAction("improvement");
+    setImprovementFormError(null);
+    setError(null);
+
+    try {
+      await apiClient.createHouseImprovement(selectedHouse.id, payload);
+      await loadHouseImprovements(selectedHouse.id);
+      resetImprovementForm();
+      setHouseView("overview");
+    } catch (caughtError) {
+      setImprovementFormError(userFacingError(caughtError));
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
+  async function pickHousePhoto(source: "library" | "camera") {
+    if (!selectedHouse || loadingAction === "photo") {
+      return;
+    }
+
+    setLoadingAction("photo");
+    setPhotoError(null);
+
+    try {
+      const ImagePicker = await import("expo-image-picker");
+      const permission =
+        source === "camera"
+          ? await ImagePicker.requestCameraPermissionsAsync()
+          : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!permission.granted) {
+        setPhotoError(
+          source === "camera"
+            ? "Kameraadgang er nødvendig for at tage et husfoto."
+            : "Fotoadgang er nødvendig for at vælge et husfoto."
+        );
+        return;
+      }
+
+      const result =
+        source === "camera"
+          ? await ImagePicker.launchCameraAsync({
+              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              allowsEditing: true,
+              aspect: [16, 9],
+              quality: 0.82,
+              base64: true
+            })
+          : await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              allowsEditing: true,
+              aspect: [16, 9],
+              quality: 0.82,
+              base64: true
+            });
+
+      if (result.canceled) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      const base64 = asset?.base64;
+      const mimeType = asset?.mimeType ?? "image/jpeg";
+
+      if (!asset || !base64) {
+        setPhotoError("Billedet kunne ikke læses. Prøv et andet foto.");
+        return;
+      }
+
+      if (!["image/jpeg", "image/png", "image/heic", "image/heif"].includes(mimeType)) {
+        setPhotoError("Vælg et JPEG-, PNG- eller HEIC-billede.");
+        return;
+      }
+
+      const sizeBytes =
+        asset.fileSize ?? Math.floor((base64.replace(/=+$/, "").length * 3) / 4);
+
+      const response = await apiClient.setHousePhoto(selectedHouse.id, {
+        fileName: asset.fileName ?? `house-photo.${mimeType.split("/")[1] ?? "jpg"}`,
+        mimeType: mimeType as "image/jpeg" | "image/png" | "image/heic" | "image/heif",
+        sizeBytes,
+        ...(asset.width ? { width: asset.width } : {}),
+        ...(asset.height ? { height: asset.height } : {}),
+        contentBase64: base64
+      });
+      setHousePhoto(response.photo);
+    } catch (caughtError) {
+      setPhotoError(userFacingError(caughtError));
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
+  async function removeHousePhoto() {
+    if (!selectedHouse || loadingAction === "photo") {
+      return;
+    }
+
+    setLoadingAction("photo");
+    setPhotoError(null);
+
+    try {
+      await apiClient.removeHousePhoto(selectedHouse.id);
+      setHousePhoto(null);
+    } catch (caughtError) {
+      setPhotoError(userFacingError(caughtError));
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
   async function completeTask(task: MaintenanceTask) {
     if (!selectedHouse) {
       setError("Tilføj et hus, før du markerer opgaver som udført.");
@@ -2190,11 +2993,59 @@ export default function App() {
           house={selectedHouse}
           publicDataSummary={selectedPublicDataSummary}
           publicDataProfile={publicDataProfile}
-          tasks={tasks}
+          improvements={improvements}
+          housePhoto={housePhoto}
+          housePhotoUri={
+            housePhoto ? `${apiClient.baseUrl}${housePhoto.contentPath}` : null
+          }
+          housePhotoHeaders={
+            accessTokenRef.current
+              ? { authorization: `Bearer ${accessTokenRef.current}` }
+              : undefined
+          }
           onboarding={onboardingProps}
+          houseView={houseView}
+          improvementTitle={improvementTitle}
+          improvementYear={improvementYear}
+          improvementDescription={improvementDescription}
+          improvementCategory={improvementCategory}
+          improvementDocumentReference={improvementDocumentReference}
+          improvementCost={improvementCost}
+          improvementFormError={improvementFormError}
+          photoError={photoError}
           isRefreshingPublicData={loadingAction === "publicData"}
+          isLoadingImprovements={false}
+          isSavingImprovement={loadingAction === "improvement"}
+          isUploadingPhoto={loadingAction === "photo"}
           publicDataRefreshMessage={publicDataRefreshMessage}
+          onOpenDetails={() => setHouseView("details")}
+          onOpenImprovements={() => setHouseView("improvements")}
+          onOpenAddImprovement={() => setHouseView("addImprovement")}
+          onBackToHouse={() => {
+            resetImprovementForm();
+            setHouseView("overview");
+          }}
           onRefreshPublicData={() => void refreshPublicData()}
+          onOpenDocuments={() => setActiveTab("documents")}
+          onAddHousePhoto={() => void pickHousePhoto("library")}
+          onTakeHousePhoto={() => void pickHousePhoto("camera")}
+          onRemoveHousePhoto={() => void removeHousePhoto()}
+          onImprovementTitleChange={(value) => {
+            setImprovementTitle(value);
+            setImprovementFormError(null);
+          }}
+          onImprovementYearChange={(value) => {
+            setImprovementYear(value.replace(/[^\d]/g, "").slice(0, 4));
+            setImprovementFormError(null);
+          }}
+          onImprovementDescriptionChange={setImprovementDescription}
+          onImprovementCategoryChange={setImprovementCategory}
+          onImprovementDocumentReferenceChange={setImprovementDocumentReference}
+          onImprovementCostChange={(value) => {
+            setImprovementCost(value);
+            setImprovementFormError(null);
+          }}
+          onSaveImprovement={() => void saveImprovement()}
         />
       );
     }
@@ -2414,7 +3265,12 @@ export default function App() {
                 accessibilityRole="tab"
                 accessibilityState={{ selected: isActive }}
                 key={tab.key}
-                onPress={() => setActiveTab(tab.key)}
+                onPress={() => {
+                  setActiveTab(tab.key);
+                  if (tab.key === "house") {
+                    setHouseView("overview");
+                  }
+                }}
                 style={[styles.tabItem, isActive ? styles.tabItemActive : null]}
               >
                 <Text style={[styles.tabIcon, isActive ? styles.tabIconActive : null]}>
@@ -2534,9 +3390,9 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: theme.text,
-    fontSize: 30,
+    fontSize: 26,
     fontWeight: "800",
-    lineHeight: 35
+    lineHeight: 31
   },
   sectionSubtitle: {
     color: theme.muted,
@@ -3034,6 +3890,186 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     rowGap: 4
+  },
+  houseDashboardHeader: {
+    rowGap: 12
+  },
+  houseMenu: {
+    alignItems: "flex-end",
+    rowGap: 8
+  },
+  houseMenuInline: {
+    columnGap: 6,
+    flexDirection: "row"
+  },
+  iconAction: {
+    alignItems: "center",
+    backgroundColor: theme.primarySoft,
+    borderRadius: 8,
+    height: 42,
+    justifyContent: "center",
+    width: 42
+  },
+  iconActionText: {
+    color: theme.primary,
+    fontSize: 19,
+    fontWeight: "900"
+  },
+  housePhoto: {
+    aspectRatio: 16 / 9,
+    borderRadius: 8,
+    width: "100%"
+  },
+  houseIdentity: {
+    rowGap: 4
+  },
+  houseAddress: {
+    color: theme.text,
+    fontSize: 24,
+    fontWeight: "700",
+    lineHeight: 30
+  },
+  houseMeta: {
+    color: theme.muted,
+    fontSize: 15,
+    lineHeight: 21
+  },
+  houseStatusMeta: {
+    color: theme.subtle,
+    fontSize: 13,
+    lineHeight: 18
+  },
+  overviewGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  overviewFactCard: {
+    backgroundColor: "#FBFCFE",
+    borderColor: theme.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 96,
+    padding: 12,
+    rowGap: 5,
+    width: "48%"
+  },
+  overviewFactIcon: {
+    color: theme.primary,
+    fontSize: 20,
+    fontWeight: "800",
+    lineHeight: 22
+  },
+  overviewFactLabel: {
+    color: theme.muted,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 16
+  },
+  overviewFactValue: {
+    color: theme.text,
+    fontSize: 18,
+    fontWeight: "700",
+    lineHeight: 23
+  },
+  linkRow: {
+    alignItems: "center",
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 52,
+    paddingHorizontal: 14
+  },
+  linkRowPressed: {
+    backgroundColor: theme.primaryFaint,
+    borderColor: theme.primary
+  },
+  linkRowText: {
+    color: theme.text,
+    fontSize: 15,
+    fontWeight: "800"
+  },
+  linkRowIcon: {
+    color: theme.primary,
+    fontSize: 24,
+    fontWeight: "700",
+    lineHeight: 26
+  },
+  sectionBlock: {
+    rowGap: 10
+  },
+  inlineSectionHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  inlineSectionTitle: {
+    color: theme.text,
+    fontSize: 19,
+    fontWeight: "800",
+    lineHeight: 24
+  },
+  textLinkButton: {
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6
+  },
+  textLink: {
+    color: theme.primary,
+    fontSize: 14,
+    fontWeight: "800"
+  },
+  improvementCard: {
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 14,
+    rowGap: 8
+  },
+  documentArchiveRow: {
+    alignItems: "center",
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    columnGap: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 74,
+    padding: 14
+  },
+  choiceWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8
+  },
+  choiceChip: {
+    backgroundColor: "#FBFCFE",
+    borderColor: theme.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8
+  },
+  choiceChipSelected: {
+    backgroundColor: theme.primarySoft,
+    borderColor: theme.primary
+  },
+  choiceChipPressed: {
+    opacity: 0.72
+  },
+  choiceChipText: {
+    color: theme.subtle,
+    fontSize: 13,
+    fontWeight: "700"
+  },
+  choiceChipTextSelected: {
+    color: theme.primary,
+    fontWeight: "800"
   },
   formHeader: {
     rowGap: 4

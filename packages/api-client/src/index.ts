@@ -3,6 +3,9 @@ import {
   appBootstrapResponseSchema,
   authSessionResponseSchema,
   currentUserResponseSchema,
+  houseImprovementResponseSchema,
+  houseImprovementsResponseSchema,
+  housePhotoResponseSchema,
   enrichHouseDraftResponseSchema,
   logoutResponseSchema,
   maintenanceTaskResponseSchema,
@@ -22,6 +25,7 @@ import {
   type AuthSessionResponse,
   type ConsumeMagicLinkRequest,
   type CurrentUserResponse,
+  type CreateHouseImprovementRequest,
   type CreateMaintenanceTaskRequest,
   type CreateSavedHouseRequest,
   type EnrichHouseDraftRequest,
@@ -31,6 +35,9 @@ import {
   type HouseDraftOverviewPreviewResponse,
   type HouseDraftResponse,
   type HouseId,
+  type HouseImprovementResponse,
+  type HouseImprovementsResponse,
+  type HousePhotoResponse,
   type HousePublicDataWithProfileResponseV1,
   type HomeBootstrapResponse,
   type LogoutResponse,
@@ -43,6 +50,7 @@ import {
   type SavedHousesResponse,
   type SelectedAddressInput,
   type TaskId,
+  type UploadHousePhotoRequest,
   type UpdateMaintenanceTaskStatusRequest,
   type UpdateProfileRequest,
   type UpdateProfileResponse
@@ -97,6 +105,19 @@ export type MatrivaApiClient = {
     taskId: TaskId,
     input: UpdateMaintenanceTaskStatusRequest
   ) => Promise<MaintenanceTaskResponse>;
+  listHouseImprovements: (
+    houseId: HouseId
+  ) => Promise<HouseImprovementsResponse>;
+  createHouseImprovement: (
+    houseId: HouseId,
+    input: CreateHouseImprovementRequest
+  ) => Promise<HouseImprovementResponse>;
+  getHousePhoto: (houseId: HouseId) => Promise<HousePhotoResponse>;
+  setHousePhoto: (
+    houseId: HouseId,
+    input: UploadHousePhotoRequest
+  ) => Promise<HousePhotoResponse>;
+  removeHousePhoto: (houseId: HouseId) => Promise<HousePhotoResponse>;
 };
 
 export function createMatrivaApiClient(
@@ -379,6 +400,64 @@ export function createMatrivaApiClient(
 
       return maintenanceTaskResponseSchema.parse(
         await parseApiResponse(response, "Could not update maintenance task.")
+      );
+    },
+    async listHouseImprovements(houseId) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/improvements`,
+        { headers: authHeaders() }
+      );
+
+      return houseImprovementsResponseSchema.parse(
+        await parseApiResponse(response, "Could not load house improvements.")
+      );
+    },
+    async createHouseImprovement(houseId, input) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/improvements`,
+        {
+          method: "POST",
+          headers: authHeaders({
+            "content-type": "application/json"
+          }),
+          body: JSON.stringify(input)
+        }
+      );
+
+      return houseImprovementResponseSchema.parse(
+        await parseApiResponse(response, "Could not create house improvement.")
+      );
+    },
+    async getHousePhoto(houseId) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/houses/${houseId}/photo`, {
+        headers: authHeaders()
+      });
+
+      return housePhotoResponseSchema.parse(
+        await parseApiResponse(response, "Could not load house photo.")
+      );
+    },
+    async setHousePhoto(houseId, input) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/houses/${houseId}/photo`, {
+        method: "PUT",
+        headers: authHeaders({
+          "content-type": "application/json"
+        }),
+        body: JSON.stringify(input)
+      });
+
+      return housePhotoResponseSchema.parse(
+        await parseApiResponse(response, "Could not upload house photo.")
+      );
+    },
+    async removeHousePhoto(houseId) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/houses/${houseId}/photo`, {
+        method: "DELETE",
+        headers: authHeaders()
+      });
+
+      return housePhotoResponseSchema.parse(
+        await parseApiResponse(response, "Could not remove house photo.")
       );
     }
   };

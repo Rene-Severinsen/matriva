@@ -11,6 +11,8 @@ export type HouseId = Brand<string, "HouseId">;
 export type HomeCardId = Brand<string, "HomeCardId">;
 export type TaskId = Brand<string, "TaskId">;
 export type DocumentId = Brand<string, "DocumentId">;
+export type ImprovementId = Brand<string, "ImprovementId">;
+export type MediaId = Brand<string, "MediaId">;
 export type SubscriptionId = Brand<string, "SubscriptionId">;
 export type AddressSuggestionId = Brand<string, "AddressSuggestionId">;
 export type HouseDraftId = Brand<string, "HouseDraftId">;
@@ -51,6 +53,16 @@ export const documentIdSchema = z
   .string()
   .regex(new RegExp(`^doc_${opaqueSuffixPattern}$`))
   .transform((value): DocumentId => value as DocumentId);
+
+export const improvementIdSchema = z
+  .string()
+  .regex(new RegExp(`^impr_${opaqueSuffixPattern}$`))
+  .transform((value): ImprovementId => value as ImprovementId);
+
+export const mediaIdSchema = z
+  .string()
+  .regex(new RegExp(`^media_${opaqueSuffixPattern}$`))
+  .transform((value): MediaId => value as MediaId);
 
 export const subscriptionIdSchema = z
   .string()
@@ -707,6 +719,140 @@ export const updateMaintenanceTaskStatusRequestSchema = z.object({
 
 export type UpdateMaintenanceTaskStatusRequest = z.infer<
   typeof updateMaintenanceTaskStatusRequestSchema
+>;
+
+export const houseImprovementCategorySchema = z.enum([
+  "windows_doors",
+  "roof",
+  "heating_energy",
+  "kitchen",
+  "bathroom",
+  "installations",
+  "extension",
+  "outdoor",
+  "other"
+]);
+
+export type HouseImprovementCategory = z.infer<
+  typeof houseImprovementCategorySchema
+>;
+
+export const houseImprovementStatusSchema = z.enum([
+  "planned",
+  "completed",
+  "documented"
+]);
+
+export type HouseImprovementStatus = z.infer<
+  typeof houseImprovementStatusSchema
+>;
+
+export const houseImprovementSchema = z.object({
+  id: improvementIdSchema,
+  houseId: houseIdSchema,
+  title: z.string().min(1),
+  description: z.string().min(1).nullable(),
+  category: houseImprovementCategorySchema.nullable(),
+  improvementDate: z.string().date().nullable(),
+  improvementYear: z.number().int().min(1700).max(2200).nullable(),
+  costAmountMinor: z.number().int().nonnegative().nullable(),
+  costCurrency: z.string().length(3).nullable(),
+  documentReference: z.string().min(1).nullable(),
+  status: houseImprovementStatusSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+
+export type HouseImprovement = z.infer<typeof houseImprovementSchema>;
+
+export const createHouseImprovementRequestSchema = z
+  .object({
+    title: z.string().trim().min(1).max(140),
+    description: z.string().trim().max(1200).optional(),
+    category: houseImprovementCategorySchema.optional(),
+    improvementDate: z.string().date().optional(),
+    improvementYear: z.number().int().min(1700).max(2200).optional(),
+    costAmountMinor: z.number().int().nonnegative().optional(),
+    costCurrency: z.string().length(3).optional(),
+    documentReference: z.string().trim().max(240).optional(),
+    status: houseImprovementStatusSchema.optional()
+  })
+  .superRefine((input, context) => {
+    if (!input.improvementDate && input.improvementYear === undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["improvementYear"],
+        message: "An improvement requires either a date or a year."
+      });
+    }
+
+    if (input.costAmountMinor !== undefined && !input.costCurrency) {
+      context.addIssue({
+        code: "custom",
+        path: ["costCurrency"],
+        message: "Currency is required when cost is provided."
+      });
+    }
+  });
+
+export type CreateHouseImprovementRequest = z.infer<
+  typeof createHouseImprovementRequestSchema
+>;
+
+export const houseImprovementResponseSchema = z.object({
+  improvement: houseImprovementSchema
+});
+
+export type HouseImprovementResponse = z.infer<
+  typeof houseImprovementResponseSchema
+>;
+
+export const houseImprovementsResponseSchema = z.object({
+  improvements: z.array(houseImprovementSchema),
+  generatedAt: z.string().datetime()
+});
+
+export type HouseImprovementsResponse = z.infer<
+  typeof houseImprovementsResponseSchema
+>;
+
+export const houseMediaKindSchema = z.enum(["house_photo"]);
+
+export type HouseMediaKind = z.infer<typeof houseMediaKindSchema>;
+
+export const houseMediaSchema = z.object({
+  id: mediaIdSchema,
+  houseId: houseIdSchema,
+  mediaType: houseMediaKindSchema,
+  mimeType: z.string().min(1),
+  sizeBytes: z.number().int().positive(),
+  width: z.number().int().positive().nullable(),
+  height: z.number().int().positive().nullable(),
+  storageKey: z.string().min(1),
+  contentPath: z.string().min(1),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+
+export type HouseMedia = z.infer<typeof houseMediaSchema>;
+
+export const housePhotoResponseSchema = z.object({
+  photo: houseMediaSchema.nullable()
+});
+
+export type HousePhotoResponse = z.infer<typeof housePhotoResponseSchema>;
+
+export const uploadHousePhotoRequestSchema = z.object({
+  fileName: z.string().trim().min(1).max(180),
+  mimeType: z.enum(["image/jpeg", "image/png", "image/heic", "image/heif"]),
+  sizeBytes: z.number().int().positive().max(10 * 1024 * 1024),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+  contentBase64: z.string().min(1)
+});
+
+export type UploadHousePhotoRequest = z.infer<
+  typeof uploadHousePhotoRequestSchema
 >;
 
 export const houseDraftOverviewPreviewSectionKindSchema = z.enum([

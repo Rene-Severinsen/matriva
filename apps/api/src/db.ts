@@ -8,6 +8,8 @@ import pg from "pg";
 import {
   appBootstrapResponseSchema,
   currentUserSchema,
+  houseImprovementSchema,
+  houseMediaSchema,
   maintenanceTaskSchema,
   savedHouseSchema,
   sessionTokensSchema,
@@ -15,8 +17,11 @@ import {
 } from "@matriva/shared";
 import type {
   AppBootstrapResponse,
+  CreateHouseImprovementRequest,
   CreateMaintenanceTaskRequest,
   CurrentUser,
+  HouseImprovement,
+  HouseMedia,
   MaintenanceTask,
   MaintenanceTaskStatus,
   MaintenanceTaskTiming,
@@ -103,6 +108,35 @@ type MaintenanceTaskRow = {
   completed_at: Date | null;
 };
 
+type HouseImprovementRow = {
+  id: string;
+  house_id: string;
+  title: string;
+  description: string | null;
+  category: HouseImprovement["category"];
+  improvement_date: string | null;
+  improvement_year: number | null;
+  cost_amount_minor: number | null;
+  cost_currency: string | null;
+  document_reference: string | null;
+  status: HouseImprovement["status"];
+  created_at: Date;
+  updated_at: Date;
+};
+
+type HouseMediaRow = {
+  id: string;
+  house_id: string;
+  media_type: HouseMedia["mediaType"];
+  mime_type: string;
+  size_bytes: number;
+  width: number | null;
+  height: number | null;
+  storage_key: string;
+  created_at: Date;
+  updated_at: Date;
+};
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
@@ -141,6 +175,8 @@ export function createOpaqueId(
     | "pubunt"
     | "pubflr"
     | "pubpar"
+    | "impr"
+    | "media"
 ) {
   return `${prefix}_${randomBytes(12).toString("hex")}`;
 }
@@ -251,6 +287,44 @@ function toMaintenanceTask(row: MaintenanceTaskRow): MaintenanceTask {
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
     ...(row.completed_at ? { completedAt: row.completed_at.toISOString() } : {})
+  });
+}
+
+function housePhotoContentPath(houseId: string) {
+  return `/v1/houses/${houseId}/photo/content`;
+}
+
+function toHouseImprovement(row: HouseImprovementRow): HouseImprovement {
+  return houseImprovementSchema.parse({
+    id: row.id,
+    houseId: row.house_id,
+    title: row.title,
+    description: row.description,
+    category: row.category,
+    improvementDate: row.improvement_date,
+    improvementYear: row.improvement_year,
+    costAmountMinor: row.cost_amount_minor,
+    costCurrency: row.cost_currency,
+    documentReference: row.document_reference,
+    status: row.status,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString()
+  });
+}
+
+function toHouseMedia(row: HouseMediaRow): HouseMedia {
+  return houseMediaSchema.parse({
+    id: row.id,
+    houseId: row.house_id,
+    mediaType: row.media_type,
+    mimeType: row.mime_type,
+    sizeBytes: row.size_bytes,
+    width: row.width,
+    height: row.height,
+    storageKey: row.storage_key,
+    contentPath: housePhotoContentPath(row.house_id),
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString()
   });
 }
 
@@ -819,6 +893,203 @@ export async function updateMaintenanceTaskStatus(
   }
 
   return toMaintenanceTask(row);
+}
+
+export async function listHouseImprovements(userId: string, houseId: string) {
+  const house = await getSavedHouse(userId, houseId);
+  const result = await pool.query<HouseImprovementRow>(
+    `
+      select
+        id,
+        house_id,
+        title,
+        description,
+        category,
+        to_char(improvement_date, 'YYYY-MM-DD') as improvement_date,
+        improvement_year,
+        cost_amount_minor,
+        cost_currency,
+        document_reference,
+        status,
+        created_at,
+        updated_at
+      from house_improvements
+      where house_id = $1 and user_id = $2
+      order by coalesce(improvement_date, make_date(improvement_year, 1, 1)) desc, created_at desc
+    `,
+    [house.id, userId]
+  );
+
+  return result.rows.map(toHouseImprovement);
+}
+
+export async function createHouseImprovement(
+  userId: string,
+  houseId: string,
+  input: CreateHouseImprovementRequest
+) {
+  const house = await getSavedHouse(userId, houseId);
+  const result = await pool.query<HouseImprovementRow>(
+    `
+      insert into house_improvements (
+        id,
+        house_id,
+        user_id,
+        title,
+        description,
+        category,
+        improvement_date,
+        improvement_year,
+        cost_amount_minor,
+        cost_currency,
+        document_reference,
+        status
+      )
+      values ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12)
+      returning
+        id,
+        house_id,
+        title,
+        description,
+        category,
+        to_char(improvement_date, 'YYYY-MM-DD') as improvement_date,
+        improvement_year,
+        cost_amount_minor,
+        cost_currency,
+        document_reference,
+        status,
+        created_at,
+        updated_at
+    `,
+    [
+      createOpaqueId("impr"),
+      house.id,
+      userId,
+      input.title.trim(),
+      input.description?.trim() || null,
+      input.category ?? null,
+      input.improvementDate ?? null,
+      input.improvementYear ?? null,
+      input.costAmountMinor ?? null,
+      input.costCurrency ?? null,
+      input.documentReference?.trim() || null,
+      input.status ?? (input.documentReference ? "documented" : "completed")
+    ]
+  );
+
+  return toHouseImprovement(result.rows[0] as HouseImprovementRow);
+}
+
+export async function getCurrentHousePhoto(userId: string, houseId: string) {
+  const house = await getSavedHouse(userId, houseId);
+  const result = await pool.query<HouseMediaRow>(
+    `
+      select
+        id,
+        house_id,
+        media_type,
+        mime_type,
+        size_bytes,
+        width,
+        height,
+        storage_key,
+        created_at,
+        updated_at
+      from house_media
+      where house_id = $1 and user_id = $2 and is_current_house_photo
+      order by created_at desc
+      limit 1
+    `,
+    [house.id, userId]
+  );
+  const row = result.rows[0];
+
+  return row ? toHouseMedia(row) : null;
+}
+
+export async function replaceHousePhoto(
+  userId: string,
+  houseId: string,
+  input: {
+    mimeType: string;
+    sizeBytes: number;
+    width?: number;
+    height?: number;
+    storageKey: string;
+  }
+) {
+  const house = await getSavedHouse(userId, houseId);
+  const client = await pool.connect();
+
+  try {
+    await client.query("begin");
+    await client.query(
+      `
+        update house_media
+        set is_current_house_photo = false, updated_at = now()
+        where house_id = $1 and user_id = $2 and is_current_house_photo
+      `,
+      [house.id, userId]
+    );
+    const result = await client.query<HouseMediaRow>(
+      `
+        insert into house_media (
+          id,
+          house_id,
+          user_id,
+          media_type,
+          mime_type,
+          size_bytes,
+          width,
+          height,
+          storage_key,
+          is_current_house_photo
+        )
+        values ($1, $2, $3, 'house_photo', $4, $5, $6, $7, $8, true)
+        returning
+          id,
+          house_id,
+          media_type,
+          mime_type,
+          size_bytes,
+          width,
+          height,
+          storage_key,
+          created_at,
+          updated_at
+      `,
+      [
+        createOpaqueId("media"),
+        house.id,
+        userId,
+        input.mimeType,
+        input.sizeBytes,
+        input.width ?? null,
+        input.height ?? null,
+        input.storageKey
+      ]
+    );
+    await client.query("commit");
+
+    return toHouseMedia(result.rows[0] as HouseMediaRow);
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function removeHousePhoto(userId: string, houseId: string) {
+  const house = await getSavedHouse(userId, houseId);
+  await pool.query(
+    `
+      update house_media
+      set is_current_house_photo = false, updated_at = now()
+      where house_id = $1 and user_id = $2 and is_current_house_photo
+    `,
+    [house.id, userId]
+  );
 }
 
 export async function buildAppBootstrap(userId: string): Promise<AppBootstrapResponse> {

@@ -2,6 +2,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   KeyboardAvoidingView,
   Linking,
@@ -28,6 +29,7 @@ import {
   type CreateMaintenanceTaskRequest,
   type CurrentUser,
   type HouseId,
+  type HouseDocument,
   type HouseImprovement,
   type HouseImprovementCategory,
   type HouseMedia,
@@ -36,7 +38,14 @@ import {
   type HousePublicDataSummary,
   type HousePublicDataSummaryField,
   type HousePublicDataSummaryValue,
+  type MaintenanceHistoryEntry,
+  type MaintenanceHistoryDetail,
+  type MaintenanceRecommendation,
   type MaintenanceTask,
+  formatDkkPrice,
+  maintenanceTaskMatchesSeason,
+  maintenanceTaskSeason,
+  parseDanishPriceInput,
   type SavedHouse,
   type SelectedAddressInput,
   type SessionTokens,
@@ -48,7 +57,9 @@ import { matrivaApiConfig } from "./config/api";
 import { clearStoredSession, readStoredSession, writeStoredSession } from "./auth/sessionStorage";
 
 type TabKey = "dashboard" | "house" | "maintenance" | "documents" | "more";
-type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" | "publicData" | "improvement" | "photo" | "logout";
+type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" | "publicData" | "improvement" | "photo" | "recommendation" | "logout";
+type MaintenanceFilter = "current" | "spring" | "summer" | "autumn" | "winter" | "all";
+type MaintenanceView = "main" | "history" | "historyDetail" | "taskDetail";
 type AuthStatus = "restoring" | "anonymous" | "authenticated";
 type MoreView = "menu" | "profile";
 type HouseView = "overview" | "details" | "improvements" | "addImprovement";
@@ -103,6 +114,26 @@ function userFacingError(error: unknown): string {
   return error.message;
 }
 
+function priceInputErrorMessage(code: "negative" | "invalid" | "too_many_decimals" | "too_large") {
+  if (code === "negative") {
+    return "Prisen må ikke være negativ.";
+  }
+
+  if (code === "too_many_decimals") {
+    return "Prisen må højst have to decimaler.";
+  }
+
+  if (code === "too_large") {
+    return "Prisen er for høj.";
+  }
+
+  return "Indtast en gyldig pris.";
+}
+
+function editablePriceValue(amountMinor: number | null) {
+  return amountMinor !== null ? formatDkkPrice(amountMinor).replace(/\s?kr\.$/, "") : "";
+}
+
 function formatStatus(status: MaintenanceTask["status"]) {
   const labels: Record<MaintenanceTask["status"], string> = {
     suggested: "Forslag",
@@ -126,6 +157,18 @@ function isActiveMaintenanceTask(task: MaintenanceTask) {
 }
 
 function formatTiming(task: MaintenanceTask) {
+  if (task.timing.type === "seasonal_window" && task.timing.season) {
+    const seasonLabels: Record<NonNullable<MaintenanceTask["timing"]["season"]>, string> = {
+      spring: "Forår",
+      summer: "Sommer",
+      autumn: "Efterår",
+      winter: "Vinter",
+      all_year: "Hele året"
+    };
+
+    return seasonLabels[task.timing.season];
+  }
+
   if (task.timing.type !== "specific_deadline" || !task.timing.dueDate) {
     return "Ingen deadline";
   }
@@ -1036,15 +1079,19 @@ function ProfileSection({
 function TaskRow({
   task,
   completing,
-  onComplete
+  onComplete,
+  onOpen
 }: {
   task: MaintenanceTask;
   completing: boolean;
   onComplete: (task: MaintenanceTask) => void;
+  onOpen: (task: MaintenanceTask) => void;
 }) {
   const isOverdue = task.status === "overdue" || !!task.timing.daysOverdue;
   const showStatus = isOverdue || task.status === "due" || task.status === "suggested";
   const description = visibleTaskDescription(task);
+  const priceText =
+    task.priceAmountMinor !== null ? formatDkkPrice(task.priceAmountMinor, task.priceCurrency) : null;
 
   return (
     <View style={styles.taskRow}>
@@ -1061,14 +1108,19 @@ function TaskRow({
       >
         {completing ? <ActivityIndicator color={theme.primary} size="small" /> : null}
       </Pressable>
-      <View style={styles.taskRowBody}>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => onOpen(task)}
+        style={styles.taskRowBody}
+      >
         <Text style={styles.taskRowTitle}>{task.title}</Text>
         <Text style={[styles.taskTiming, isOverdue ? styles.warningText : null]}>
           {formatTiming(task)}
         </Text>
         {description ? <Text style={styles.compactBodyText}>{description}</Text> : null}
+        {priceText ? <Text style={styles.metaText}>Pris · {priceText}</Text> : null}
         <Text style={styles.metaText}>{formatSource(task.source)}</Text>
-      </View>
+      </Pressable>
       {showStatus ? (
         <Pill tone={isOverdue ? "warning" : "default"}>{formatStatus(task.status)}</Pill>
       ) : null}
@@ -1726,15 +1778,164 @@ function ImprovementCard({ improvement }: { improvement: HouseImprovement }) {
   );
 }
 
+const maintenanceFilters: Array<{ key: MaintenanceFilter; label: string }> = [
+  { key: "current", label: "Aktuelt" },
+  { key: "spring", label: "Forår" },
+  { key: "summer", label: "Sommer" },
+  { key: "autumn", label: "Efterår" },
+  { key: "winter", label: "Vinter" },
+  { key: "all", label: "Alle" }
+];
+
+function taskMatchesFilter(task: MaintenanceTask, filter: MaintenanceFilter) {
+  if (filter === "all") {
+    return true;
+  }
+
+  if (filter === "current") {
+    const season = maintenanceTaskSeason(task);
+    return (
+      task.status === "overdue" ||
+      task.status === "due" ||
+      !!task.timing.daysOverdue ||
+      (task.timing.daysUntilDue !== undefined && task.timing.daysUntilDue <= 30) ||
+      season === currentMaintenanceSeason() ||
+      season === "all_year"
+    );
+  }
+
+  return maintenanceTaskMatchesSeason(task, filter);
+}
+
+function currentMaintenanceSeason() {
+  const month = new Date().getMonth() + 1;
+
+  if (month === 12 || month <= 2) {
+    return "winter";
+  }
+
+  if (month <= 5) {
+    return "spring";
+  }
+
+  if (month <= 8) {
+    return "summer";
+  }
+
+  return "autumn";
+}
+
+function RecommendationCard({
+  recommendation,
+  isSaving,
+  onAccept,
+  onDismiss
+}: {
+  recommendation: MaintenanceRecommendation;
+  isSaving: boolean;
+  onAccept: (recommendation: MaintenanceRecommendation) => void;
+  onDismiss: (recommendation: MaintenanceRecommendation) => void;
+}) {
+  return (
+    <View style={styles.taskRow}>
+      <View style={styles.taskRowBody}>
+        <Text style={styles.taskRowTitle}>{recommendation.title}</Text>
+        <Text style={styles.taskTiming}>{recommendation.recommendedTimingLabel}</Text>
+        <Text style={styles.compactBodyText}>{recommendation.description}</Text>
+        <Text style={styles.metaText}>Kilde: Matriva-katalog</Text>
+      </View>
+      <View style={styles.recommendationActions}>
+        <SecondaryButton
+          disabled={isSaving}
+          label="Afvis forslag"
+          onPress={() => onDismiss(recommendation)}
+        />
+        <PrimaryButton
+          loading={isSaving}
+          label="Tilføj"
+          onPress={() => onAccept(recommendation)}
+        />
+      </View>
+    </View>
+  );
+}
+
+function MaintenanceHistoryRow({ entry }: { entry: MaintenanceHistoryEntry }) {
+  const meta = [
+    formatDisplayDate(entry.completedDate),
+    entry.priceAmountMinor !== null
+      ? formatDkkPrice(entry.priceAmountMinor, entry.priceCurrency)
+      : null,
+    entry.componentKey ? `Bygningsdel: ${entry.componentKey}` : null
+  ].filter(Boolean);
+
+  return (
+    <View style={styles.historyRow}>
+      <Text style={styles.taskRowTitle}>{entry.title}</Text>
+      <Text style={styles.metaText}>{meta.join(" · ")}</Text>
+      {entry.note ? <Text style={styles.compactBodyText}>{entry.note}</Text> : null}
+    </View>
+  );
+}
+
+function recurrenceLabel(recurrence: MaintenanceTask["recurrence"]) {
+  if (!recurrence) {
+    return null;
+  }
+
+  const labels: Record<NonNullable<MaintenanceTask["recurrence"]>["interval"], string> = {
+    monthly: "Gentages månedligt",
+    quarterly: "Gentages hver 3. måned",
+    half_yearly: "Gentages hvert halve år",
+    yearly: "Gentages årligt",
+    every_2_years: "Gentages hvert 2. år",
+    every_3_years: "Gentages hvert 3. år",
+    every_5_years: "Gentages hvert 5. år",
+    every_10_years: "Gentages hvert 10. år"
+  };
+
+  return labels[recurrence.interval];
+}
+
+function sourceLabel(source: MaintenanceTask["source"]) {
+  if (source === "recommendation_accepted") {
+    return "Oprettet ud fra Matrivas anbefaling";
+  }
+
+  if (source === "user_created") {
+    return "Oprettet af dig";
+  }
+
+  return null;
+}
+
 function MaintenanceScreen({
   house,
   tasks,
+  history,
+  historyDetail,
+  selectedTask,
+  recommendations,
+  filter,
+  historyYearFilter,
+  historyComponentFilter,
+  view,
+  onFilterChange,
+  onHistoryYearFilterChange,
+  onHistoryComponentFilterChange,
+  onOpenFullHistory,
+  onBackToMaintenance,
+  onOpenTaskDetail,
+  onOpenHistoryDetail,
+  onUpdateTask,
+  onDeleteTask,
   showForm,
   showDeadlinePicker,
   completingTaskId,
   title,
   description,
   deadline,
+  price,
   formError,
   isSaving,
   onShowForm,
@@ -1743,20 +1944,41 @@ function MaintenanceScreen({
   onHideDeadlinePicker,
   onTitleChange,
   onDescriptionChange,
+  onPriceChange,
   onDeadlineSelect,
   onDeadlineClear,
   onCompleteTask,
+  onAcceptRecommendation,
+  onDismissRecommendation,
   onSave,
   onboarding
 }: {
   house: SavedHouse | null;
   tasks: MaintenanceTask[];
+  history: MaintenanceHistoryEntry[];
+  historyDetail: MaintenanceHistoryDetail | null;
+  selectedTask: MaintenanceTask | null;
+  recommendations: MaintenanceRecommendation[];
+  filter: MaintenanceFilter;
+  historyYearFilter: number | null;
+  historyComponentFilter: string | null;
+  view: MaintenanceView;
+  onFilterChange: (filter: MaintenanceFilter) => void;
+  onHistoryYearFilterChange: (year: number | null) => void;
+  onHistoryComponentFilterChange: (componentKey: string | null) => void;
+  onOpenFullHistory: () => void;
+  onBackToMaintenance: () => void;
+  onOpenTaskDetail: (task: MaintenanceTask) => void;
+  onOpenHistoryDetail: (entry: MaintenanceHistoryEntry) => void;
+  onUpdateTask: (task: MaintenanceTask, patch: { title?: string; description?: string | null; timing?: MaintenanceTask["timing"]; priceAmountMinor?: number | null; priceCurrency?: "DKK"; recurrence?: MaintenanceTask["recurrence"]; componentKey?: string | null }) => void;
+  onDeleteTask: (task: MaintenanceTask) => void;
   showForm: boolean;
   showDeadlinePicker: boolean;
   completingTaskId: TaskId | null;
   title: string;
   description: string;
   deadline: string;
+  price: string;
   formError: string | null;
   isSaving: boolean;
   onShowForm: () => void;
@@ -1765,16 +1987,50 @@ function MaintenanceScreen({
   onHideDeadlinePicker: () => void;
   onTitleChange: (title: string) => void;
   onDescriptionChange: (description: string) => void;
+  onPriceChange: (price: string) => void;
   onDeadlineSelect: (deadline: string) => void;
   onDeadlineClear: () => void;
   onCompleteTask: (task: MaintenanceTask) => void;
+  onAcceptRecommendation: (recommendation: MaintenanceRecommendation) => void;
+  onDismissRecommendation: (recommendation: MaintenanceRecommendation) => void;
   onSave: () => void;
   onboarding: React.ComponentProps<typeof HouseOnboarding>;
 }) {
+  const [detailTitle, setDetailTitle] = useState("");
+  const [detailDescription, setDetailDescription] = useState("");
+  const [detailDeadline, setDetailDeadline] = useState("");
+  const [detailPrice, setDetailPrice] = useState("");
+  const [isTaskEditing, setIsTaskEditing] = useState(false);
+  const [showDetailDatePicker, setShowDetailDatePicker] = useState(false);
+  const [showMoveDatePicker, setShowMoveDatePicker] = useState(false);
+
+  useEffect(() => {
+    if (!selectedTask) {
+      setDetailTitle("");
+      setDetailDescription("");
+      setDetailDeadline("");
+      setDetailPrice("");
+      setIsTaskEditing(false);
+      setShowDetailDatePicker(false);
+      setShowMoveDatePicker(false);
+      return;
+    }
+
+    setDetailTitle(selectedTask.title);
+    setDetailDescription(selectedTask.description ?? "");
+    setDetailDeadline(
+      selectedTask.timing.type === "specific_deadline" ? selectedTask.timing.dueDate ?? "" : ""
+    );
+    setDetailPrice(editablePriceValue(selectedTask.priceAmountMinor));
+    setIsTaskEditing(false);
+    setShowDetailDatePicker(false);
+    setShowMoveDatePicker(false);
+  }, [selectedTask?.id]);
+
   if (!house) {
     return (
       <View style={styles.stack}>
-        <SectionHeader title="Vedligehold" />
+        <SectionHeader title="Vedligeholdelse" />
         <EmptyState
           title="Tilføj et hus først"
           body="Gem din adresse, før du opretter vedligeholdelsesopgaver."
@@ -1784,28 +2040,395 @@ function MaintenanceScreen({
     );
   }
 
+  const years = Array.from(
+    new Set(history.map((entry) => Number(entry.completedDate.slice(0, 4))))
+  ).sort((a, b) => b - a);
+  const components = Array.from(
+    new Set(history.flatMap((entry) => (entry.componentKey ? [entry.componentKey] : [])))
+  ).sort();
+  const filteredHistory = history.filter((entry) => {
+    if (historyYearFilter && Number(entry.completedDate.slice(0, 4)) !== historyYearFilter) {
+      return false;
+    }
+
+    if (historyComponentFilter && entry.componentKey !== historyComponentFilter) {
+      return false;
+    }
+
+    return true;
+  });
+
+  if (view === "taskDetail" && selectedTask) {
+    const recurrenceText = recurrenceLabel(selectedTask.recurrence);
+    const dateText =
+      selectedTask.timing.type === "specific_deadline" && selectedTask.timing.dueDate
+        ? formatDisplayDate(selectedTask.timing.dueDate)
+        : "Ingen dato";
+    const priceText =
+      selectedTask.priceAmountMinor !== null
+        ? formatDkkPrice(selectedTask.priceAmountMinor, selectedTask.priceCurrency)
+        : null;
+
+    return (
+      <View style={styles.stack}>
+        <SecondaryButton label="Tilbage" onPress={onBackToMaintenance} />
+        <SectionHeader title={selectedTask.title} subtitle={formatSource(selectedTask.source)} />
+        {isTaskEditing ? (
+          <View style={styles.taskList}>
+            <Text style={styles.label}>Titel</Text>
+            <TextInput
+              accessibilityLabel="Titel"
+              onChangeText={setDetailTitle}
+              style={styles.input}
+              value={detailTitle}
+            />
+            <Text style={styles.label}>Note</Text>
+            <TextInput
+              accessibilityLabel="Note"
+              multiline
+              onChangeText={setDetailDescription}
+              style={[styles.input, styles.textArea]}
+              value={detailDescription}
+            />
+            <Text style={styles.label}>Dato</Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setShowDetailDatePicker(true)}
+              style={styles.dateField}
+            >
+              <Text style={detailDeadline ? styles.dateFieldValue : styles.dateFieldPlaceholder}>
+                {detailDeadline ? formatDisplayDate(detailDeadline) : "Vælg dato"}
+              </Text>
+              <Text style={styles.dateFieldIcon}>⌄</Text>
+            </Pressable>
+            <DeadlineDatePicker
+              visible={showDetailDatePicker}
+              selectedDate={detailDeadline}
+              onClose={() => setShowDetailDatePicker(false)}
+              onClear={() => {
+                setDetailDeadline("");
+                setShowDetailDatePicker(false);
+              }}
+              onSelect={(value) => {
+                setDetailDeadline(value);
+                setShowDetailDatePicker(false);
+              }}
+            />
+            <Text style={styles.label}>Pris</Text>
+            <View style={styles.priceInputRow}>
+              <TextInput
+                accessibilityLabel="Pris"
+                keyboardType="decimal-pad"
+                onChangeText={setDetailPrice}
+                placeholder="0,00"
+                placeholderTextColor={theme.muted}
+                style={[styles.input, styles.priceInput]}
+                value={detailPrice}
+              />
+              <Text style={styles.metaText}>kr.</Text>
+            </View>
+            {recurrenceText ? <Text style={styles.metaText}>{recurrenceText}</Text> : null}
+            <View style={styles.buttonRow}>
+              <PrimaryButton
+                label="Gem"
+                loading={isSaving}
+                onPress={() => {
+                  const parsedPrice = parseDanishPriceInput(detailPrice);
+
+                  if (!parsedPrice.ok) {
+                    Alert.alert("Pris", priceInputErrorMessage(parsedPrice.code));
+                    return;
+                  }
+
+                  onUpdateTask(selectedTask, {
+                    title: detailTitle,
+                    description: detailDescription.trim() ? detailDescription : null,
+                    timing: detailDeadline
+                      ? { type: "specific_deadline", dueDate: detailDeadline }
+                      : { type: "none" },
+                    priceAmountMinor: parsedPrice.amountMinor,
+                    priceCurrency: "DKK"
+                  });
+                  setIsTaskEditing(false);
+                }}
+              />
+              <SecondaryButton
+                label="Annuller"
+                onPress={() => {
+                  setDetailTitle(selectedTask.title);
+                  setDetailDescription(selectedTask.description ?? "");
+                  setDetailDeadline(
+                    selectedTask.timing.type === "specific_deadline"
+                      ? selectedTask.timing.dueDate ?? ""
+                      : ""
+                  );
+                  setDetailPrice(editablePriceValue(selectedTask.priceAmountMinor));
+                  setIsTaskEditing(false);
+                }}
+              />
+            </View>
+          </View>
+        ) : (
+          <View style={styles.taskList}>
+            <Text style={styles.sectionEyebrow}>Opgave</Text>
+            <Text style={styles.taskTiming}>{dateText}</Text>
+            {selectedTask.description ? (
+              <Text style={styles.compactBodyText}>{selectedTask.description}</Text>
+            ) : null}
+            {priceText ? <Text style={styles.metaText}>Pris · {priceText}</Text> : null}
+            {recurrenceText ? <Text style={styles.metaText}>{recurrenceText}</Text> : null}
+            {selectedTask.componentKey ? (
+              <Text style={styles.metaText}>Bygningsdel · {selectedTask.componentKey}</Text>
+            ) : null}
+            <Pill>{formatStatus(selectedTask.status)}</Pill>
+          </View>
+        )}
+        {!isTaskEditing ? (
+          <View style={styles.taskList}>
+            <View style={styles.buttonRow}>
+              <PrimaryButton
+                label="Markér udført"
+                loading={completingTaskId === selectedTask.id}
+                onPress={() => onCompleteTask(selectedTask)}
+              />
+              <SecondaryButton label="Rediger" onPress={() => setIsTaskEditing(true)} />
+            </View>
+            <View style={styles.buttonRow}>
+              <SecondaryButton label="Flyt opgave" onPress={() => setShowMoveDatePicker(true)} />
+              <SecondaryButton label="Slet opgave" onPress={() => onDeleteTask(selectedTask)} />
+            </View>
+          </View>
+        ) : null}
+        <DeadlineDatePicker
+          visible={showMoveDatePicker}
+          selectedDate={
+            selectedTask.timing.type === "specific_deadline"
+              ? selectedTask.timing.dueDate ?? ""
+              : ""
+          }
+          onClose={() => setShowMoveDatePicker(false)}
+          onClear={() => setShowMoveDatePicker(false)}
+          onSelect={(value) => {
+            setShowMoveDatePicker(false);
+            onUpdateTask(selectedTask, {
+              timing: { type: "specific_deadline", dueDate: value }
+            });
+          }}
+        />
+      </View>
+    );
+  }
+
+  if (view === "historyDetail" && historyDetail) {
+    const detailMeta = [
+      historyDetail.note,
+      historyDetail.priceAmountMinor !== null
+        ? `Pris · ${formatDkkPrice(historyDetail.priceAmountMinor, historyDetail.priceCurrency)}`
+        : null,
+      historyDetail.componentKey ? `Bygningsdel · ${historyDetail.componentKey}` : null
+    ].filter(Boolean);
+    const recurrenceText = recurrenceLabel(historyDetail.recurrence);
+    const sourceText = sourceLabel(historyDetail.source);
+
+    return (
+      <View style={styles.stack}>
+        <SecondaryButton label="Tilbage" onPress={onBackToMaintenance} />
+        <SectionHeader title={historyDetail.title} subtitle={formatDisplayDate(historyDetail.completedDate)} />
+        {detailMeta.length > 0 ? (
+          <View style={styles.taskList}>
+            <Text style={styles.sectionEyebrow}>Detaljer</Text>
+            {detailMeta.map((item) => (
+              <Text key={item} style={styles.compactBodyText}>
+                {item}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+        {recurrenceText ? (
+          <View style={styles.taskList}>
+            <Text style={styles.sectionEyebrow}>Gentagelse</Text>
+            <Text style={styles.compactBodyText}>{recurrenceText}</Text>
+          </View>
+        ) : null}
+        {sourceText && historyDetail.source !== "user_created" ? (
+          <View style={styles.taskList}>
+            <Text style={styles.sectionEyebrow}>Kilde</Text>
+            <Text style={styles.compactBodyText}>{sourceText}</Text>
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+
+  if (view === "history") {
+    return (
+      <View style={styles.stack}>
+        <SecondaryButton label="Tilbage" onPress={onBackToMaintenance} />
+        <SectionHeader title="Historik" subtitle={`${filteredHistory.length} udførte opgaver`} />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
+          <View style={styles.filterChipRow}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => onHistoryYearFilterChange(null)}
+              style={[styles.filterChip, historyYearFilter === null ? styles.filterChipSelected : null]}
+            >
+              <Text style={[styles.filterChipText, historyYearFilter === null ? styles.filterChipTextSelected : null]}>
+                Alle år
+              </Text>
+            </Pressable>
+            {years.map((year) => (
+              <Pressable
+                accessibilityRole="button"
+                key={year}
+                onPress={() => onHistoryYearFilterChange(year)}
+                style={[styles.filterChip, historyYearFilter === year ? styles.filterChipSelected : null]}
+              >
+                <Text style={[styles.filterChipText, historyYearFilter === year ? styles.filterChipTextSelected : null]}>
+                  {year}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </ScrollView>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
+          <View style={styles.filterChipRow}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => onHistoryComponentFilterChange(null)}
+              style={[styles.filterChip, historyComponentFilter === null ? styles.filterChipSelected : null]}
+            >
+              <Text style={[styles.filterChipText, historyComponentFilter === null ? styles.filterChipTextSelected : null]}>
+                Alle bygningsdele
+              </Text>
+            </Pressable>
+            {components.map((component) => (
+              <Pressable
+                accessibilityRole="button"
+                key={component}
+                onPress={() => onHistoryComponentFilterChange(component)}
+                style={[styles.filterChip, historyComponentFilter === component ? styles.filterChipSelected : null]}
+              >
+                <Text style={[styles.filterChipText, historyComponentFilter === component ? styles.filterChipTextSelected : null]}>
+                  {component}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </ScrollView>
+        <View style={styles.taskList}>
+          {filteredHistory.length > 0 ? (
+            filteredHistory.map((entry) => (
+              <Pressable
+                accessibilityRole="button"
+                key={entry.id}
+                onPress={() => onOpenHistoryDetail(entry)}
+              >
+                <MaintenanceHistoryRow entry={entry} />
+              </Pressable>
+            ))
+          ) : (
+            <EmptyState
+              title="Ingen historik matcher filteret"
+              body="Vælg et andet år, type eller bygningsdel."
+            />
+          )}
+        </View>
+      </View>
+    );
+  }
+
   const activeTasks = tasks.filter(isActiveMaintenanceTask);
+  const filteredTasks = activeTasks.filter((task) => taskMatchesFilter(task, filter));
+  const seenTaskIds = new Set<TaskId>();
+  const takeSectionTasks = (sectionTasks: MaintenanceTask[]) =>
+    sectionTasks.filter((task) => {
+      if (seenTaskIds.has(task.id)) {
+        return false;
+      }
+
+      seenTaskIds.add(task.id);
+      return true;
+    });
+  const overdueTasks = takeSectionTasks(
+    filteredTasks.filter((task) => task.status === "overdue" || !!task.timing.daysOverdue)
+  );
+  const soonTasks = takeSectionTasks(
+    filteredTasks.filter(
+      (task) =>
+        task.timing.daysUntilDue !== undefined &&
+        task.timing.daysUntilDue <= 30
+    )
+  );
+  const seasonalTasks = takeSectionTasks(
+    filteredTasks.filter(
+      (task) => {
+        const season = maintenanceTaskSeason(task);
+
+        if (filter === "current") {
+          return season === currentMaintenanceSeason();
+        }
+
+        if (filter === "all") {
+          return season !== null && season !== "all_year";
+        }
+
+        return season === filter;
+      }
+    )
+  );
+  const laterTasks = takeSectionTasks(filteredTasks);
+  const latestHistory = history.slice(0, 3);
 
   return (
     <View style={styles.stack}>
       <View style={styles.screenTitleRow}>
         <SectionHeader
-          title="Vedligehold"
+          title="Vedligeholdelse"
           subtitle={
             activeTasks.length === 1
               ? "1 opgave for dit hus."
               : `${activeTasks.length} opgaver for dit hus.`
           }
         />
-        {!showForm ? <SecondaryButton label="Opret" onPress={onShowForm} /> : null}
+        {!showForm ? <SecondaryButton label="Opret opgave" onPress={onShowForm} /> : null}
       </View>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterScroll}
+      >
+        <View style={styles.filterChipRow}>
+          {maintenanceFilters.map((item) => {
+            const selected = item.key === filter;
+
+            return (
+              <Pressable
+                accessibilityRole="button"
+                key={item.key}
+                onPress={() => onFilterChange(item.key)}
+                style={[styles.filterChip, selected ? styles.filterChipSelected : null]}
+              >
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    selected ? styles.filterChipTextSelected : null
+                  ]}
+                >
+                  {item.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </ScrollView>
 
       {showForm ? (
         <Card variant="plain">
           <View style={styles.formHeader}>
             <View>
               <Text style={styles.cardTitle}>Ny vedligeholdelsesopgave</Text>
-              <Text style={styles.compactBodyText}>Tilføj titel, eventuel note og deadline.</Text>
+              <Text style={styles.compactBodyText}>Tilføj titel, eventuel note, deadline og pris.</Text>
             </View>
           </View>
           <View style={styles.formSection}>
@@ -1832,6 +2455,22 @@ function MaintenanceScreen({
               style={[styles.input, styles.textArea]}
               value={description}
             />
+          </View>
+          <View style={styles.formSection}>
+            <Text style={styles.label}>Pris</Text>
+            <View style={styles.priceInputRow}>
+              <TextInput
+                accessibilityLabel="Pris"
+                editable={!isSaving}
+                keyboardType="decimal-pad"
+                onChangeText={onPriceChange}
+                placeholder="0,00"
+                placeholderTextColor={theme.muted}
+                style={[styles.input, styles.priceInput]}
+                value={price}
+              />
+              <Text style={styles.metaText}>kr.</Text>
+            </View>
           </View>
           <View style={styles.formSection}>
             <Text style={styles.label}>Deadline</Text>
@@ -1883,23 +2522,116 @@ function MaintenanceScreen({
         onSelect={onDeadlineSelect}
       />
 
-      {activeTasks.length === 0 ? (
+      {activeTasks.length === 0 && recommendations.length === 0 ? (
         <EmptyState
-          title="Ingen opgaver endnu"
-          body="Opret den første vedligeholdelsesopgave for dit hus."
+          title="Kom godt i gang med vedligeholdelsen"
+          body="Opret din første opgave, eller se Matrivas anbefalinger til dit hus."
         />
       ) : (
-        <View style={styles.taskList}>
-          {activeTasks.map((task) => (
-            <TaskRow
-              completing={completingTaskId === task.id}
-              key={task.id}
-              onComplete={onCompleteTask}
-              task={task}
+        <View style={styles.stack}>
+          {overdueTasks.length > 0 ? (
+            <MaintenanceSection
+              completingTaskId={completingTaskId}
+              onCompleteTask={onCompleteTask}
+              onOpenTask={onOpenTaskDetail}
+              tasks={overdueTasks}
+              title="Overskredne"
             />
-          ))}
+          ) : null}
+          {soonTasks.length > 0 ? (
+            <MaintenanceSection
+              completingTaskId={completingTaskId}
+              onCompleteTask={onCompleteTask}
+              onOpenTask={onOpenTaskDetail}
+              tasks={soonTasks}
+              title="Snart"
+            />
+          ) : null}
+          {seasonalTasks.length > 0 ? (
+            <MaintenanceSection
+              completingTaskId={completingTaskId}
+              onCompleteTask={onCompleteTask}
+              onOpenTask={onOpenTaskDetail}
+              tasks={seasonalTasks}
+              title="Denne sæson"
+            />
+          ) : null}
+          {laterTasks.length > 0 ? (
+            <MaintenanceSection
+              completingTaskId={completingTaskId}
+              onCompleteTask={onCompleteTask}
+              onOpenTask={onOpenTaskDetail}
+              tasks={laterTasks}
+              title="Senere"
+            />
+          ) : null}
+          {recommendations.length > 0 ? (
+            <View style={styles.taskList}>
+              <Text style={styles.sectionEyebrow}>Anbefalet til dit hus</Text>
+              {recommendations.map((recommendation) => (
+                <RecommendationCard
+                  isSaving={isSaving}
+                  key={recommendation.id}
+                  onAccept={onAcceptRecommendation}
+                  onDismiss={onDismissRecommendation}
+                  recommendation={recommendation}
+                />
+              ))}
+            </View>
+          ) : (
+            <EmptyState
+              title="Ingen nye anbefalinger lige nu"
+              body="Vi viser nye forslag, når de bliver relevante for dit hus og årstiden."
+            />
+          )}
         </View>
       )}
+
+      <View style={styles.taskList}>
+        <Text style={styles.sectionEyebrow}>Historik</Text>
+        {latestHistory.length > 0 ? (
+          latestHistory.map((entry) => (
+            <MaintenanceHistoryRow entry={entry} key={entry.id} />
+          ))
+        ) : (
+          <EmptyState
+            title="Ingen udførte opgaver endnu"
+            body="Når du afslutter en opgave, bliver den gemt i husets historik."
+          />
+        )}
+        {history.length > 3 ? (
+          <SecondaryButton label="Vis al historik" onPress={onOpenFullHistory} />
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function MaintenanceSection({
+  title,
+  tasks,
+  completingTaskId,
+  onCompleteTask,
+  onOpenTask
+}: {
+  title: string;
+  tasks: MaintenanceTask[];
+  completingTaskId: TaskId | null;
+  onCompleteTask: (task: MaintenanceTask) => void;
+  onOpenTask: (task: MaintenanceTask) => void;
+}) {
+  return (
+    <View style={styles.taskList}>
+      <Text style={styles.sectionEyebrow}>{title}</Text>
+      {tasks.map((task) => (
+        <TaskRow
+          completing={completingTaskId === task.id}
+          key={task.id}
+          onComplete={onCompleteTask}
+          onOpen={onOpenTask}
+          task={task}
+        />
+      ))}
     </View>
   );
 }
@@ -2091,11 +2823,53 @@ function BootstrapRetryScreen({
   );
 }
 
-function DocumentsScreen() {
+function DocumentsScreen({
+  documents,
+  isSaving,
+  onAddDocument,
+  onOpenDocument,
+  onDeleteDocument
+}: {
+  documents: HouseDocument[];
+  isSaving: boolean;
+  onAddDocument: () => void;
+  onOpenDocument: (document: HouseDocument) => void;
+  onDeleteDocument: (document: HouseDocument) => void;
+}) {
   return (
     <View style={styles.stack}>
-      <SectionHeader title="Dokumenter" />
-      <EmptyState title="Dokumentarkiv kommer senere." body="Her samles husets dokumenter i en senere version." />
+      <View style={styles.screenTitleRow}>
+        <SectionHeader title="Dokumenter" />
+        <SecondaryButton
+          disabled={isSaving}
+          label="Tilføj dokument"
+          onPress={onAddDocument}
+        />
+      </View>
+      {documents.length > 0 ? (
+        <View style={styles.taskList}>
+          {documents.map((document) => (
+            <View key={document.id} style={styles.fileRow}>
+              <Text style={styles.fileIcon}>{document.mimeType.startsWith("image/") ? "▧" : "▤"}</Text>
+              <View style={styles.fileTextGroup}>
+                <Text style={styles.taskRowTitle}>{document.originalFilename}</Text>
+                <Text style={styles.metaText}>
+                  {document.mimeType} · {Math.round(document.sizeBytes / 1024)} KB
+                </Text>
+              </View>
+              <View style={styles.fileActions}>
+                <SecondaryButton label="Åbn" onPress={() => onOpenDocument(document)} />
+                <SecondaryButton label="Fjern" onPress={() => onDeleteDocument(document)} />
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <EmptyState
+          title="Ingen dokumenter endnu"
+          body="Upload dokumenter til huset her. De knyttes ikke automatisk til vedligeholdelsesopgaver."
+        />
+      )}
     </View>
   );
 }
@@ -2237,6 +3011,25 @@ export default function App() {
     useState<HousePublicDataProfileV1 | null>(null);
   const [selectedHouseId, setSelectedHouseId] = useState<HouseId | null>(null);
   const [tasks, setTasks] = useState<MaintenanceTask[]>([]);
+  const [maintenanceHistory, setMaintenanceHistory] = useState<MaintenanceHistoryEntry[]>([]);
+  const [maintenanceRecommendations, setMaintenanceRecommendations] = useState<
+    MaintenanceRecommendation[]
+  >([]);
+  const [houseDocuments, setHouseDocuments] = useState<HouseDocument[]>([]);
+  const [maintenanceView, setMaintenanceView] = useState<MaintenanceView>("main");
+  const [selectedHistoryDetail, setSelectedHistoryDetail] =
+    useState<MaintenanceHistoryDetail | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<TaskId | null>(null);
+  const [maintenanceFilter, setMaintenanceFilter] =
+    useState<MaintenanceFilter>("current");
+  const [historyYearFilter, setHistoryYearFilter] = useState<number | null>(null);
+  const [historyComponentFilter, setHistoryComponentFilter] =
+    useState<string | null>(null);
+  const [pendingRecommendationAccept, setPendingRecommendationAccept] =
+    useState<MaintenanceRecommendation | null>(null);
+  const [recommendationAcceptDate, setRecommendationAcceptDate] = useState("");
+  const [showRecommendationDatePicker, setShowRecommendationDatePicker] =
+    useState(false);
   const [improvements, setImprovements] = useState<HouseImprovement[]>([]);
   const [housePhoto, setHousePhoto] = useState<HouseMedia | null>(null);
   const [query, setQuery] = useState("");
@@ -2250,6 +3043,7 @@ export default function App() {
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
   const [taskDeadline, setTaskDeadline] = useState("");
+  const [taskPrice, setTaskPrice] = useState("");
   const [taskFormError, setTaskFormError] = useState<string | null>(null);
   const [improvementTitle, setImprovementTitle] = useState("");
   const [improvementYear, setImprovementYear] = useState("");
@@ -2266,6 +3060,7 @@ export default function App() {
     useState<PublicDataRefreshMessage | null>(null);
 
   const selectedHouse = houses.find((house) => house.id === selectedHouseId) ?? houses[0] ?? null;
+  const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
   const selectedPublicDataSummary =
     publicDataSummaries.find(
       (summary) => summary.houseId === selectedHouse?.id
@@ -2290,6 +3085,7 @@ export default function App() {
     setPublicDataProfile(null);
     setSelectedHouseId(null);
     setTasks([]);
+    setHouseDocuments([]);
     setImprovements([]);
     setHousePhoto(null);
     setQuery("");
@@ -2299,10 +3095,14 @@ export default function App() {
     setError(null);
     setShowTaskForm(false);
     setShowDeadlinePicker(false);
+    setPendingRecommendationAccept(null);
+    setRecommendationAcceptDate("");
+    setShowRecommendationDatePicker(false);
     setCompletingTaskId(null);
     setTaskTitle("");
     setTaskDescription("");
     setTaskDeadline("");
+    setTaskPrice("");
     setTaskFormError(null);
     setImprovementTitle("");
     setImprovementYear("");
@@ -2320,6 +3120,29 @@ export default function App() {
     async (houseId: HouseId) => {
       const response = await apiClient.listMaintenanceTasks(houseId);
       setTasks(response.tasks);
+    },
+    [apiClient]
+  );
+
+  const loadMaintenanceV1 = useCallback(
+    async (houseId: HouseId) => {
+      const [taskResponse, historyResponse, recommendationResponse] =
+        await Promise.all([
+          apiClient.listMaintenanceTasks(houseId),
+          apiClient.listMaintenanceHistory(houseId),
+          apiClient.listMaintenanceRecommendations(houseId)
+        ]);
+      setTasks(taskResponse.tasks);
+      setMaintenanceHistory(historyResponse.history);
+      setMaintenanceRecommendations(recommendationResponse.recommendations);
+    },
+    [apiClient]
+  );
+
+  const loadHouseDocuments = useCallback(
+    async (houseId: HouseId) => {
+      const response = await apiClient.listHouseDocuments(houseId);
+      setHouseDocuments(response.documents);
     },
     [apiClient]
   );
@@ -2370,18 +3193,29 @@ export default function App() {
 
       if (bootstrapResponse.onboarding.state === "complete" && nextHouse) {
         await Promise.all([
-          loadTasks(nextHouse.id),
+          loadMaintenanceV1(nextHouse.id),
           loadHouseImprovements(nextHouse.id),
-          loadHousePhoto(nextHouse.id)
+          loadHousePhoto(nextHouse.id),
+          loadHouseDocuments(nextHouse.id)
         ]);
       } else {
         setTasks([]);
+        setMaintenanceHistory([]);
+        setMaintenanceRecommendations([]);
+        setHouseDocuments([]);
+        setSelectedHistoryDetail(null);
+        setMaintenanceView("main");
         setImprovements([]);
         setHousePhoto(null);
       }
     } catch (caughtError) {
       setError(userFacingError(caughtError));
       setTasks([]);
+      setMaintenanceHistory([]);
+      setMaintenanceRecommendations([]);
+      setHouseDocuments([]);
+      setSelectedHistoryDetail(null);
+      setMaintenanceView("main");
       setImprovements([]);
       setHousePhoto(null);
       setPublicDataSummaries([]);
@@ -2391,7 +3225,7 @@ export default function App() {
         setLoadingAction(null);
       }
     }
-  }, [apiClient, loadHouseImprovements, loadHousePhoto, loadTasks]);
+  }, [apiClient, loadHouseDocuments, loadHouseImprovements, loadHousePhoto, loadMaintenanceV1]);
 
   useEffect(() => {
     if (!selectedHouse || authStatus !== "authenticated") {
@@ -2646,6 +3480,7 @@ export default function App() {
     setTaskTitle("");
     setTaskDescription("");
     setTaskDeadline("");
+    setTaskPrice("");
     setTaskFormError(null);
     setShowTaskForm(false);
     setShowDeadlinePicker(false);
@@ -2671,6 +3506,13 @@ export default function App() {
       return;
     }
 
+    const parsedPrice = parseDanishPriceInput(taskPrice);
+
+    if (!parsedPrice.ok) {
+      setTaskFormError(priceInputErrorMessage(parsedPrice.code));
+      return;
+    }
+
     const payload: CreateMaintenanceTaskRequest = {
       title: trimmedTitle,
       ...(trimmedDescription ? { description: trimmedDescription } : {}),
@@ -2678,7 +3520,9 @@ export default function App() {
       status: "planned",
       timing: trimmedDeadline
         ? { type: "specific_deadline", dueDate: trimmedDeadline }
-        : { type: "none" }
+        : { type: "none" },
+      priceAmountMinor: parsedPrice.amountMinor,
+      priceCurrency: "DKK"
     };
 
     setLoadingAction("task");
@@ -2687,7 +3531,7 @@ export default function App() {
 
     try {
       await apiClient.createMaintenanceTask(selectedHouse.id, payload);
-      await loadTasks(selectedHouse.id);
+      await loadMaintenanceV1(selectedHouse.id);
       resetTaskForm();
     } catch (caughtError) {
       setTaskFormError(userFacingError(caughtError));
@@ -2879,15 +3723,324 @@ export default function App() {
     setError(null);
 
     try {
-      await apiClient.updateMaintenanceTaskStatus(selectedHouse.id, task.id, {
-        status: "done"
+      await apiClient.completeMaintenanceTask(selectedHouse.id, task.id, {
+        completedDate: todayDateOnly()
       });
-      await loadTasks(selectedHouse.id);
+      await loadMaintenanceV1(selectedHouse.id);
     } catch (caughtError) {
       setError(userFacingError(caughtError));
     } finally {
       setCompletingTaskId(null);
     }
+  }
+
+  async function updateTask(
+    task: MaintenanceTask,
+    patch: {
+      title?: string;
+      description?: string | null;
+      timing?: MaintenanceTask["timing"];
+      priceAmountMinor?: number | null;
+      priceCurrency?: "DKK";
+      recurrence?: MaintenanceTask["recurrence"];
+      componentKey?: string | null;
+    }
+  ) {
+    if (!selectedHouse) {
+      return;
+    }
+
+    setLoadingAction("task");
+    setError(null);
+
+    try {
+      await apiClient.updateMaintenanceTask(selectedHouse.id, task.id, patch);
+      await loadMaintenanceV1(selectedHouse.id);
+    } catch (caughtError) {
+      setError(userFacingError(caughtError));
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
+  function deleteTask(task: MaintenanceTask) {
+    if (!selectedHouse) {
+      return;
+    }
+
+    Alert.alert("Slet opgave", "Vil du slette opgaven?", [
+      { text: "Annuller", style: "cancel" },
+      {
+        text: "Slet opgave",
+        style: "destructive",
+        onPress: () =>
+          void (async () => {
+            if (!selectedHouse) {
+              return;
+            }
+
+            setLoadingAction("task");
+            setError(null);
+
+            try {
+              await apiClient.deleteMaintenanceTask(selectedHouse.id, task.id);
+              await loadMaintenanceV1(selectedHouse.id);
+              setSelectedTaskId(null);
+              setMaintenanceView("main");
+            } catch (caughtError) {
+              setError(userFacingError(caughtError));
+            } finally {
+              setLoadingAction(null);
+            }
+          })()
+      }
+    ]);
+  }
+
+  async function acceptRecommendation(recommendation: MaintenanceRecommendation) {
+    if (!selectedHouse) {
+      setError("Tilføj et hus, før du accepterer anbefalinger.");
+      return;
+    }
+
+    if (
+      recommendation.timing.type !== "specific_deadline" ||
+      !recommendation.timing.dueDate
+    ) {
+      setPendingRecommendationAccept(recommendation);
+      setRecommendationAcceptDate("");
+      setShowRecommendationDatePicker(true);
+      return;
+    }
+
+    setLoadingAction("recommendation");
+    setError(null);
+
+    try {
+      await apiClient.acceptMaintenanceRecommendation(
+        selectedHouse.id,
+        recommendation.id,
+        {
+          timing: recommendation.timing,
+          recurrence: recommendation.recurrence
+        }
+      );
+      await loadMaintenanceV1(selectedHouse.id);
+    } catch (caughtError) {
+      setError(userFacingError(caughtError));
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
+  async function acceptRecommendationWithDate(dateOnly: string) {
+    if (!selectedHouse || !pendingRecommendationAccept) {
+      return;
+    }
+
+    setLoadingAction("recommendation");
+    setError(null);
+
+    try {
+      await apiClient.acceptMaintenanceRecommendation(
+        selectedHouse.id,
+        pendingRecommendationAccept.id,
+        {
+          timing: { type: "specific_deadline", dueDate: dateOnly },
+          recurrence: pendingRecommendationAccept.recurrence
+        }
+      );
+      setPendingRecommendationAccept(null);
+      setRecommendationAcceptDate("");
+      await loadMaintenanceV1(selectedHouse.id);
+    } catch (caughtError) {
+      setError(userFacingError(caughtError));
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
+  async function dismissRecommendation(recommendation: MaintenanceRecommendation) {
+    if (!selectedHouse) {
+      setError("Tilføj et hus, før du afviser anbefalinger.");
+      return;
+    }
+
+    setLoadingAction("recommendation");
+    setError(null);
+
+    try {
+      await apiClient.dismissMaintenanceRecommendation(selectedHouse.id, recommendation.id);
+      await loadMaintenanceV1(selectedHouse.id);
+    } catch (caughtError) {
+      setError(userFacingError(caughtError));
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
+  async function openHistoryDetail(entry: MaintenanceHistoryEntry) {
+    if (!selectedHouse) {
+      return;
+    }
+
+    setLoadingAction("task");
+    setError(null);
+
+    try {
+      const response = await apiClient.getMaintenanceHistoryEntry(
+        selectedHouse.id,
+        entry.id
+      );
+      setSelectedHistoryDetail(response.historyEntry);
+      setMaintenanceView("historyDetail");
+    } catch (caughtError) {
+      setError(userFacingError(caughtError));
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
+  async function refreshSelectedHistoryDetail(completionId: MaintenanceHistoryEntry["id"]) {
+    if (!selectedHouse) {
+      return;
+    }
+
+    const response = await apiClient.getMaintenanceHistoryEntry(selectedHouse.id, completionId);
+    setSelectedHistoryDetail(response.historyEntry);
+  }
+
+  function addHouseDocument() {
+    Alert.alert("Tilføj dokument", "Vælg kilde", [
+      { text: "Tag billede", onPress: () => void pickHouseDocument("camera") },
+      { text: "Vælg fra billedbibliotek", onPress: () => void pickHouseDocument("library") },
+      { text: "Vælg PDF", onPress: () => void pickHouseDocument("file") },
+      { text: "Annuller", style: "cancel" }
+    ]);
+  }
+
+  async function pickHouseDocument(source: "camera" | "library" | "file") {
+    if (!selectedHouse || loadingAction === "photo") {
+      return;
+    }
+
+    setLoadingAction("photo");
+    setError(null);
+
+    try {
+      if (source === "camera" || source === "library") {
+        const ImagePicker = await import("expo-image-picker");
+        const permission =
+          source === "camera"
+            ? await ImagePicker.requestCameraPermissionsAsync()
+            : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+        if (!permission.granted) {
+          setError(
+            source === "camera"
+              ? "Kameraadgang er nødvendig for at tage dokumentationsbilleder."
+              : "Fotoadgang er nødvendig for at vælge billeder."
+          );
+          return;
+        }
+
+        const result =
+          source === "camera"
+            ? await ImagePicker.launchCameraAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: false,
+                quality: 0.86,
+                base64: true
+              })
+            : await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: false,
+                quality: 0.86,
+                base64: true
+              });
+
+        if (result.canceled) {
+          return;
+        }
+
+        const asset = result.assets[0];
+        const base64 = asset?.base64;
+        const mimeType = asset?.mimeType ?? "image/jpeg";
+
+        if (!asset || !base64) {
+          setError("Billedet kunne ikke læses. Prøv et andet foto.");
+          return;
+        }
+
+        const sizeBytes =
+          asset.fileSize ?? Math.floor((base64.replace(/=+$/, "").length * 3) / 4);
+
+        await apiClient.uploadHouseDocument(selectedHouse.id, {
+          fileName: asset.fileName ?? `vedligehold.${mimeType.split("/")[1] ?? "jpg"}`,
+          mimeType: mimeType as "image/jpeg" | "image/png" | "image/heic" | "image/heif",
+          sizeBytes,
+          contentBase64: base64
+        });
+      } else {
+        const DocumentPicker = await import("expo-document-picker");
+        const result = await DocumentPicker.getDocumentAsync({
+          type: "application/pdf",
+          copyToCacheDirectory: true,
+          base64: true
+        });
+
+        if (result.canceled) {
+          return;
+        }
+
+        const asset = result.assets[0];
+
+        if (!asset?.base64) {
+          setError("PDF-filen kunne ikke læses. Prøv et andet dokument.");
+          return;
+        }
+
+        await apiClient.uploadHouseDocument(selectedHouse.id, {
+          fileName: asset.name,
+          mimeType: "application/pdf",
+          sizeBytes:
+            asset.size ?? Math.floor((asset.base64.replace(/=+$/, "").length * 3) / 4),
+          contentBase64: asset.base64
+        });
+      }
+      await loadHouseDocuments(selectedHouse.id);
+    } catch (caughtError) {
+      setError(userFacingError(caughtError));
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
+  async function deleteHouseDocument(document: HouseDocument) {
+    if (!selectedHouse) {
+      return;
+    }
+
+    setLoadingAction("photo");
+    setError(null);
+
+    try {
+      await apiClient.deleteHouseDocument(selectedHouse.id, document.id);
+      await loadHouseDocuments(selectedHouse.id);
+    } catch (caughtError) {
+      setError(userFacingError(caughtError));
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
+  function openHouseDocument(document: HouseDocument) {
+    if (!document.contentPath) {
+      setError("Dokumentet er ikke klar til åbning endnu.");
+      return;
+    }
+
+    void Linking.openURL(`${apiClient.baseUrl}${document.contentPath}`);
   }
 
   async function refreshPublicData() {
@@ -3055,12 +4208,37 @@ export default function App() {
         <MaintenanceScreen
           house={selectedHouse}
           tasks={tasks}
+          history={maintenanceHistory}
+          historyDetail={selectedHistoryDetail}
+          selectedTask={selectedTask}
+          recommendations={maintenanceRecommendations}
+          filter={maintenanceFilter}
+          historyYearFilter={historyYearFilter}
+          historyComponentFilter={historyComponentFilter}
+          view={maintenanceView}
+          onFilterChange={setMaintenanceFilter}
+          onHistoryYearFilterChange={setHistoryYearFilter}
+          onHistoryComponentFilterChange={setHistoryComponentFilter}
+          onOpenFullHistory={() => setMaintenanceView("history")}
+          onBackToMaintenance={() => {
+            setMaintenanceView("main");
+            setSelectedHistoryDetail(null);
+            setSelectedTaskId(null);
+          }}
+          onOpenTaskDetail={(task) => {
+            setSelectedTaskId(task.id);
+            setMaintenanceView("taskDetail");
+          }}
+          onOpenHistoryDetail={(entry) => void openHistoryDetail(entry)}
+          onUpdateTask={(task, patch) => void updateTask(task, patch)}
+          onDeleteTask={(task) => deleteTask(task)}
           showForm={showTaskForm}
           showDeadlinePicker={showDeadlinePicker}
           completingTaskId={completingTaskId}
           title={taskTitle}
           description={taskDescription}
           deadline={taskDeadline}
+          price={taskPrice}
           formError={taskFormError}
           isSaving={loadingAction === "task"}
           onShowForm={() => setShowTaskForm(true)}
@@ -3072,6 +4250,10 @@ export default function App() {
             setTaskFormError(null);
           }}
           onDescriptionChange={setTaskDescription}
+          onPriceChange={(value) => {
+            setTaskPrice(value);
+            setTaskFormError(null);
+          }}
           onDeadlineSelect={(value) => {
             setTaskDeadline(value);
             setTaskFormError(null);
@@ -3083,6 +4265,8 @@ export default function App() {
             setShowDeadlinePicker(false);
           }}
           onCompleteTask={(task) => void completeTask(task)}
+          onAcceptRecommendation={(recommendation) => void acceptRecommendation(recommendation)}
+          onDismissRecommendation={(recommendation) => void dismissRecommendation(recommendation)}
           onSave={() => void saveTask()}
           onboarding={onboardingProps}
         />
@@ -3090,7 +4274,15 @@ export default function App() {
     }
 
     if (activeTab === "documents") {
-      return <DocumentsScreen />;
+      return (
+        <DocumentsScreen
+          documents={houseDocuments}
+          isSaving={loadingAction === "photo"}
+          onAddDocument={addHouseDocument}
+          onOpenDocument={openHouseDocument}
+          onDeleteDocument={(document) => void deleteHouseDocument(document)}
+        />
+      );
     }
 
     if (moreView === "profile") {
@@ -3256,6 +4448,25 @@ export default function App() {
           ) : null}
           {renderActiveScreen()}
         </ScrollView>
+        <DeadlineDatePicker
+          visible={showRecommendationDatePicker}
+          selectedDate={recommendationAcceptDate}
+          onClose={() => {
+            setShowRecommendationDatePicker(false);
+            if (!recommendationAcceptDate) {
+              setPendingRecommendationAccept(null);
+            }
+          }}
+          onClear={() => {
+            setRecommendationAcceptDate("");
+            setShowRecommendationDatePicker(false);
+          }}
+          onSelect={(value) => {
+            setRecommendationAcceptDate(value);
+            setShowRecommendationDatePicker(false);
+            void acceptRecommendationWithDate(value);
+          }}
+        />
         <View style={styles.tabBar}>
           {tabs.map((tab) => {
             const isActive = activeTab === tab.key;
@@ -3316,12 +4527,12 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingBottom: 108,
-    paddingHorizontal: 20,
-    paddingTop: 22,
-    rowGap: 18
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    rowGap: 14
   },
   stack: {
-    rowGap: 16
+    rowGap: 12
   },
   welcomeStack: {
     rowGap: 14
@@ -3390,14 +4601,14 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: theme.text,
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: "800",
-    lineHeight: 31
+    lineHeight: 29
   },
   sectionSubtitle: {
     color: theme.muted,
-    fontSize: 15,
-    lineHeight: 22
+    fontSize: 14,
+    lineHeight: 20
   },
   screenTitleRow: {
     alignItems: "center",
@@ -3408,8 +4619,8 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: theme.surface,
     borderRadius: 8,
-    padding: 18,
-    rowGap: 12,
+    padding: 14,
+    rowGap: 10,
     shadowColor: "#101828",
     shadowOffset: { height: 3, width: 0 },
     shadowOpacity: 0.05,
@@ -3432,19 +4643,19 @@ const styles = StyleSheet.create({
   cardTitle: {
     color: theme.text,
     flex: 1,
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "800",
-    lineHeight: 23
+    lineHeight: 21
   },
   bodyText: {
     color: theme.muted,
-    fontSize: 15,
-    lineHeight: 22
+    fontSize: 14,
+    lineHeight: 20
   },
   compactBodyText: {
     color: theme.muted,
-    fontSize: 14,
-    lineHeight: 20
+    fontSize: 13,
+    lineHeight: 18
   },
   emptyTitle: {
     color: theme.text,
@@ -3454,7 +4665,7 @@ const styles = StyleSheet.create({
   },
   label: {
     color: theme.text,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "800"
   },
   formSection: {
@@ -3466,10 +4677,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     color: theme.text,
-    fontSize: 16,
+    fontSize: 15,
     minHeight: 50,
     paddingHorizontal: 14,
     paddingVertical: 12
+  },
+  priceInputRow: {
+    alignItems: "center",
+    columnGap: 8,
+    flexDirection: "row"
+  },
+  priceInput: {
+    flex: 1
   },
   textArea: {
     minHeight: 92,
@@ -3498,12 +4717,12 @@ const styles = StyleSheet.create({
   },
   dateFieldPlaceholder: {
     color: theme.muted,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700"
   },
   dateFieldValue: {
     color: theme.text,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "800"
   },
   dateFieldIcon: {
@@ -3568,7 +4787,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: "#FFFFFF",
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "800"
   },
   secondaryButton: {
@@ -3585,7 +4804,7 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     color: theme.primary,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "800"
   },
   disabled: {
@@ -3632,14 +4851,16 @@ const styles = StyleSheet.create({
   },
   taskRow: {
     alignItems: "flex-start",
-    backgroundColor: theme.surface,
-    borderBottomColor: theme.border,
-    borderBottomWidth: 1,
+    backgroundColor: "#F8FAFC",
+    borderColor: theme.border,
+    borderRadius: 8,
+    borderWidth: 1,
     columnGap: 12,
     flexDirection: "row",
-    minHeight: 74,
-    paddingHorizontal: 4,
-    paddingVertical: 12
+    marginBottom: 8,
+    minHeight: 66,
+    paddingHorizontal: 10,
+    paddingVertical: 10
   },
   completeControl: {
     alignItems: "center",
@@ -3658,11 +4879,85 @@ const styles = StyleSheet.create({
     flex: 1,
     rowGap: 3
   },
+  filterScroll: {
+    marginHorizontal: -2
+  },
+  filterChipRow: {
+    columnGap: 8,
+    flexDirection: "row",
+    paddingHorizontal: 2,
+    paddingVertical: 2
+  },
+  filterChip: {
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 7
+  },
+  filterChipSelected: {
+    backgroundColor: theme.primarySoft,
+    borderColor: theme.primary
+  },
+  filterChipText: {
+    color: theme.subtle,
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  filterChipTextSelected: {
+    color: theme.primary
+  },
+  sectionEyebrow: {
+    color: theme.subtle,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0,
+    marginBottom: 8,
+    textTransform: "uppercase"
+  },
+  recommendationActions: {
+    alignItems: "flex-end",
+    rowGap: 8
+  },
+  historyRow: {
+    backgroundColor: "#F8FAFC",
+    borderColor: theme.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    rowGap: 4
+  },
+  fileRow: {
+    alignItems: "center",
+    borderBottomColor: theme.border,
+    borderBottomWidth: 1,
+    columnGap: 8,
+    flexDirection: "row",
+    minHeight: 48,
+    paddingVertical: 8
+  },
+  fileIcon: {
+    color: theme.primary,
+    fontSize: 18,
+    fontWeight: "800",
+    width: 24
+  },
+  fileTextGroup: {
+    flex: 1,
+    rowGap: 2
+  },
+  fileActions: {
+    columnGap: 6,
+    flexDirection: "row"
+  },
   taskRowTitle: {
     color: theme.text,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "800",
-    lineHeight: 21
+    lineHeight: 20
   },
   warningText: {
     color: theme.warning
@@ -4077,7 +5372,8 @@ const styles = StyleSheet.create({
   taskList: {
     backgroundColor: theme.surface,
     borderRadius: 8,
-    paddingHorizontal: 14,
+    paddingHorizontal: 10,
+    paddingTop: 10,
     shadowColor: "#101828",
     shadowOffset: { height: 3, width: 0 },
     shadowOpacity: 0.04,

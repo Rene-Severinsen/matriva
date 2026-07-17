@@ -8,8 +8,13 @@ import {
   housePhotoResponseSchema,
   enrichHouseDraftResponseSchema,
   logoutResponseSchema,
+  maintenanceHistoryResponseSchema,
+  maintenanceHistoryDetailResponseSchema,
+  maintenanceRecommendationsResponseSchema,
   maintenanceTaskResponseSchema,
   maintenanceTasksResponseSchema,
+  houseDocumentResponseSchema,
+  houseDocumentsResponseSchema,
   refreshSessionRequestSchema,
   requestMagicLinkResponseSchema,
   updateProfileResponseSchema,
@@ -27,6 +32,8 @@ import {
   type CurrentUserResponse,
   type CreateHouseImprovementRequest,
   type CreateMaintenanceTaskRequest,
+  type AcceptMaintenanceRecommendationRequest,
+  type CompleteMaintenanceTaskRequest,
   type CreateSavedHouseRequest,
   type EnrichHouseDraftRequest,
   type EnrichHouseDraftResponse,
@@ -43,6 +50,13 @@ import {
   type LogoutResponse,
   type MaintenanceTaskResponse,
   type MaintenanceTasksResponse,
+  type MaintenanceHistoryResponse,
+  type MaintenanceHistoryDetailResponse,
+  type MaintenanceHistoryQuery,
+  type MaintenanceCompletionId,
+  type MaintenanceRecommendationId,
+  type MaintenanceRecommendationsResponse,
+  type MoveMaintenanceTaskRequest,
   type RefreshSessionRequest,
   type RequestMagicLinkRequest,
   type RequestMagicLinkResponse,
@@ -50,7 +64,12 @@ import {
   type SavedHousesResponse,
   type SelectedAddressInput,
   type TaskId,
+  type DocumentId,
+  type HouseDocumentResponse,
+  type HouseDocumentsResponse,
+  type UploadHouseDocumentRequest,
   type UploadHousePhotoRequest,
+  type UpdateMaintenanceTaskRequest,
   type UpdateMaintenanceTaskStatusRequest,
   type UpdateProfileRequest,
   type UpdateProfileResponse
@@ -100,11 +119,65 @@ export type MatrivaApiClient = {
     houseId: HouseId,
     input: CreateMaintenanceTaskRequest
   ) => Promise<MaintenanceTaskResponse>;
+  getMaintenanceTask: (
+    houseId: HouseId,
+    taskId: TaskId
+  ) => Promise<MaintenanceTaskResponse>;
+  updateMaintenanceTask: (
+    houseId: HouseId,
+    taskId: TaskId,
+    input: UpdateMaintenanceTaskRequest
+  ) => Promise<MaintenanceTaskResponse>;
+  moveMaintenanceTask: (
+    houseId: HouseId,
+    taskId: TaskId,
+    input: MoveMaintenanceTaskRequest
+  ) => Promise<MaintenanceTaskResponse>;
+  completeMaintenanceTask: (
+    houseId: HouseId,
+    taskId: TaskId,
+    input: CompleteMaintenanceTaskRequest
+  ) => Promise<MaintenanceTaskResponse>;
+  deleteMaintenanceTask: (
+    houseId: HouseId,
+    taskId: TaskId
+  ) => Promise<MaintenanceTaskResponse>;
   updateMaintenanceTaskStatus: (
     houseId: HouseId,
     taskId: TaskId,
     input: UpdateMaintenanceTaskStatusRequest
   ) => Promise<MaintenanceTaskResponse>;
+  listMaintenanceHistory: (
+    houseId: HouseId,
+    query?: MaintenanceHistoryQuery
+  ) => Promise<MaintenanceHistoryResponse>;
+  getMaintenanceHistoryEntry: (
+    houseId: HouseId,
+    completionId: MaintenanceCompletionId
+  ) => Promise<MaintenanceHistoryDetailResponse>;
+  listHouseDocuments: (
+    houseId: HouseId
+  ) => Promise<HouseDocumentsResponse>;
+  uploadHouseDocument: (
+    houseId: HouseId,
+    input: UploadHouseDocumentRequest
+  ) => Promise<HouseDocumentResponse>;
+  deleteHouseDocument: (
+    houseId: HouseId,
+    documentId: DocumentId
+  ) => Promise<HouseDocumentResponse>;
+  listMaintenanceRecommendations: (
+    houseId: HouseId
+  ) => Promise<MaintenanceRecommendationsResponse>;
+  acceptMaintenanceRecommendation: (
+    houseId: HouseId,
+    recommendationId: MaintenanceRecommendationId,
+    input: AcceptMaintenanceRecommendationRequest
+  ) => Promise<MaintenanceTaskResponse>;
+  dismissMaintenanceRecommendation: (
+    houseId: HouseId,
+    recommendationId: MaintenanceRecommendationId
+  ) => Promise<unknown>;
   listHouseImprovements: (
     houseId: HouseId
   ) => Promise<HouseImprovementsResponse>;
@@ -386,6 +459,77 @@ export function createMatrivaApiClient(
         await parseApiResponse(response, "Could not create maintenance task.")
       );
     },
+    async getMaintenanceTask(houseId, taskId) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-tasks/${taskId}`,
+        { headers: authHeaders() }
+      );
+
+      return maintenanceTaskResponseSchema.parse(
+        await parseApiResponse(response, "Could not load maintenance task.")
+      );
+    },
+    async updateMaintenanceTask(houseId, taskId, input) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-tasks/${taskId}`,
+        {
+          method: "PATCH",
+          headers: authHeaders({
+            "content-type": "application/json"
+          }),
+          body: JSON.stringify(input)
+        }
+      );
+
+      return maintenanceTaskResponseSchema.parse(
+        await parseApiResponse(response, "Could not update maintenance task.")
+      );
+    },
+    async moveMaintenanceTask(houseId, taskId, input) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-tasks/${taskId}/move`,
+        {
+          method: "POST",
+          headers: authHeaders({
+            "content-type": "application/json"
+          }),
+          body: JSON.stringify(input)
+        }
+      );
+
+      return maintenanceTaskResponseSchema.parse(
+        await parseApiResponse(response, "Could not move maintenance task.")
+      );
+    },
+    async completeMaintenanceTask(houseId, taskId, input) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-tasks/${taskId}/complete`,
+        {
+          method: "POST",
+          headers: authHeaders({
+            "content-type": "application/json"
+          }),
+          body: JSON.stringify(input)
+        }
+      );
+
+      return maintenanceTaskResponseSchema.parse(
+        await parseApiResponse(response, "Could not complete maintenance task.")
+      );
+    },
+    async deleteMaintenanceTask(houseId, taskId) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-tasks/${taskId}`,
+        {
+          method: "DELETE",
+          headers: authHeaders()
+        }
+      );
+
+      return maintenanceTaskResponseSchema.parse(
+        await parseApiResponse(response, "Could not delete maintenance task.")
+      );
+    },
     async updateMaintenanceTaskStatus(houseId, taskId, input) {
       const response = await fetcher(
         `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-tasks/${taskId}/status`,
@@ -401,6 +545,116 @@ export function createMatrivaApiClient(
       return maintenanceTaskResponseSchema.parse(
         await parseApiResponse(response, "Could not update maintenance task.")
       );
+    },
+    async listMaintenanceHistory(houseId, query) {
+      const searchParams = new URLSearchParams();
+
+      if (query?.year) {
+        searchParams.set("year", `${query.year}`);
+      }
+
+      if (query?.componentKey) {
+        searchParams.set("componentKey", query.componentKey);
+      }
+
+      const queryString = searchParams.toString();
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-history${queryString ? `?${queryString}` : ""}`,
+        { headers: authHeaders() }
+      );
+
+      return maintenanceHistoryResponseSchema.parse(
+        await parseApiResponse(response, "Could not load maintenance history.")
+      );
+    },
+    async getMaintenanceHistoryEntry(houseId, completionId) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-history/${completionId}`,
+        { headers: authHeaders() }
+      );
+
+      return maintenanceHistoryDetailResponseSchema.parse(
+        await parseApiResponse(response, "Could not load maintenance history detail.")
+      );
+    },
+    async listHouseDocuments(houseId) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/documents`,
+        { headers: authHeaders() }
+      );
+
+      return houseDocumentsResponseSchema.parse(
+        await parseApiResponse(response, "Could not load house documents.")
+      );
+    },
+    async uploadHouseDocument(houseId, input) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/documents`,
+        {
+          method: "POST",
+          headers: authHeaders({
+            "content-type": "application/json"
+          }),
+          body: JSON.stringify(input)
+        }
+      );
+
+      return houseDocumentResponseSchema.parse(
+        await parseApiResponse(response, "Could not upload house document.")
+      );
+    },
+    async deleteHouseDocument(houseId, documentId) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/documents/${documentId}`,
+        {
+          method: "DELETE",
+          headers: authHeaders()
+        }
+      );
+
+      return houseDocumentResponseSchema.parse(
+        await parseApiResponse(response, "Could not delete house document.")
+      );
+    },
+    async listMaintenanceRecommendations(houseId) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-recommendations`,
+        { headers: authHeaders() }
+      );
+
+      return maintenanceRecommendationsResponseSchema.parse(
+        await parseApiResponse(response, "Could not load maintenance recommendations.")
+      );
+    },
+    async acceptMaintenanceRecommendation(houseId, recommendationId, input) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-recommendations/${recommendationId}/accept`,
+        {
+          method: "POST",
+          headers: authHeaders({
+            "content-type": "application/json"
+          }),
+          body: JSON.stringify(input)
+        }
+      );
+
+      return maintenanceTaskResponseSchema.parse(
+        await parseApiResponse(response, "Could not accept maintenance recommendation.")
+      );
+    },
+    async dismissMaintenanceRecommendation(houseId, recommendationId) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-recommendations/${recommendationId}/dismiss`,
+        {
+          method: "POST",
+          headers: authHeaders({
+            "content-type": "application/json"
+          }),
+          body: JSON.stringify({})
+        }
+      );
+
+      return parseApiResponse(response, "Could not dismiss maintenance recommendation.");
     },
     async listHouseImprovements(houseId) {
       const response = await fetcher(

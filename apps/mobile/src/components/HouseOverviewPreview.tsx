@@ -12,7 +12,8 @@ type HouseOverviewPreviewProps = {
 
 const maintenanceSourceLabels = {
   user_created: "Egen opgave",
-  matriva_recommended: "Anbefalet af Matriva"
+  matriva_recommended: "Anbefalet af Matriva",
+  recommendation_accepted: "Tilføjet fra anbefaling"
 } as const;
 
 const maintenanceSeasonLabels: Record<

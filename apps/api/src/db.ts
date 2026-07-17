@@ -7,7 +7,11 @@ import pg from "pg";
 
 import {
   appBootstrapResponseSchema,
+  maintenanceHistoryEntrySchema,
+  maintenanceHistoryDetailSchema,
+  maintenanceRecommendationSchema,
   currentUserSchema,
+  houseDocumentSchema,
   houseImprovementSchema,
   houseMediaSchema,
   maintenanceTaskSchema,
@@ -19,16 +23,25 @@ import type {
   AppBootstrapResponse,
   CreateHouseImprovementRequest,
   CreateMaintenanceTaskRequest,
+  AcceptMaintenanceRecommendationRequest,
+  CompleteMaintenanceTaskRequest,
   CurrentUser,
   HouseImprovement,
+  HouseDocument,
   HouseMedia,
+  MaintenanceHistoryEntry,
+  MaintenanceHistoryQuery,
+  MaintenanceHistoryDetail,
+  MaintenanceRecommendation,
   MaintenanceTask,
   MaintenanceTaskStatus,
   MaintenanceTaskTiming,
+  MoveMaintenanceTaskRequest,
   RecommendedMaintenanceTaskMetadata,
   SavedHouse,
   SelectedAddressInput,
   SessionTokens,
+  UpdateMaintenanceTaskRequest,
   UpdateProfileRequest,
   UserProfile
 } from "@matriva/shared";
@@ -102,10 +115,68 @@ type MaintenanceTaskRow = {
   timing_type: MaintenanceTaskTiming["type"];
   due_date: string | null;
   season: MaintenanceTaskTiming["season"] | null;
+  price_amount_minor: number | null;
+  price_currency: "DKK";
   recommendation: RecommendedMaintenanceTaskMetadata | null;
   created_at: Date;
   updated_at: Date;
   completed_at: Date | null;
+  recurrence_interval: MaintenanceTask["recurrence"] extends null | undefined ? string | null : string | null;
+  recurrence_anchor: string | null;
+  component_key: string | null;
+  archived_at: Date | null;
+  recommendation_id: string | null;
+};
+
+type MaintenanceRecommendationRow = {
+  id: string;
+  house_id: string;
+  source_type: MaintenanceRecommendation["sourceType"];
+  status: MaintenanceRecommendation["status"];
+  title: string;
+  description: string;
+  recommended_timing_label: string;
+  timing_type: MaintenanceTaskTiming["type"];
+  due_date: string | null;
+  season: MaintenanceTaskTiming["season"] | null;
+  recurrence_interval: string | null;
+  recurrence_anchor: string | null;
+  component_key: string | null;
+  provenance: MaintenanceRecommendation["provenance"];
+  recommendation_key: string;
+  accepted_task_id: string | null;
+  dismissed_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+};
+
+type MaintenanceCompletionRow = {
+  id: string;
+  task_id: string;
+  house_id: string;
+  title_snapshot: string;
+  note: string | null;
+  completed_date: string;
+  price_amount_minor: number | null;
+  price_currency: "DKK";
+  component_key: string | null;
+  source: MaintenanceTask["source"];
+  recurrence_interval: string | null;
+  recurrence_anchor: string | null;
+  created_at: Date;
+};
+
+type HouseDocumentRow = {
+  id: string;
+  house_id: string;
+  object_key: string;
+  original_filename: string;
+  mime_type: HouseDocument["mimeType"];
+  size_bytes: number;
+  checksum_sha256: string | null;
+  upload_status: HouseDocument["uploadStatus"];
+  created_at: Date;
+  updated_at: Date;
 };
 
 type HouseImprovementRow = {
@@ -177,6 +248,9 @@ export function createOpaqueId(
     | "pubpar"
     | "impr"
     | "media"
+    | "mrec"
+    | "mcomp"
+    | "doc"
 ) {
   return `${prefix}_${randomBytes(12).toString("hex")}`;
 }
@@ -195,6 +269,10 @@ export function normalizeEmail(email: string) {
 
 function isoDate(value: Date | null) {
   return value ? value.toISOString() : null;
+}
+
+function nullableNumber(value: number | string | null) {
+  return value === null ? null : Number(value);
 }
 
 function futureDate(ms: number) {
@@ -283,10 +361,97 @@ function toMaintenanceTask(row: MaintenanceTaskRow): MaintenanceTask {
     source: row.source,
     status: row.status,
     timing,
+    priceAmountMinor: nullableNumber(row.price_amount_minor),
+    priceCurrency: row.price_currency,
     ...(row.recommendation ? { recommendation: row.recommendation } : {}),
+    recurrence: row.recurrence_interval
+      ? {
+          interval: row.recurrence_interval,
+          anchor: row.recurrence_anchor ?? "completed_date"
+        }
+      : null,
+    componentKey: row.component_key,
+    archivedAt: isoDate(row.archived_at),
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
     ...(row.completed_at ? { completedAt: row.completed_at.toISOString() } : {})
+  });
+}
+
+function toMaintenanceRecommendation(
+  row: MaintenanceRecommendationRow
+): MaintenanceRecommendation {
+  return maintenanceRecommendationSchema.parse({
+    id: row.id,
+    houseId: row.house_id,
+    sourceType: row.source_type,
+    status: row.status,
+    title: row.title,
+    description: row.description,
+    recommendedTimingLabel: row.recommended_timing_label,
+    timing: {
+      type: row.timing_type,
+      ...(row.due_date ? { dueDate: row.due_date } : {}),
+      ...(row.season ? { season: row.season } : {})
+    },
+    recurrence: row.recurrence_interval
+      ? {
+          interval: row.recurrence_interval,
+          anchor: row.recurrence_anchor ?? "completed_date"
+        }
+      : null,
+    componentKey: row.component_key,
+    provenance: row.provenance,
+    recommendationKey: row.recommendation_key,
+    acceptedTaskId: row.accepted_task_id,
+    dismissedAt: isoDate(row.dismissed_at),
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString()
+  });
+}
+
+function toMaintenanceHistoryEntry(
+  row: MaintenanceCompletionRow
+): MaintenanceHistoryEntry {
+  return maintenanceHistoryEntrySchema.parse({
+    id: row.id,
+    taskId: row.task_id,
+    houseId: row.house_id,
+    title: row.title_snapshot,
+    completedDate: row.completed_date,
+    note: row.note,
+    priceAmountMinor: nullableNumber(row.price_amount_minor),
+    priceCurrency: row.price_currency,
+    componentKey: row.component_key,
+    source: row.source,
+    recurrence: row.recurrence_interval
+      ? {
+          interval: row.recurrence_interval,
+          anchor: row.recurrence_anchor ?? "completed_date"
+        }
+      : null,
+    createdAt: row.created_at.toISOString()
+  });
+}
+
+function houseDocumentContentPath(houseId: string, documentId: string) {
+  return `/v1/houses/${houseId}/documents/${documentId}/content`;
+}
+
+function toHouseDocument(row: HouseDocumentRow): HouseDocument {
+  return houseDocumentSchema.parse({
+    id: row.id,
+    houseId: row.house_id,
+    originalFilename: row.original_filename,
+    mimeType: row.mime_type,
+    sizeBytes: row.size_bytes,
+    uploadStatus: row.upload_status,
+    contentPath:
+      row.upload_status === "uploaded"
+        ? houseDocumentContentPath(row.house_id, row.id)
+        : null,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString()
   });
 }
 
@@ -774,6 +939,7 @@ export async function createMaintenanceTaskForHouse(
       insert into maintenance_tasks (
         id,
         house_id,
+        user_id,
         title,
         description,
         source,
@@ -781,10 +947,15 @@ export async function createMaintenanceTaskForHouse(
         timing_type,
         due_date,
         season,
+        price_amount_minor,
+        price_currency,
         recommendation,
+        recurrence_interval,
+        recurrence_anchor,
+        component_key,
         completed_at
       )
-      values ($1, $2, $3, $4, $5, $6, $7, $8::date, $9, $10::jsonb, $11)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10, $11, $12, $13::jsonb, $14, $15, $16, $17)
       returning
         id,
         house_id,
@@ -795,7 +966,14 @@ export async function createMaintenanceTaskForHouse(
         timing_type,
         to_char(due_date, 'YYYY-MM-DD') as due_date,
         season,
+        price_amount_minor,
+        price_currency,
         recommendation,
+        recurrence_interval,
+        recurrence_anchor,
+        component_key,
+        archived_at,
+        recommendation_id,
         created_at,
         updated_at,
         completed_at
@@ -803,6 +981,7 @@ export async function createMaintenanceTaskForHouse(
     [
       createOpaqueId("task"),
       house.id,
+      userId,
       input.title,
       input.description ?? null,
       input.source ?? "user_created",
@@ -810,7 +989,12 @@ export async function createMaintenanceTaskForHouse(
       input.timing.type,
       input.timing.dueDate ?? null,
       input.timing.season ?? null,
-      input.recommendation ? JSON.stringify(input.recommendation) : null,
+      input.priceAmountMinor ?? null,
+      input.priceCurrency ?? "DKK",
+      null,
+      input.recurrence?.interval ?? null,
+      input.recurrence?.anchor ?? null,
+      input.componentKey ?? null,
       completedAt
     ]
   );
@@ -832,12 +1016,22 @@ export async function listMaintenanceTasksForHouse(userId: string, houseId: stri
         timing_type,
         to_char(due_date, 'YYYY-MM-DD') as due_date,
         season,
+        price_amount_minor,
+        price_currency,
         recommendation,
+        recurrence_interval,
+        recurrence_anchor,
+        component_key,
+        archived_at,
+        recommendation_id,
         created_at,
         updated_at,
         completed_at
       from maintenance_tasks
       where house_id = $1
+        and deleted_at is null
+        and archived_at is null
+        and status not in ('done', 'dismissed')
       order by created_at desc
     `,
     [house.id]
@@ -875,7 +1069,14 @@ export async function updateMaintenanceTaskStatus(
         timing_type,
         to_char(due_date, 'YYYY-MM-DD') as due_date,
         season,
+        price_amount_minor,
+        price_currency,
         recommendation,
+        recurrence_interval,
+        recurrence_anchor,
+        component_key,
+        archived_at,
+        recommendation_id,
         created_at,
         updated_at,
         completed_at
@@ -893,6 +1094,1038 @@ export async function updateMaintenanceTaskStatus(
   }
 
   return toMaintenanceTask(row);
+}
+
+function nextDateForRecurrence(dateOnly: string, interval: string) {
+  const date = new Date(`${dateOnly}T00:00:00.000Z`);
+  const monthsByInterval: Record<string, number> = {
+    monthly: 1,
+    quarterly: 3,
+    half_yearly: 6,
+    yearly: 12,
+    every_2_years: 24,
+    every_3_years: 36,
+    every_5_years: 60,
+    every_10_years: 120
+  };
+  date.setUTCMonth(date.getUTCMonth() + (monthsByInterval[interval] ?? 12));
+  return date.toISOString().slice(0, 10);
+}
+
+export async function getMaintenanceTaskForHouse(
+  userId: string,
+  houseId: string,
+  taskId: string
+) {
+  const house = await getSavedHouse(userId, houseId);
+  const result = await pool.query<MaintenanceTaskRow>(
+    `
+      select
+        id,
+        house_id,
+        title,
+        description,
+        source,
+        status,
+        timing_type,
+        to_char(due_date, 'YYYY-MM-DD') as due_date,
+        season,
+        price_amount_minor,
+        price_currency,
+        recommendation,
+        recurrence_interval,
+        recurrence_anchor,
+        component_key,
+        archived_at,
+        recommendation_id,
+        created_at,
+        updated_at,
+        completed_at
+      from maintenance_tasks
+      where id = $1 and house_id = $2 and deleted_at is null
+    `,
+    [taskId, house.id]
+  );
+  const row = result.rows[0];
+
+  if (!row) {
+    throw new ApiError(404, "maintenance_task_not_found", "Opgaven blev ikke fundet.");
+  }
+
+  return toMaintenanceTask(row);
+}
+
+export async function updateMaintenanceTaskForHouse(
+  userId: string,
+  houseId: string,
+  taskId: string,
+  input: UpdateMaintenanceTaskRequest
+) {
+  const existing = await getMaintenanceTaskForHouse(userId, houseId, taskId);
+
+  if (existing.source !== "user_created" && existing.source !== "recommendation_accepted") {
+    throw new ApiError(403, "maintenance_task_not_editable", "Systemforslag kan ikke redigeres som opgaver.");
+  }
+
+  const result = await pool.query<MaintenanceTaskRow>(
+    `
+      update maintenance_tasks
+      set
+        title = coalesce($3, title),
+        description = case when $4::boolean then $5 else description end,
+        status = coalesce($6, status),
+        timing_type = coalesce($7, timing_type),
+        due_date = case when $7 is null then due_date else $8::date end,
+        season = case when $7 is null then season else $9 end,
+        recurrence_interval = case when $10::boolean then $11 else recurrence_interval end,
+        recurrence_anchor = case when $10::boolean then $12 else recurrence_anchor end,
+        component_key = case when $13::boolean then $14 else component_key end,
+        price_amount_minor = case when $15::boolean then $16 else price_amount_minor end,
+        price_currency = case when $15::boolean then coalesce($17, 'DKK') else price_currency end,
+        updated_at = now()
+      where id = $1 and house_id = $2 and deleted_at is null and archived_at is null
+      returning
+        id,
+        house_id,
+        title,
+        description,
+        source,
+        status,
+        timing_type,
+        to_char(due_date, 'YYYY-MM-DD') as due_date,
+        season,
+        price_amount_minor,
+        price_currency,
+        recommendation,
+        recurrence_interval,
+        recurrence_anchor,
+        component_key,
+        archived_at,
+        recommendation_id,
+        created_at,
+        updated_at,
+        completed_at
+    `,
+    [
+      taskId,
+      existing.houseId,
+      input.title?.trim() ?? null,
+      Object.prototype.hasOwnProperty.call(input, "description"),
+      input.description?.trim() || null,
+      input.status ?? null,
+      input.timing?.type ?? null,
+      input.timing?.dueDate ?? null,
+      input.timing?.season ?? null,
+      Object.prototype.hasOwnProperty.call(input, "recurrence"),
+      input.recurrence?.interval ?? null,
+      input.recurrence?.anchor ?? null,
+      Object.prototype.hasOwnProperty.call(input, "componentKey"),
+      input.componentKey?.trim() || null,
+      Object.prototype.hasOwnProperty.call(input, "priceAmountMinor"),
+      input.priceAmountMinor ?? null,
+      input.priceCurrency ?? "DKK"
+    ]
+  );
+
+  return toMaintenanceTask(result.rows[0] as MaintenanceTaskRow);
+}
+
+export async function moveMaintenanceTaskForHouse(
+  userId: string,
+  houseId: string,
+  taskId: string,
+  input: MoveMaintenanceTaskRequest
+) {
+  return updateMaintenanceTaskForHouse(userId, houseId, taskId, {
+    timing: input.timing,
+    status: "rescheduled"
+  });
+}
+
+export async function archiveMaintenanceTaskForHouse(
+  userId: string,
+  houseId: string,
+  taskId: string
+) {
+  const existing = await getMaintenanceTaskForHouse(userId, houseId, taskId);
+
+  if (existing.source !== "user_created" && existing.source !== "recommendation_accepted") {
+    throw new ApiError(403, "maintenance_task_not_deletable", "Systemforslag slettes ikke via opgave-CRUD.");
+  }
+
+  const result = await pool.query<MaintenanceTaskRow>(
+    `
+      update maintenance_tasks
+      set archived_at = now(), updated_at = now()
+      where id = $1 and house_id = $2 and status <> 'done' and archived_at is null
+      returning
+        id,
+        house_id,
+        title,
+        description,
+        source,
+        status,
+        timing_type,
+        to_char(due_date, 'YYYY-MM-DD') as due_date,
+        season,
+        price_amount_minor,
+        price_currency,
+        recommendation,
+        recurrence_interval,
+        recurrence_anchor,
+        component_key,
+        archived_at,
+        recommendation_id,
+        created_at,
+        updated_at,
+        completed_at
+    `,
+    [taskId, existing.houseId]
+  );
+
+  if (!result.rows[0]) {
+    throw new ApiError(409, "maintenance_task_archive_blocked", "Udførte opgaver med historik kan ikke slettes uden særskilt bekræftelse.");
+  }
+
+  return toMaintenanceTask(result.rows[0] as MaintenanceTaskRow);
+}
+
+async function ensureCatalogRecommendations(userId: string, houseId: string) {
+  const catalog = [
+    {
+      key: "matriva.gutters.autumn.v1",
+      title: "Rens tagrender",
+      description: "Blade og snavs kan give overløb ved kraftig regn. Tjek tagrenderne før vinteren.",
+      timingLabel: "Efterår",
+      season: "autumn",
+      recurrenceInterval: "yearly",
+      componentKey: "roof"
+    },
+    {
+      key: "matriva.smoke_alarm.winter.v1",
+      title: "Test røgalarm",
+      description: "En kort test sikrer, at alarm og batteri stadig virker.",
+      timingLabel: "Vinter",
+      season: "winter",
+      recurrenceInterval: "half_yearly",
+      componentKey: "installations"
+    },
+    {
+      key: "matriva.facade.spring.v1",
+      title: "Gennemgå facade og sokkel",
+      description: "Frost og fugt kan give revner. En visuel gennemgang hjælper med at opdage små skader tidligt.",
+      timingLabel: "Forår",
+      season: "spring",
+      recurrenceInterval: "yearly",
+      componentKey: "facade"
+    }
+  ] as const;
+
+  for (const item of catalog) {
+    await pool.query(
+      `
+        insert into maintenance_recommendations (
+          id,
+          house_id,
+          user_id,
+          source_type,
+          title,
+          description,
+          recommended_timing_label,
+          timing_type,
+          season,
+          recurrence_interval,
+          recurrence_anchor,
+          component_key,
+          provenance,
+          recommendation_key,
+          version_key
+        )
+        values (
+          $1,
+          $2,
+          $3,
+          'matriva_catalog',
+          $4,
+          $5,
+          $6,
+          'seasonal_window',
+          $7,
+          $8,
+          'completed_date',
+          $9,
+          $10::jsonb,
+          $11,
+          $12
+        )
+        on conflict (house_id, version_key) do nothing
+      `,
+      [
+        createOpaqueId("mrec"),
+        houseId,
+        userId,
+        item.title,
+        item.description,
+        item.timingLabel,
+        item.season,
+        item.recurrenceInterval,
+        item.componentKey,
+        JSON.stringify({
+          extractionMethod: "matriva_catalog_v1",
+          originalTitle: item.title,
+          originalDescription: item.description,
+          originalTiming: item.timingLabel
+        }),
+        item.key,
+        item.key
+      ]
+    );
+  }
+}
+
+export async function listMaintenanceRecommendationsForHouse(
+  userId: string,
+  houseId: string
+) {
+  const house = await getSavedHouse(userId, houseId);
+  await ensureCatalogRecommendations(userId, house.id);
+  const result = await pool.query<MaintenanceRecommendationRow>(
+    `
+      select
+        id,
+        house_id,
+        source_type,
+        status,
+        title,
+        description,
+        recommended_timing_label,
+        timing_type,
+        to_char(due_date, 'YYYY-MM-DD') as due_date,
+        season,
+        recurrence_interval,
+        recurrence_anchor,
+        component_key,
+        provenance,
+        recommendation_key,
+        accepted_task_id,
+        dismissed_at,
+        created_at,
+        updated_at
+      from maintenance_recommendations
+      where house_id = $1 and user_id = $2 and status = 'pending'
+      order by created_at desc
+    `,
+    [house.id, userId]
+  );
+
+  return result.rows.map(toMaintenanceRecommendation);
+}
+
+export async function acceptMaintenanceRecommendationForHouse(
+  userId: string,
+  houseId: string,
+  recommendationId: string,
+  input: AcceptMaintenanceRecommendationRequest
+) {
+  const house = await getSavedHouse(userId, houseId);
+  const client = await pool.connect();
+
+  try {
+    await client.query("begin");
+    const recommendationResult = await client.query<MaintenanceRecommendationRow>(
+      `
+        select
+          id,
+          house_id,
+          source_type,
+          status,
+          title,
+          description,
+          recommended_timing_label,
+          timing_type,
+          to_char(due_date, 'YYYY-MM-DD') as due_date,
+          season,
+          recurrence_interval,
+          recurrence_anchor,
+          component_key,
+          provenance,
+          recommendation_key,
+          accepted_task_id,
+          dismissed_at,
+          created_at,
+          updated_at
+        from maintenance_recommendations
+        where id = $1 and house_id = $2 and user_id = $3
+        for update
+      `,
+      [recommendationId, house.id, userId]
+    );
+    const recommendation = recommendationResult.rows[0];
+
+    if (!recommendation) {
+      throw new ApiError(404, "maintenance_recommendation_not_found", "Forslaget blev ikke fundet.");
+    }
+
+    if (recommendation.accepted_task_id) {
+      const task = await getMaintenanceTaskForHouse(
+        userId,
+        house.id,
+        recommendation.accepted_task_id
+      );
+      await client.query("commit");
+      return task;
+    }
+
+    if (recommendation.status === "dismissed") {
+      throw new ApiError(409, "maintenance_recommendation_dismissed", "Forslaget er allerede afvist.");
+    }
+
+    const timing = input.timing ?? {
+      type: recommendation.timing_type,
+      ...(recommendation.due_date ? { dueDate: recommendation.due_date } : {}),
+      ...(recommendation.season ? { season: recommendation.season } : {})
+    };
+    const recurrence = Object.prototype.hasOwnProperty.call(input, "recurrence")
+      ? input.recurrence
+      : recommendation.recurrence_interval
+        ? {
+            interval: recommendation.recurrence_interval,
+            anchor: recommendation.recurrence_anchor ?? "completed_date"
+          }
+        : null;
+    const taskId = createOpaqueId("task");
+    const taskResult = await client.query<MaintenanceTaskRow>(
+      `
+        insert into maintenance_tasks (
+          id,
+          house_id,
+          user_id,
+          title,
+          description,
+          source,
+          status,
+          timing_type,
+          due_date,
+          season,
+          recommendation,
+          recommendation_id,
+          recurrence_interval,
+          recurrence_anchor,
+          component_key
+        )
+        values ($1, $2, $3, $4, $5, 'recommendation_accepted', 'planned', $6, $7::date, $8, $9::jsonb, $10, $11, $12, $13)
+        returning
+          id,
+          house_id,
+          title,
+          description,
+          source,
+          status,
+          timing_type,
+          to_char(due_date, 'YYYY-MM-DD') as due_date,
+          season,
+          price_amount_minor,
+          price_currency,
+          recommendation,
+          recurrence_interval,
+          recurrence_anchor,
+          component_key,
+          archived_at,
+          recommendation_id,
+          created_at,
+          updated_at,
+          completed_at
+      `,
+      [
+        taskId,
+        house.id,
+        userId,
+        recommendation.title,
+        input.description ?? recommendation.description,
+        timing.type,
+        timing.dueDate ?? null,
+        timing.season ?? null,
+        JSON.stringify({
+          recommendationId: recommendation.id,
+          recommendationKey: recommendation.recommendation_key,
+          componentKey: recommendation.component_key ?? undefined,
+          season: recommendation.season ?? undefined,
+          reason: recommendation.description
+        }),
+        recommendation.id,
+        recurrence?.interval ?? null,
+        recurrence?.anchor ?? null,
+        recommendation.component_key
+      ]
+    );
+
+    await client.query(
+      `
+        update maintenance_recommendations
+        set status = 'accepted', accepted_task_id = $2, updated_at = now()
+        where id = $1
+      `,
+      [recommendation.id, taskId]
+    );
+    await client.query("commit");
+    return toMaintenanceTask(taskResult.rows[0] as MaintenanceTaskRow);
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function dismissMaintenanceRecommendationForHouse(
+  userId: string,
+  houseId: string,
+  recommendationId: string
+) {
+  const house = await getSavedHouse(userId, houseId);
+  const result = await pool.query<MaintenanceRecommendationRow>(
+    `
+      update maintenance_recommendations
+      set status = 'dismissed', dismissed_at = coalesce(dismissed_at, now()), updated_at = now()
+      where id = $1 and house_id = $2 and user_id = $3 and status = 'pending'
+      returning
+        id,
+        house_id,
+        source_type,
+        status,
+        title,
+        description,
+        recommended_timing_label,
+        timing_type,
+        to_char(due_date, 'YYYY-MM-DD') as due_date,
+        season,
+        recurrence_interval,
+        recurrence_anchor,
+        component_key,
+        provenance,
+        recommendation_key,
+        accepted_task_id,
+        dismissed_at,
+        created_at,
+        updated_at
+    `,
+    [recommendationId, house.id, userId]
+  );
+
+  if (!result.rows[0]) {
+    throw new ApiError(404, "maintenance_recommendation_not_found", "Forslaget blev ikke fundet.");
+  }
+
+  return toMaintenanceRecommendation(result.rows[0] as MaintenanceRecommendationRow);
+}
+
+export async function completeMaintenanceTaskForHouse(
+  userId: string,
+  houseId: string,
+  taskId: string,
+  input: CompleteMaintenanceTaskRequest
+) {
+  const house = await getSavedHouse(userId, houseId);
+  const client = await pool.connect();
+  const completedDate = input.completedDate ?? new Date().toISOString().slice(0, 10);
+
+  try {
+    await client.query("begin");
+    const taskResult = await client.query<MaintenanceTaskRow>(
+      `
+        select
+          id,
+          house_id,
+          title,
+          description,
+          source,
+          status,
+          timing_type,
+          to_char(due_date, 'YYYY-MM-DD') as due_date,
+          season,
+          price_amount_minor,
+          price_currency,
+          recommendation,
+          recurrence_interval,
+          recurrence_anchor,
+          component_key,
+          archived_at,
+          recommendation_id,
+          created_at,
+          updated_at,
+          completed_at
+        from maintenance_tasks
+        where id = $1 and house_id = $2 and deleted_at is null and archived_at is null
+        for update
+      `,
+      [taskId, house.id]
+    );
+    const task = taskResult.rows[0];
+
+    if (!task) {
+      throw new ApiError(404, "maintenance_task_not_found", "Opgaven blev ikke fundet.");
+    }
+
+    const existingCompletion = await client.query<{ id: string }>(
+      "select id from maintenance_completions where task_id = $1",
+      [task.id]
+    );
+
+    if (existingCompletion.rows[0]) {
+      const history = await listMaintenanceHistoryForHouse(userId, house.id);
+      await client.query("commit");
+      return { task: toMaintenanceTask(task), historyEntry: history.find((entry) => entry.taskId === task.id) ?? null };
+    }
+
+    const completionResult = await client.query<MaintenanceCompletionRow>(
+      `
+        insert into maintenance_completions (
+          id,
+          task_id,
+          house_id,
+          user_id,
+          title_snapshot,
+          note,
+          completed_date,
+          price_amount_minor,
+          price_currency,
+          component_key,
+          source,
+          recurrence_interval,
+          recurrence_anchor
+        )
+        values ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12, $13)
+        returning
+          id,
+          task_id,
+          house_id,
+          title_snapshot,
+          note,
+          to_char(completed_date, 'YYYY-MM-DD') as completed_date,
+          price_amount_minor,
+          price_currency,
+          component_key,
+          source,
+          recurrence_interval,
+          recurrence_anchor,
+          created_at
+      `,
+      [
+        createOpaqueId("mcomp"),
+        task.id,
+        house.id,
+        userId,
+        task.title,
+        input.note?.trim() || null,
+        completedDate,
+        task.price_amount_minor,
+        task.price_currency,
+        task.component_key,
+        task.source,
+        task.recurrence_interval,
+        task.recurrence_anchor
+      ]
+    );
+
+    await client.query(
+      `
+        update maintenance_tasks
+        set status = 'done', completed_at = ($2::date)::timestamptz, updated_at = now()
+        where id = $1
+      `,
+      [task.id, completedDate]
+    );
+
+    if (task.recurrence_interval) {
+      const nextDate = nextDateForRecurrence(completedDate, task.recurrence_interval);
+      const existingNext = await client.query<{ id: string }>(
+        `
+          select id
+          from maintenance_tasks
+          where house_id = $1
+            and user_id = $2
+            and title = $3
+            and source = $4
+            and status <> 'done'
+            and deleted_at is null
+            and archived_at is null
+            and recurrence_interval = $5
+            and coalesce(recommendation_id, '') = coalesce($6, '')
+            and (
+              ($7::date is not null and due_date = $7::date)
+              or ($7::date is null and due_date is null and season is not distinct from $8)
+            )
+          limit 1
+        `,
+        [
+          house.id,
+          userId,
+          task.title,
+          task.source,
+          task.recurrence_interval,
+          task.recommendation_id,
+          task.timing_type === "specific_deadline" ? nextDate : null,
+          task.season
+        ]
+      );
+
+      if (!existingNext.rows[0]) {
+        await client.query(
+          `
+            insert into maintenance_tasks (
+              id,
+              house_id,
+              user_id,
+              title,
+              description,
+              source,
+              status,
+              timing_type,
+              due_date,
+              season,
+              price_amount_minor,
+              price_currency,
+              recommendation,
+              recommendation_id,
+              recurrence_interval,
+              recurrence_anchor,
+              component_key
+            )
+            values ($1, $2, $3, $4, $5, $6, 'planned', $7, $8::date, $9, $10, $11, $12::jsonb, $13, $14, $15, $16)
+          `,
+          [
+            createOpaqueId("task"),
+            house.id,
+            userId,
+            task.title,
+            task.description,
+            task.source,
+            task.timing_type === "specific_deadline" ? "specific_deadline" : task.timing_type,
+            task.timing_type === "specific_deadline" ? nextDate : null,
+            task.season,
+            task.price_amount_minor,
+            task.price_currency,
+            task.recommendation ? JSON.stringify(task.recommendation) : null,
+            task.recommendation_id,
+            task.recurrence_interval,
+            task.recurrence_anchor ?? "completed_date",
+            task.component_key
+          ]
+        );
+      }
+    }
+
+    await client.query("commit");
+    return {
+      task: await getMaintenanceTaskForHouse(userId, house.id, task.id),
+      historyEntry: toMaintenanceHistoryEntry(completionResult.rows[0] as MaintenanceCompletionRow)
+    };
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function listMaintenanceHistoryForHouse(
+  userId: string,
+  houseId: string,
+  query: MaintenanceHistoryQuery = {}
+) {
+  const house = await getSavedHouse(userId, houseId);
+  const filters: string[] = ["c.house_id = $1", "c.user_id = $2"];
+  const values: unknown[] = [house.id, userId];
+
+  if (query.year) {
+    values.push(query.year);
+    filters.push(`extract(year from c.completed_date) = $${values.length}`);
+  }
+
+  if (query.componentKey) {
+    values.push(query.componentKey);
+    filters.push(`c.component_key = $${values.length}`);
+  }
+
+  const result = await pool.query<MaintenanceCompletionRow>(
+    `
+      select
+        c.id,
+        c.task_id,
+        c.house_id,
+        c.title_snapshot,
+        c.note,
+        to_char(c.completed_date, 'YYYY-MM-DD') as completed_date,
+        c.price_amount_minor,
+        c.price_currency,
+        c.component_key,
+        c.source,
+        c.recurrence_interval,
+        c.recurrence_anchor,
+        c.created_at
+      from maintenance_completions c
+      where ${filters.join(" and ")}
+      order by c.completed_date desc, c.created_at desc
+    `,
+    values
+  );
+
+  return result.rows.map(toMaintenanceHistoryEntry);
+}
+
+export async function getMaintenanceHistoryEntryForHouse(
+  userId: string,
+  houseId: string,
+  completionId: string
+): Promise<MaintenanceHistoryDetail> {
+  const house = await getSavedHouse(userId, houseId);
+  const result = await pool.query<MaintenanceCompletionRow>(
+    `
+      select
+        c.id,
+        c.task_id,
+        c.house_id,
+        c.title_snapshot,
+        c.note,
+        to_char(c.completed_date, 'YYYY-MM-DD') as completed_date,
+        c.price_amount_minor,
+        c.price_currency,
+        c.component_key,
+        c.source,
+        c.recurrence_interval,
+        c.recurrence_anchor,
+        c.created_at
+      from maintenance_completions c
+      where c.id = $1 and c.house_id = $2 and c.user_id = $3
+    `,
+    [completionId, house.id, userId]
+  );
+  const row = result.rows[0];
+
+  if (!row) {
+    throw new ApiError(404, "maintenance_history_not_found", "Historikposten blev ikke fundet.");
+  }
+
+  const taskResult = await pool.query<{ recommendation_id: string | null }>(
+      "select recommendation_id from maintenance_tasks where id = $1 and house_id = $2",
+      [row.task_id, house.id]
+    );
+  const recommendationId = taskResult.rows[0]?.recommendation_id;
+  let recommendation: MaintenanceRecommendation | null = null;
+
+  if (recommendationId) {
+    const recommendationResult = await pool.query<MaintenanceRecommendationRow>(
+      `
+        select
+          id,
+          house_id,
+          source_type,
+          status,
+          title,
+          description,
+          recommended_timing_label,
+          timing_type,
+          to_char(due_date, 'YYYY-MM-DD') as due_date,
+          season,
+          recurrence_interval,
+          recurrence_anchor,
+          component_key,
+          provenance,
+          recommendation_key,
+          accepted_task_id,
+          dismissed_at,
+          created_at,
+          updated_at
+        from maintenance_recommendations
+        where id = $1 and house_id = $2 and user_id = $3
+      `,
+      [recommendationId, house.id, userId]
+    );
+    recommendation = recommendationResult.rows[0]
+      ? toMaintenanceRecommendation(recommendationResult.rows[0])
+      : null;
+  }
+
+  return maintenanceHistoryDetailSchema.parse({
+    ...toMaintenanceHistoryEntry(row),
+    recommendation
+  });
+}
+
+export async function listHouseDocumentsForHouse(userId: string, houseId: string) {
+  const house = await getSavedHouse(userId, houseId);
+  const where = [
+    "house_id = $1",
+    "user_id = $2",
+    "upload_status = 'uploaded'",
+    "archived_at is null"
+  ];
+  const values: unknown[] = [house.id, userId];
+
+  const result = await pool.query<HouseDocumentRow>(
+    `
+      select
+        id,
+        house_id,
+        object_key,
+        original_filename,
+        mime_type,
+        size_bytes,
+        checksum_sha256,
+        upload_status,
+        created_at,
+        updated_at
+      from house_documents
+      where ${where.join(" and ")}
+      order by created_at desc
+    `,
+    values
+  );
+
+  return result.rows.map(toHouseDocument);
+}
+
+export async function createHouseDocumentForHouse(
+  userId: string,
+  houseId: string,
+  input: {
+    objectKey: string;
+    originalFilename: string;
+    mimeType: HouseDocument["mimeType"];
+    sizeBytes: number;
+    checksumSha256: string;
+  }
+) {
+  const house = await getSavedHouse(userId, houseId);
+  const result = await pool.query<HouseDocumentRow>(
+    `
+      insert into house_documents (
+        id,
+        house_id,
+        user_id,
+        object_key,
+        original_filename,
+        mime_type,
+        size_bytes,
+        checksum_sha256,
+        upload_status,
+        storage_provider
+      )
+      values ($1, $2, $3, $4, $5, $6, $7, $8, 'uploaded', $9)
+      returning
+        id,
+        house_id,
+        object_key,
+        original_filename,
+        mime_type,
+        size_bytes,
+        checksum_sha256,
+        upload_status,
+        created_at,
+        updated_at
+    `,
+    [
+      createOpaqueId("doc"),
+      house.id,
+      userId,
+      input.objectKey,
+      input.originalFilename,
+      input.mimeType,
+      input.sizeBytes,
+      input.checksumSha256,
+      process.env.MATRIVA_STORAGE_ADAPTER === "local" ? "local" : "s3"
+    ]
+  );
+
+  return toHouseDocument(result.rows[0] as HouseDocumentRow);
+}
+
+export async function getHouseDocumentForHouse(
+  userId: string,
+  houseId: string,
+  documentId: string
+) {
+  const house = await getSavedHouse(userId, houseId);
+  const result = await pool.query<HouseDocumentRow>(
+    `
+      select
+        id,
+        house_id,
+        object_key,
+        original_filename,
+        mime_type,
+        size_bytes,
+        checksum_sha256,
+        upload_status,
+        created_at,
+        updated_at
+      from house_documents
+      where id = $1
+        and house_id = $2
+        and user_id = $3
+        and upload_status = 'uploaded'
+        and archived_at is null
+    `,
+    [documentId, house.id, userId]
+  );
+  const row = result.rows[0];
+
+  if (!row) {
+    throw new ApiError(404, "house_document_not_found", "Dokumentet blev ikke fundet.");
+  }
+
+  return { document: toHouseDocument(row), objectKey: row.object_key };
+}
+
+export async function archiveHouseDocumentForHouse(
+  userId: string,
+  houseId: string,
+  documentId: string
+) {
+  const { objectKey } = await getHouseDocumentForHouse(
+    userId,
+    houseId,
+    documentId
+  );
+  const result = await pool.query<HouseDocumentRow>(
+    `
+      update house_documents
+      set upload_status = 'archived', archived_at = now(), updated_at = now()
+      where id = $1 and user_id = $2
+      returning
+        id,
+        house_id,
+        object_key,
+        original_filename,
+        mime_type,
+        size_bytes,
+        checksum_sha256,
+        upload_status,
+        created_at,
+        updated_at
+    `,
+    [documentId, userId]
+  );
+
+  return {
+    document: toHouseDocument(result.rows[0] as HouseDocumentRow),
+    objectKey
+  };
+}
+
+export async function countActiveDocumentObjectReferences(objectKey: string) {
+  const result = await pool.query<{ count: string }>(
+    `
+      select count(*)::text as count
+      from house_documents
+      where object_key = $1
+        and upload_status = 'uploaded'
+        and archived_at is null
+    `,
+    [objectKey]
+  );
+
+  return Number(result.rows[0]?.count ?? "0");
 }
 
 export async function listHouseImprovements(userId: string, houseId: string) {

@@ -20,6 +20,8 @@
     "check:bbr:parity": "npm run check:bbr-public-data-parity",
     "smoke:api:dev": "node tools/smoke-api-dev.mjs",
     "smoke:api:routes": "node tools/smoke-api-routes.mjs",
+    "smoke:maintenance": "node tools/smoke-maintenance.mjs",
+    "smoke:storage": "node tools/smoke-storage.mjs",
     "smoke:bbr": "npm run build && node tools/smoke-bbr-public-data.mjs",
     "smoke:public-data:product": "npm run build && node tools/smoke-public-data-product.mjs",
     "smoke:bbr:live": "npm run build && node tools/smoke-bbr-live.mjs",

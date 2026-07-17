@@ -1,5 +1,5 @@
-import { createHash, randomBytes } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createHash, createHmac, randomBytes } from "node:crypto";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { dirname, extname, join } from "node:path";
@@ -15,6 +15,9 @@ import {
   currentUserResponseSchema,
   createHouseImprovementRequestSchema,
   createMaintenanceTaskRequestSchema,
+  acceptMaintenanceRecommendationRequestSchema,
+  completeMaintenanceTaskRequestSchema,
+  dismissMaintenanceRecommendationResponseSchema,
   createSavedHouseRequestSchema,
   enrichHouseDraftRequestSchema,
   enrichHouseDraftResponseSchema,
@@ -30,9 +33,18 @@ import {
   houseIdSchema,
   homeBootstrapResponseSchema,
   maintenanceTaskResponseSchema,
+  maintenanceHistoryResponseSchema,
+  maintenanceHistoryDetailResponseSchema,
+  maintenanceRecommendationsResponseSchema,
+  houseDocumentsResponseSchema,
+  houseDocumentResponseSchema,
   logoutRequestSchema,
   logoutResponseSchema,
   maintenanceTasksResponseSchema,
+  maintenanceRecommendationIdSchema,
+  maintenanceCompletionIdSchema,
+  documentIdSchema,
+  moveMaintenanceTaskRequestSchema,
   refreshSessionRequestSchema,
   requestMagicLinkRequestSchema,
   requestMagicLinkResponseSchema,
@@ -41,9 +53,12 @@ import {
   selectedAddressInputSchema,
   taskIdSchema,
   uploadHousePhotoRequestSchema,
+  uploadHouseDocumentRequestSchema,
   updateProfileRequestSchema,
   updateProfileResponseSchema,
-  updateMaintenanceTaskStatusRequestSchema
+  updateMaintenanceTaskRequestSchema,
+  updateMaintenanceTaskStatusRequestSchema,
+  maintenanceHistoryQuerySchema
 } from "@matriva/shared";
 
 import { sendMagicLinkEmail, createMagicLinkUrl } from "./auth/mailer.ts";
@@ -53,7 +68,13 @@ import {
   authenticateAccessToken,
   authPublicResponse,
   buildAppBootstrap,
+  acceptMaintenanceRecommendationForHouse,
+  archiveMaintenanceTaskForHouse,
+  archiveHouseDocumentForHouse,
+  completeMaintenanceTaskForHouse,
+  countActiveDocumentObjectReferences,
   consumeMagicLinkToken,
+  createHouseDocumentForHouse,
   createHouseImprovement,
   createMaintenanceTaskForHouse,
   createMagicLinkToken,
@@ -61,7 +82,13 @@ import {
   getProfileForUser,
   getCurrentHousePhoto,
   getSavedHouse,
+  getMaintenanceTaskForHouse,
+  getHouseDocumentForHouse,
+  getMaintenanceHistoryEntryForHouse,
   getUserById,
+  listHouseDocumentsForHouse,
+  listMaintenanceHistoryForHouse,
+  listMaintenanceRecommendationsForHouse,
   listMaintenanceTasksForHouse,
   listHouseImprovements,
   listSavedHouses,
@@ -70,6 +97,9 @@ import {
   refreshSession,
   removeHousePhoto,
   replaceHousePhoto,
+  dismissMaintenanceRecommendationForHouse,
+  moveMaintenanceTaskForHouse,
+  updateMaintenanceTaskForHouse,
   updateMaintenanceTaskStatus,
   updateProfile,
   validateAuthRuntimeConfig
@@ -87,9 +117,16 @@ const port = Number.parseInt(process.env.PORT ?? "4000", 10);
 const host = process.env.HOST ?? "127.0.0.1";
 const dawaAddressSearchUrl = "https://api.dataforsyningen.dk/adresser";
 const dawaTimeoutMs = 2500;
-const localMediaStorageRoot =
-  process.env.MATRIVA_MEDIA_STORAGE_DIR ??
-  join(dirname(fileURLToPath(import.meta.url)), "..", "..", "var", "media");
+const localObjectStorageRoot =
+  process.env.MATRIVA_ATTACHMENT_STORAGE_DIR ??
+  process.env.MATRIVA_OBJECT_STORAGE_DIR ??
+  join(dirname(fileURLToPath(import.meta.url)), "..", "..", "var", "objects");
+const documentMaxBytes = Number.parseInt(
+  process.env.MATRIVA_DOCUMENT_MAX_BYTES ??
+    process.env.MATRIVA_MAINTENANCE_ATTACHMENT_MAX_BYTES ??
+    `${15 * 1024 * 1024}`,
+  10
+);
 
 type DawaAddress = {
   id?: unknown;
@@ -181,6 +218,13 @@ function writeUnknownApiError(response: ServerResponse, error: unknown) {
   if (error instanceof ApiError) {
     writeApiError(response, error.status, error.code, error.message);
     return;
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    console.error(JSON.stringify({
+      event: "api.unhandled_error",
+      message: error instanceof Error ? error.message : String(error)
+    }));
   }
 
   writeApiError(
@@ -282,24 +326,240 @@ function mediaStorageKey(houseId: string, mimeType: string) {
   );
 }
 
-function mediaStoragePath(storageKey: string) {
-  const normalized = storageKey.replace(/^[/\\]+/, "");
+function objectExtension(mimeType: string) {
+  const extensions: Record<string, string> = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/heic": ".heic",
+    "image/heif": ".heif",
+    "application/pdf": ".pdf"
+  };
+
+  return extensions[mimeType] ?? ".bin";
+}
+
+function documentObjectKey(houseId: string, mimeType: string) {
+  const environment = process.env.MATRIVA_ENVIRONMENT ?? process.env.NODE_ENV ?? "local";
+
+  return [
+    environment.replace(/[^a-zA-Z0-9_-]/g, "_"),
+    "houses",
+    houseId,
+    "documents",
+    `${randomBytes(18).toString("hex")}${objectExtension(mimeType)}`
+  ].join("/");
+}
+
+function objectStoragePath(objectKey: string) {
+  const normalized = objectKey.replace(/^[/\\]+/, "");
 
   if (normalized.includes("..") || extname(normalized).length === 0) {
-    throw new ApiError(400, "media_storage_key_invalid", "Media storage key is invalid.");
+    throw new ApiError(400, "storage_object_key_invalid", "Dokumentets object key er ugyldig.");
   }
 
-  return join(localMediaStorageRoot, normalized);
+  return join(localObjectStorageRoot, normalized);
 }
 
-async function writeLocalMedia(storageKey: string, content: Buffer) {
-  const path = mediaStoragePath(storageKey);
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, content, { flag: "wx" });
+function isS3Configured() {
+  return Boolean(
+    process.env.MATRIVA_S3_ENDPOINT &&
+      process.env.MATRIVA_S3_BUCKET &&
+      process.env.MATRIVA_S3_ACCESS_KEY_ID &&
+      process.env.MATRIVA_S3_SECRET_ACCESS_KEY
+  );
 }
 
-async function readLocalMedia(storageKey: string) {
-  return readFile(mediaStoragePath(storageKey));
+function storageMode() {
+  return isS3Configured() ? "s3" : "local";
+}
+
+function sha256Hex(value: Buffer | string) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function hmac(key: Buffer | string, value: string) {
+  return createHmac("sha256", key).update(value).digest();
+}
+
+function s3Config() {
+  const endpoint = process.env.MATRIVA_S3_ENDPOINT;
+  const bucket = process.env.MATRIVA_S3_BUCKET;
+  const accessKeyId = process.env.MATRIVA_S3_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.MATRIVA_S3_SECRET_ACCESS_KEY;
+
+  if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) {
+    throw new ApiError(503, "storage_unconfigured", "Filarkivet er ikke konfigureret.");
+  }
+
+  return {
+    endpoint: endpoint.replace(/\/$/, ""),
+    bucket,
+    region: process.env.MATRIVA_S3_REGION ?? "eu-central",
+    accessKeyId,
+    secretAccessKey,
+    forcePathStyle: process.env.MATRIVA_S3_FORCE_PATH_STYLE !== "false"
+  };
+}
+
+function s3RequestUrl(objectKey: string) {
+  const config = s3Config();
+  const encodedKey = objectKey.split("/").map(encodeURIComponent).join("/");
+
+  if (config.forcePathStyle) {
+    return new URL(`${config.endpoint}/${encodeURIComponent(config.bucket)}/${encodedKey}`);
+  }
+
+  const endpoint = new URL(config.endpoint);
+  return new URL(`${endpoint.protocol}//${config.bucket}.${endpoint.host}/${encodedKey}`);
+}
+
+function s3SignedHeaders(method: string, url: URL, body: Buffer, contentType?: string) {
+  const config = s3Config();
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
+  const dateStamp = amzDate.slice(0, 8);
+  const payloadHash = sha256Hex(body);
+  const headers: Record<string, string> = {
+    host: url.host,
+    "x-amz-content-sha256": payloadHash,
+    "x-amz-date": amzDate
+  };
+
+  if (contentType) {
+    headers["content-type"] = contentType;
+  }
+
+  const signedHeaderNames = Object.keys(headers).sort();
+  const canonicalHeaders = signedHeaderNames
+    .map((name) => `${name}:${headers[name]}`)
+    .join("\n");
+  const canonicalRequest = [
+    method,
+    url.pathname,
+    url.searchParams.toString(),
+    `${canonicalHeaders}\n`,
+    signedHeaderNames.join(";"),
+    payloadHash
+  ].join("\n");
+  const scope = `${dateStamp}/${config.region}/s3/aws4_request`;
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    scope,
+    sha256Hex(canonicalRequest)
+  ].join("\n");
+  const dateKey = hmac(`AWS4${config.secretAccessKey}`, dateStamp);
+  const regionKey = hmac(dateKey, config.region);
+  const serviceKey = hmac(regionKey, "s3");
+  const signingKey = hmac(serviceKey, "aws4_request");
+  const signature = createHmac("sha256", signingKey).update(stringToSign).digest("hex");
+
+  return {
+    ...headers,
+    authorization: [
+      `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${scope}`,
+      `SignedHeaders=${signedHeaderNames.join(";")}`,
+      `Signature=${signature}`
+    ].join(", ")
+  };
+}
+
+async function writeStorageObject(objectKey: string, content: Buffer, mimeType: string) {
+  if (storageMode() === "local") {
+    const path = objectStoragePath(objectKey);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, content, { flag: "wx" });
+    return;
+  }
+
+  const url = s3RequestUrl(objectKey);
+  const response = await fetch(url, {
+    method: "PUT",
+    headers: s3SignedHeaders("PUT", url, content, mimeType),
+    body: content
+  });
+
+  if (!response.ok) {
+    throw new ApiError(502, "storage_upload_failed", "Upload til filarkivet fejlede.");
+  }
+}
+
+async function readStorageObject(objectKey: string, mimeType: string) {
+  if (storageMode() === "local") {
+    return readFile(objectStoragePath(objectKey));
+  }
+
+  const empty = Buffer.alloc(0);
+  const url = s3RequestUrl(objectKey);
+  const response = await fetch(url, {
+    method: "GET",
+    headers: s3SignedHeaders("GET", url, empty, mimeType)
+  });
+
+  if (!response.ok) {
+    throw new ApiError(404, "storage_object_not_found", "Filen blev ikke fundet i filarkivet.");
+  }
+
+  return Buffer.from(await response.arrayBuffer());
+}
+
+async function deleteStorageObject(objectKey: string) {
+  if (storageMode() === "local") {
+    try {
+      await unlink(objectStoragePath(objectKey));
+    } catch {
+      // Metadata has already been archived; missing local objects are safe to ignore.
+    }
+    return;
+  }
+
+  const empty = Buffer.alloc(0);
+  const url = s3RequestUrl(objectKey);
+  const response = await fetch(url, {
+    method: "DELETE",
+    headers: s3SignedHeaders("DELETE", url, empty)
+  });
+
+  if (!response.ok && response.status !== 404) {
+    console.error(JSON.stringify({ event: "storage.object_delete_failed" }));
+  }
+}
+
+function validateDocumentBytes(content: Buffer, mimeType: string, declaredSize: number) {
+  if (content.byteLength === 0) {
+    throw new ApiError(400, "document_empty", "Filen er tom.");
+  }
+
+  if (content.byteLength !== declaredSize) {
+    throw new ApiError(400, "document_size_mismatch", "Filens størrelse matcher ikke uploaden.");
+  }
+
+  if (content.byteLength > documentMaxBytes) {
+    throw new ApiError(400, "document_too_large", "Filen er for stor.");
+  }
+
+  const header = content.subarray(0, 12);
+  const isPng = header.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  const isJpeg = header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff;
+  const isPdf = header.subarray(0, 4).toString("utf8") === "%PDF";
+  const brand = header.subarray(4, 12).toString("latin1");
+  const isHeif = brand === "ftypheic" || brand === "ftypheif" || brand === "ftypmif1";
+
+  if (mimeType === "image/png" && !isPng) {
+    throw new ApiError(400, "document_type_mismatch", "PNG-filen kunne ikke valideres.");
+  }
+
+  if (mimeType === "image/jpeg" && !isJpeg) {
+    throw new ApiError(400, "document_type_mismatch", "JPEG-filen kunne ikke valideres.");
+  }
+
+  if (mimeType === "application/pdf" && !isPdf) {
+    throw new ApiError(400, "document_type_mismatch", "PDF-filen kunne ikke valideres.");
+  }
+
+  if ((mimeType === "image/heic" || mimeType === "image/heif") && !isHeif) {
+    throw new ApiError(400, "document_type_mismatch", "HEIC/HEIF-filen kunne ikke valideres.");
+  }
 }
 
 async function fetchDawaAddresses(query: string): Promise<DawaAddress[]> {
@@ -756,6 +1016,336 @@ const server = createServer((request, response) => {
     return;
   }
 
+  const requestPath = (request.url ?? "").split("?")[0] ?? "";
+
+  const houseMaintenanceHistoryMatch =
+    /^\/v1\/houses\/([^/]+)\/maintenance-history$/.exec(requestPath);
+
+  if (request.method === "GET" && houseMaintenanceHistoryMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(houseMaintenanceHistoryMatch[1]);
+
+      if (!parsedHouseId.success) {
+        writeApiError(
+          response,
+          400,
+          "maintenance_history_house_id_invalid",
+          "Maintenance history requires a valid house_ ID."
+        );
+        return;
+      }
+
+      try {
+        const url = new URL(request.url ?? "/", `http://${host}:${port}`);
+        const parsedQuery = maintenanceHistoryQuerySchema.safeParse({
+          year: url.searchParams.get("year") ?? undefined,
+          type: url.searchParams.get("type") ?? undefined,
+          componentKey: url.searchParams.get("componentKey") ?? undefined
+        });
+
+        if (!parsedQuery.success) {
+          writeApiError(
+            response,
+            400,
+            "maintenance_history_query_invalid",
+            "Historikfilteret er ugyldigt."
+          );
+          return;
+        }
+
+        const userId = await requireUserId(request);
+        const history = await listMaintenanceHistoryForHouse(
+          userId,
+          parsedHouseId.data,
+          parsedQuery.data
+        );
+        writeJson(
+          response,
+          200,
+          maintenanceHistoryResponseSchema.parse({
+            history,
+            generatedAt: new Date().toISOString()
+          })
+        );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const maintenanceHistoryDetailMatch =
+    /^\/v1\/houses\/([^/]+)\/maintenance-history\/([^/]+)$/.exec(requestPath);
+
+  if (request.method === "GET" && maintenanceHistoryDetailMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(maintenanceHistoryDetailMatch[1]);
+      const parsedCompletionId = maintenanceCompletionIdSchema.safeParse(
+        maintenanceHistoryDetailMatch[2]
+      );
+
+      if (!parsedHouseId.success || !parsedCompletionId.success) {
+        writeApiError(
+          response,
+          400,
+          "maintenance_history_detail_route_invalid",
+          "Historikdetaljer kræver gyldige house_ og mcomp_ IDs."
+        );
+        return;
+      }
+
+      try {
+        const userId = await requireUserId(request);
+        const historyEntry = await getMaintenanceHistoryEntryForHouse(
+          userId,
+          parsedHouseId.data,
+          parsedCompletionId.data
+        );
+        writeJson(
+          response,
+          200,
+          maintenanceHistoryDetailResponseSchema.parse({ historyEntry })
+        );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const houseDocumentsMatch =
+    /^\/v1\/houses\/([^/]+)\/documents$/.exec(requestPath);
+
+  if (request.method === "GET" && houseDocumentsMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(houseDocumentsMatch[1]);
+
+      if (!parsedHouseId.success) {
+        writeApiError(
+          response,
+          400,
+          "house_document_house_id_invalid",
+          "Dokumentarkivet kræver et gyldigt house_ ID."
+        );
+        return;
+      }
+
+      try {
+        const userId = await requireUserId(request);
+        const documents = await listHouseDocumentsForHouse(
+          userId,
+          parsedHouseId.data
+        );
+        writeJson(
+          response,
+          200,
+          houseDocumentsResponseSchema.parse({
+            documents,
+            generatedAt: new Date().toISOString()
+          })
+        );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "POST" && houseDocumentsMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(houseDocumentsMatch[1]);
+
+      if (!parsedHouseId.success) {
+        writeApiError(
+          response,
+          400,
+          "house_document_house_id_invalid",
+          "Upload kræver et gyldigt house_ ID."
+        );
+        return;
+      }
+
+      let objectKey: string | null = null;
+
+      try {
+        const payload = await readJsonBody(request);
+        const parsedRequest = uploadHouseDocumentRequestSchema.safeParse(payload);
+
+        if (!parsedRequest.success) {
+          writeApiError(
+            response,
+            400,
+            "house_document_request_invalid",
+            "Upload kræver en gyldig JPEG, PNG, HEIC/HEIF eller PDF."
+          );
+          return;
+        }
+
+        const userId = await requireUserId(request);
+        const content = Buffer.from(parsedRequest.data.contentBase64, "base64");
+        validateDocumentBytes(
+          content,
+          parsedRequest.data.mimeType,
+          parsedRequest.data.sizeBytes
+        );
+        objectKey = documentObjectKey(
+          parsedHouseId.data,
+          parsedRequest.data.mimeType
+        );
+        await writeStorageObject(objectKey, content, parsedRequest.data.mimeType);
+        const documentInput = {
+          objectKey,
+          originalFilename: parsedRequest.data.fileName.trim(),
+          mimeType: parsedRequest.data.mimeType,
+          sizeBytes: parsedRequest.data.sizeBytes,
+          checksumSha256: sha256Hex(content)
+        };
+        const document = await createHouseDocumentForHouse(
+          userId,
+          parsedHouseId.data,
+          documentInput
+        );
+        writeJson(
+          response,
+          201,
+          houseDocumentResponseSchema.parse({ document })
+        );
+      } catch (error) {
+        if (objectKey) {
+          await deleteStorageObject(objectKey);
+        }
+
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const houseDocumentMatch =
+    /^\/v1\/houses\/([^/]+)\/documents\/([^/]+)$/.exec(requestPath);
+
+  if (request.method === "DELETE" && houseDocumentMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(houseDocumentMatch[1]);
+      const parsedDocumentId = documentIdSchema.safeParse(
+        houseDocumentMatch[2]
+      );
+
+      if (!parsedHouseId.success || !parsedDocumentId.success) {
+        writeApiError(
+          response,
+          400,
+          "house_document_route_invalid",
+          "Dokumentsletning kræver gyldige house_ og doc_ IDs."
+        );
+        return;
+      }
+
+      try {
+        const userId = await requireUserId(request);
+        const { document, objectKey } = await archiveHouseDocumentForHouse(
+          userId,
+          parsedHouseId.data,
+          parsedDocumentId.data
+        );
+        const references = await countActiveDocumentObjectReferences(objectKey);
+
+        if (references === 0) {
+          await deleteStorageObject(objectKey);
+        }
+
+        writeJson(
+          response,
+          200,
+          houseDocumentResponseSchema.parse({ document })
+        );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const houseDocumentContentMatch =
+    /^\/v1\/houses\/([^/]+)\/documents\/([^/]+)\/content$/.exec(
+      requestPath
+    );
+
+  if (request.method === "GET" && houseDocumentContentMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(houseDocumentContentMatch[1]);
+      const parsedDocumentId = documentIdSchema.safeParse(
+        houseDocumentContentMatch[2]
+      );
+
+      if (!parsedHouseId.success || !parsedDocumentId.success) {
+        writeApiError(
+          response,
+          400,
+          "house_document_content_route_invalid",
+          "Download kræver gyldige house_ og doc_ IDs."
+        );
+        return;
+      }
+
+      try {
+        const userId = await requireUserId(request);
+        const { document, objectKey } = await getHouseDocumentForHouse(
+          userId,
+          parsedHouseId.data,
+          parsedDocumentId.data
+        );
+        const content = await readStorageObject(objectKey, document.mimeType);
+        writeBinary(response, 200, content, document.mimeType);
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const houseMaintenanceRecommendationsMatch =
+    /^\/v1\/houses\/([^/]+)\/maintenance-recommendations$/.exec(
+      request.url ?? ""
+    );
+
+  if (request.method === "GET" && houseMaintenanceRecommendationsMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(
+        houseMaintenanceRecommendationsMatch[1]
+      );
+
+      if (!parsedHouseId.success) {
+        writeApiError(
+          response,
+          400,
+          "maintenance_recommendation_house_id_invalid",
+          "Maintenance recommendations require a valid house_ ID."
+        );
+        return;
+      }
+
+      try {
+        const userId = await requireUserId(request);
+        const recommendations = await listMaintenanceRecommendationsForHouse(
+          userId,
+          parsedHouseId.data
+        );
+        writeJson(
+          response,
+          200,
+          maintenanceRecommendationsResponseSchema.parse({
+            recommendations,
+            generatedAt: new Date().toISOString()
+          })
+        );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
   if (request.method === "POST" && houseMaintenanceTasksMatch) {
     void (async () => {
       const parsedHouseId = houseIdSchema.safeParse(
@@ -797,6 +1387,283 @@ const server = createServer((request, response) => {
           response,
           201,
           maintenanceTaskResponseSchema.parse({ task })
+        );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const maintenanceTaskMatch =
+    /^\/v1\/houses\/([^/]+)\/maintenance-tasks\/([^/]+)$/.exec(
+      request.url ?? ""
+    );
+
+  if (request.method === "GET" && maintenanceTaskMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(maintenanceTaskMatch[1]);
+      const parsedTaskId = taskIdSchema.safeParse(maintenanceTaskMatch[2]);
+
+      if (!parsedHouseId.success || !parsedTaskId.success) {
+        writeApiError(
+          response,
+          400,
+          "maintenance_task_route_invalid",
+          "Maintenance task routes require valid house_ and task_ IDs."
+        );
+        return;
+      }
+
+      try {
+        const userId = await requireUserId(request);
+        const task = await getMaintenanceTaskForHouse(
+          userId,
+          parsedHouseId.data,
+          parsedTaskId.data
+        );
+        writeJson(response, 200, maintenanceTaskResponseSchema.parse({ task }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "PATCH" && maintenanceTaskMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(maintenanceTaskMatch[1]);
+      const parsedTaskId = taskIdSchema.safeParse(maintenanceTaskMatch[2]);
+
+      if (!parsedHouseId.success || !parsedTaskId.success) {
+        writeApiError(
+          response,
+          400,
+          "maintenance_task_route_invalid",
+          "Maintenance task updates require valid house_ and task_ IDs."
+        );
+        return;
+      }
+
+      try {
+        const payload = await readJsonBody(request);
+        const parsedRequest = updateMaintenanceTaskRequestSchema.safeParse(payload);
+
+        if (!parsedRequest.success) {
+          writeApiError(
+            response,
+            400,
+            "maintenance_task_update_invalid",
+            "Opgaven kræver gyldige felter."
+          );
+          return;
+        }
+
+        const userId = await requireUserId(request);
+        const task = await updateMaintenanceTaskForHouse(
+          userId,
+          parsedHouseId.data,
+          parsedTaskId.data,
+          parsedRequest.data
+        );
+        writeJson(response, 200, maintenanceTaskResponseSchema.parse({ task }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "DELETE" && maintenanceTaskMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(maintenanceTaskMatch[1]);
+      const parsedTaskId = taskIdSchema.safeParse(maintenanceTaskMatch[2]);
+
+      if (!parsedHouseId.success || !parsedTaskId.success) {
+        writeApiError(
+          response,
+          400,
+          "maintenance_task_route_invalid",
+          "Maintenance task deletion requires valid house_ and task_ IDs."
+        );
+        return;
+      }
+
+      try {
+        const userId = await requireUserId(request);
+        const task = await archiveMaintenanceTaskForHouse(
+          userId,
+          parsedHouseId.data,
+          parsedTaskId.data
+        );
+        writeJson(response, 200, maintenanceTaskResponseSchema.parse({ task }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const maintenanceTaskMoveMatch =
+    /^\/v1\/houses\/([^/]+)\/maintenance-tasks\/([^/]+)\/move$/.exec(
+      request.url ?? ""
+    );
+
+  if (request.method === "POST" && maintenanceTaskMoveMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(maintenanceTaskMoveMatch[1]);
+      const parsedTaskId = taskIdSchema.safeParse(maintenanceTaskMoveMatch[2]);
+
+      if (!parsedHouseId.success || !parsedTaskId.success) {
+        writeApiError(
+          response,
+          400,
+          "maintenance_task_move_route_invalid",
+          "Flyt opgave kræver gyldige house_ og task_ IDs."
+        );
+        return;
+      }
+
+      try {
+        const payload = await readJsonBody(request);
+        const parsedRequest = moveMaintenanceTaskRequestSchema.safeParse(payload);
+
+        if (!parsedRequest.success) {
+          writeApiError(
+            response,
+            400,
+            "maintenance_task_move_invalid",
+            "Flyt opgave kræver gyldig ny timing."
+          );
+          return;
+        }
+
+        const userId = await requireUserId(request);
+        const task = await moveMaintenanceTaskForHouse(
+          userId,
+          parsedHouseId.data,
+          parsedTaskId.data,
+          parsedRequest.data
+        );
+        writeJson(response, 200, maintenanceTaskResponseSchema.parse({ task }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const maintenanceTaskCompleteMatch =
+    /^\/v1\/houses\/([^/]+)\/maintenance-tasks\/([^/]+)\/complete$/.exec(
+      request.url ?? ""
+    );
+
+  if (request.method === "POST" && maintenanceTaskCompleteMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(maintenanceTaskCompleteMatch[1]);
+      const parsedTaskId = taskIdSchema.safeParse(maintenanceTaskCompleteMatch[2]);
+
+      if (!parsedHouseId.success || !parsedTaskId.success) {
+        writeApiError(
+          response,
+          400,
+          "maintenance_task_complete_route_invalid",
+          "Markér udført kræver gyldige house_ og task_ IDs."
+        );
+        return;
+      }
+
+      try {
+        const payload = await readJsonBody(request);
+        const parsedRequest = completeMaintenanceTaskRequestSchema.safeParse(payload);
+
+        if (!parsedRequest.success) {
+          writeApiError(
+            response,
+            400,
+            "maintenance_task_complete_invalid",
+            "Afslutning kræver gyldig udført dato og metadata."
+          );
+          return;
+        }
+
+        const userId = await requireUserId(request);
+        const result = await completeMaintenanceTaskForHouse(
+          userId,
+          parsedHouseId.data,
+          parsedTaskId.data,
+          parsedRequest.data
+        );
+        writeJson(response, 200, maintenanceTaskResponseSchema.parse({ task: result.task }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const maintenanceRecommendationActionMatch =
+    /^\/v1\/houses\/([^/]+)\/maintenance-recommendations\/([^/]+)\/(accept|dismiss)$/.exec(
+      request.url ?? ""
+    );
+
+  if (request.method === "POST" && maintenanceRecommendationActionMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(
+        maintenanceRecommendationActionMatch[1]
+      );
+      const parsedRecommendationId = maintenanceRecommendationIdSchema.safeParse(
+        maintenanceRecommendationActionMatch[2]
+      );
+      const action = maintenanceRecommendationActionMatch[3];
+
+      if (!parsedHouseId.success || !parsedRecommendationId.success) {
+        writeApiError(
+          response,
+          400,
+          "maintenance_recommendation_route_invalid",
+          "Recommendation routes require valid house_ and mrec_ IDs."
+        );
+        return;
+      }
+
+      try {
+        const userId = await requireUserId(request);
+
+        if (action === "accept") {
+          const payload = await readJsonBody(request);
+          const parsedRequest =
+            acceptMaintenanceRecommendationRequestSchema.safeParse(payload);
+
+          if (!parsedRequest.success) {
+            writeApiError(
+              response,
+              400,
+              "maintenance_recommendation_accept_invalid",
+              "Tilføj til vedligeholdelse kræver gyldig timing."
+            );
+            return;
+          }
+
+          const task = await acceptMaintenanceRecommendationForHouse(
+            userId,
+            parsedHouseId.data,
+            parsedRecommendationId.data,
+            parsedRequest.data
+          );
+          writeJson(response, 200, maintenanceTaskResponseSchema.parse({ task }));
+          return;
+        }
+
+        const recommendation = await dismissMaintenanceRecommendationForHouse(
+          userId,
+          parsedHouseId.data,
+          parsedRecommendationId.data
+        );
+        writeJson(
+          response,
+          200,
+          dismissMaintenanceRecommendationResponseSchema.parse({ recommendation })
         );
       } catch (error) {
         writeUnknownApiError(response, error);
@@ -1008,7 +1875,7 @@ const server = createServer((request, response) => {
         }
 
         const storageKey = mediaStorageKey(parsedHouseId.data, parsedRequest.data.mimeType);
-        await writeLocalMedia(storageKey, content);
+        await writeStorageObject(storageKey, content, parsedRequest.data.mimeType);
         const photo = await replaceHousePhoto(userId, parsedHouseId.data, {
           mimeType: parsedRequest.data.mimeType,
           sizeBytes: parsedRequest.data.sizeBytes,
@@ -1075,7 +1942,7 @@ const server = createServer((request, response) => {
           return;
         }
 
-        const content = await readLocalMedia(photo.storageKey);
+        const content = await readStorageObject(photo.storageKey, photo.mimeType);
         writeBinary(response, 200, content, photo.mimeType);
       } catch (error) {
         writeUnknownApiError(response, error);

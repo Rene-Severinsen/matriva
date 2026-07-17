@@ -10,6 +10,8 @@ export type AuthSessionId = Brand<string, "AuthSessionId">;
 export type HouseId = Brand<string, "HouseId">;
 export type HomeCardId = Brand<string, "HomeCardId">;
 export type TaskId = Brand<string, "TaskId">;
+export type MaintenanceRecommendationId = Brand<string, "MaintenanceRecommendationId">;
+export type MaintenanceCompletionId = Brand<string, "MaintenanceCompletionId">;
 export type DocumentId = Brand<string, "DocumentId">;
 export type ImprovementId = Brand<string, "ImprovementId">;
 export type MediaId = Brand<string, "MediaId">;
@@ -48,6 +50,16 @@ export const taskIdSchema = z
   .string()
   .regex(new RegExp(`^task_${opaqueSuffixPattern}$`))
   .transform((value): TaskId => value as TaskId);
+
+export const maintenanceRecommendationIdSchema = z
+  .string()
+  .regex(new RegExp(`^mrec_${opaqueSuffixPattern}$`))
+  .transform((value): MaintenanceRecommendationId => value as MaintenanceRecommendationId);
+
+export const maintenanceCompletionIdSchema = z
+  .string()
+  .regex(new RegExp(`^mcomp_${opaqueSuffixPattern}$`))
+  .transform((value): MaintenanceCompletionId => value as MaintenanceCompletionId);
 
 export const documentIdSchema = z
   .string()
@@ -397,7 +409,8 @@ export type HouseDraftOverviewPreviewDataConfidence = z.infer<
 
 export const maintenanceTaskSourceSchema = z.enum([
   "user_created",
-  "matriva_recommended"
+  "matriva_recommended",
+  "recommendation_accepted"
 ]);
 
 export type MaintenanceTaskSource = z.infer<
@@ -437,6 +450,95 @@ export const maintenanceSeasonSchema = z.enum([
 ]);
 
 export type MaintenanceSeason = z.infer<typeof maintenanceSeasonSchema>;
+
+export const maintenanceRecurrenceIntervalSchema = z.enum([
+  "monthly",
+  "quarterly",
+  "half_yearly",
+  "yearly",
+  "every_2_years",
+  "every_3_years",
+  "every_5_years",
+  "every_10_years"
+]);
+
+export type MaintenanceRecurrenceInterval = z.infer<
+  typeof maintenanceRecurrenceIntervalSchema
+>;
+
+export const maintenanceRecurrenceAnchorSchema = z.enum([
+  "completed_date",
+  "fixed_calendar"
+]);
+
+export type MaintenanceRecurrenceAnchor = z.infer<
+  typeof maintenanceRecurrenceAnchorSchema
+>;
+
+export const maintenanceRecurrenceSchema = z.object({
+  interval: maintenanceRecurrenceIntervalSchema,
+  anchor: maintenanceRecurrenceAnchorSchema.default("completed_date")
+});
+
+export type MaintenanceRecurrence = z.infer<typeof maintenanceRecurrenceSchema>;
+
+export const dkkCurrencySchema = z.literal("DKK");
+
+export type DkkCurrency = z.infer<typeof dkkCurrencySchema>;
+
+export const priceAmountMinorSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(999_999_999_999);
+
+export function formatDkkPrice(amountMinor: number, currency: DkkCurrency = "DKK") {
+  return new Intl.NumberFormat("da-DK", {
+    style: "currency",
+    currency
+  }).format(amountMinor / 100);
+}
+
+export type DanishPriceParseResult =
+  | { ok: true; amountMinor: number | null }
+  | { ok: false; code: "negative" | "invalid" | "too_many_decimals" | "too_large" };
+
+export function parseDanishPriceInput(input: string): DanishPriceParseResult {
+  const trimmed = input.trim();
+
+  if (!trimmed) {
+    return { ok: true, amountMinor: null };
+  }
+
+  if (trimmed.startsWith("-")) {
+    return { ok: false, code: "negative" };
+  }
+
+  const normalized = trimmed.replace(/\s/g, "").replace(",", ".");
+
+  if (!/^\d+(?:\.\d{0,2})?$/.test(normalized)) {
+    if (/^\d+(?:\.\d{3,})$/.test(normalized)) {
+      return { ok: false, code: "too_many_decimals" };
+    }
+
+    return { ok: false, code: "invalid" };
+  }
+
+  const [wholePart = "0", decimalPart = ""] = normalized.split(".");
+  const amountMinor = Number(wholePart) * 100 + Number(decimalPart.padEnd(2, "0"));
+
+  if (!Number.isSafeInteger(amountMinor)) {
+    return { ok: false, code: "too_large" };
+  }
+
+  const parsed = priceAmountMinorSchema.safeParse(amountMinor);
+
+  if (!parsed.success) {
+    return { ok: false, code: "too_large" };
+  }
+
+  return { ok: true, amountMinor };
+}
 
 export const maintenanceTaskTimingSchema = z
   .object({
@@ -498,6 +600,7 @@ export type MaintenanceTaskTiming = z.infer<
 
 export const recommendedMaintenanceTaskMetadataSchema = z.object({
   recommendationKey: z.string().min(1),
+  recommendationId: maintenanceRecommendationIdSchema.optional(),
   componentKey: z.string().min(1).optional(),
   housingTypeKey: z.string().min(1).optional(),
   season: maintenanceSeasonSchema.optional(),
@@ -517,7 +620,12 @@ export const maintenanceTaskSchema = z
     source: maintenanceTaskSourceSchema,
     status: maintenanceTaskStatusSchema,
     timing: maintenanceTaskTimingSchema,
+    priceAmountMinor: priceAmountMinorSchema.nullable(),
+    priceCurrency: dkkCurrencySchema,
     recommendation: recommendedMaintenanceTaskMetadataSchema.optional(),
+    recurrence: maintenanceRecurrenceSchema.nullable().optional(),
+    componentKey: z.string().min(1).nullable().optional(),
+    archivedAt: z.string().datetime().nullable().optional(),
     createdAt: z.string().datetime().optional(),
     updatedAt: z.string().datetime().optional(),
     completedAt: z.string().datetime().optional()
@@ -542,7 +650,11 @@ export const maintenanceTaskSchema = z
       });
     }
 
-    if (task.recommendation && task.source !== "matriva_recommended") {
+    if (
+      task.recommendation &&
+      task.source !== "matriva_recommended" &&
+      task.source !== "recommendation_accepted"
+    ) {
       context.addIssue({
         code: "custom",
         path: ["recommendation"],
@@ -676,18 +788,30 @@ export const createMaintenanceTaskRequestSchema = z
   .object({
     title: z.string().trim().min(1),
     description: z.string().trim().min(1).optional(),
-    source: maintenanceTaskSourceSchema.optional(),
+    source: z.enum(["user_created"]).optional(),
     status: maintenanceTaskStatusSchema.optional(),
     timing: createMaintenanceTaskTimingSchema,
-    recommendation: recommendedMaintenanceTaskMetadataSchema.optional()
+    priceAmountMinor: priceAmountMinorSchema.nullable().optional(),
+    priceCurrency: dkkCurrencySchema.optional(),
+    recurrence: maintenanceRecurrenceSchema.nullable().optional(),
+    componentKey: z.string().trim().min(1).max(80).optional()
   })
-  .superRefine((task, context) => {
-    if (task.recommendation && task.source !== "matriva_recommended") {
+  .superRefine((input, context) => {
+    if (input.priceAmountMinor !== undefined && input.priceAmountMinor !== null) {
+      if (!input.priceCurrency) {
+        context.addIssue({
+          code: "custom",
+          path: ["priceCurrency"],
+          message: "Currency is required when price is provided."
+        });
+      }
+    }
+
+    if (input.priceCurrency !== undefined && input.priceCurrency !== "DKK") {
       context.addIssue({
         code: "custom",
-        path: ["recommendation"],
-        message:
-          "recommendation metadata is only allowed for Matriva-recommended maintenance tasks"
+        path: ["priceCurrency"],
+        message: "Maintenance price currency must be DKK."
       });
     }
   });
@@ -713,12 +837,294 @@ export type MaintenanceTasksResponse = z.infer<
   typeof maintenanceTasksResponseSchema
 >;
 
+export function maintenanceSeasonForDateOnly(
+  dateOnly: string
+): MaintenanceSeason | null {
+  const month = Number(dateOnly.slice(5, 7));
+
+  if (month === 12 || month === 1 || month === 2) {
+    return "winter";
+  }
+
+  if (month >= 3 && month <= 5) {
+    return "spring";
+  }
+
+  if (month >= 6 && month <= 8) {
+    return "summer";
+  }
+
+  if (month >= 9 && month <= 11) {
+    return "autumn";
+  }
+
+  return null;
+}
+
+export function maintenanceTaskSeason(task: MaintenanceTask): MaintenanceSeason | null {
+  if (task.timing.type === "specific_deadline" && task.timing.dueDate) {
+    return maintenanceSeasonForDateOnly(task.timing.dueDate);
+  }
+
+  if (task.timing.type === "seasonal_window" && task.timing.season) {
+    return task.timing.season;
+  }
+
+  return null;
+}
+
+export function maintenanceTaskMatchesSeason(
+  task: MaintenanceTask,
+  season: Exclude<MaintenanceSeason, "all_year">
+) {
+  return maintenanceTaskSeason(task) === season;
+}
+
 export const updateMaintenanceTaskStatusRequestSchema = z.object({
   status: maintenanceTaskStatusSchema
 });
 
 export type UpdateMaintenanceTaskStatusRequest = z.infer<
   typeof updateMaintenanceTaskStatusRequestSchema
+>;
+
+export const updateMaintenanceTaskRequestSchema = z
+  .object({
+    title: z.string().trim().min(1).optional(),
+    description: z.string().trim().min(1).nullable().optional(),
+    timing: createMaintenanceTaskTimingSchema.optional(),
+    priceAmountMinor: priceAmountMinorSchema.nullable().optional(),
+    priceCurrency: dkkCurrencySchema.optional(),
+    recurrence: maintenanceRecurrenceSchema.nullable().optional(),
+    componentKey: z.string().trim().min(1).max(80).nullable().optional(),
+    status: z.enum(["planned", "due", "overdue", "rescheduled"]).optional()
+  })
+  .superRefine((input, context) => {
+    if (input.priceAmountMinor !== undefined && input.priceAmountMinor !== null) {
+      if (!input.priceCurrency) {
+        context.addIssue({
+          code: "custom",
+          path: ["priceCurrency"],
+          message: "Currency is required when price is provided."
+        });
+      }
+    }
+
+    if (input.priceCurrency !== undefined && input.priceCurrency !== "DKK") {
+      context.addIssue({
+        code: "custom",
+        path: ["priceCurrency"],
+        message: "Maintenance price currency must be DKK."
+      });
+    }
+  });
+
+export type UpdateMaintenanceTaskRequest = z.infer<
+  typeof updateMaintenanceTaskRequestSchema
+>;
+
+export const moveMaintenanceTaskRequestSchema = z.object({
+  timing: createMaintenanceTaskTimingSchema
+});
+
+export type MoveMaintenanceTaskRequest = z.infer<
+  typeof moveMaintenanceTaskRequestSchema
+>;
+
+export const completeMaintenanceTaskRequestSchema = z.object({
+  completedDate: z.string().date().optional(),
+  note: z.string().trim().max(1200).optional()
+});
+
+export type CompleteMaintenanceTaskRequest = z.infer<
+  typeof completeMaintenanceTaskRequestSchema
+>;
+
+export const houseDocumentMimeTypeSchema = z.enum([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/heic",
+  "image/heif"
+]);
+
+export type HouseDocumentMimeType = z.infer<typeof houseDocumentMimeTypeSchema>;
+
+export const houseDocumentSchema = z.object({
+  id: documentIdSchema,
+  houseId: houseIdSchema,
+  originalFilename: z.string().min(1),
+  mimeType: houseDocumentMimeTypeSchema,
+  sizeBytes: z.number().int().positive(),
+  uploadStatus: z.enum(["uploaded", "archived"]),
+  contentPath: z.string().min(1).nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+
+export type HouseDocument = z.infer<typeof houseDocumentSchema>;
+
+export const uploadHouseDocumentRequestSchema = z.object({
+  fileName: z.string().trim().min(1).max(180),
+  mimeType: houseDocumentMimeTypeSchema,
+  sizeBytes: z.number().int().positive().max(15 * 1024 * 1024),
+  contentBase64: z.string().min(1)
+});
+
+export type UploadHouseDocumentRequest = z.infer<
+  typeof uploadHouseDocumentRequestSchema
+>;
+
+export const houseDocumentResponseSchema = z.object({
+  document: houseDocumentSchema
+});
+
+export type HouseDocumentResponse = z.infer<typeof houseDocumentResponseSchema>;
+
+export const houseDocumentsResponseSchema = z.object({
+  documents: z.array(houseDocumentSchema),
+  generatedAt: z.string().datetime()
+});
+
+export type HouseDocumentsResponse = z.infer<typeof houseDocumentsResponseSchema>;
+
+export const maintenanceRecommendationSourceTypeSchema = z.enum([
+  "matriva_catalog",
+  "document_extracted",
+  "warranty_derived"
+]);
+
+export type MaintenanceRecommendationSourceType = z.infer<
+  typeof maintenanceRecommendationSourceTypeSchema
+>;
+
+export const maintenanceRecommendationStatusSchema = z.enum([
+  "pending",
+  "accepted",
+  "dismissed"
+]);
+
+export type MaintenanceRecommendationStatus = z.infer<
+  typeof maintenanceRecommendationStatusSchema
+>;
+
+export const maintenanceRecommendationProvenanceSchema = z.object({
+  sourceDocumentId: documentIdSchema.optional(),
+  sourcePage: z.string().min(1).optional(),
+  extractionMethod: z.string().min(1).optional(),
+  extractedAt: z.string().datetime().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  originalTitle: z.string().min(1).optional(),
+  originalDescription: z.string().min(1).optional(),
+  originalTiming: z.string().min(1).optional(),
+  sourceExcerptReference: z.string().min(1).optional()
+});
+
+export type MaintenanceRecommendationProvenance = z.infer<
+  typeof maintenanceRecommendationProvenanceSchema
+>;
+
+export const maintenanceRecommendationSchema = z.object({
+  id: maintenanceRecommendationIdSchema,
+  houseId: houseIdSchema,
+  sourceType: maintenanceRecommendationSourceTypeSchema,
+  status: maintenanceRecommendationStatusSchema,
+  title: z.string().min(1),
+  description: z.string().min(1),
+  recommendedTimingLabel: z.string().min(1),
+  timing: createMaintenanceTaskTimingSchema,
+  recurrence: maintenanceRecurrenceSchema.nullable(),
+  componentKey: z.string().min(1).nullable(),
+  provenance: maintenanceRecommendationProvenanceSchema,
+  recommendationKey: z.string().min(1),
+  acceptedTaskId: taskIdSchema.nullable(),
+  dismissedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+
+export type MaintenanceRecommendation = z.infer<
+  typeof maintenanceRecommendationSchema
+>;
+
+export const maintenanceRecommendationsResponseSchema = z.object({
+  recommendations: z.array(maintenanceRecommendationSchema),
+  generatedAt: z.string().datetime()
+});
+
+export type MaintenanceRecommendationsResponse = z.infer<
+  typeof maintenanceRecommendationsResponseSchema
+>;
+
+export const acceptMaintenanceRecommendationRequestSchema = z.object({
+  timing: createMaintenanceTaskTimingSchema.optional(),
+  description: z.string().trim().min(1).optional(),
+  recurrence: maintenanceRecurrenceSchema.nullable().optional()
+});
+
+export type AcceptMaintenanceRecommendationRequest = z.infer<
+  typeof acceptMaintenanceRecommendationRequestSchema
+>;
+
+export const dismissMaintenanceRecommendationResponseSchema = z.object({
+  recommendation: maintenanceRecommendationSchema
+});
+
+export type DismissMaintenanceRecommendationResponse = z.infer<
+  typeof dismissMaintenanceRecommendationResponseSchema
+>;
+
+export const maintenanceHistoryEntrySchema = z.object({
+  id: maintenanceCompletionIdSchema,
+  taskId: taskIdSchema,
+  houseId: houseIdSchema,
+  title: z.string().min(1),
+  completedDate: z.string().date(),
+  note: z.string().min(1).nullable(),
+  priceAmountMinor: priceAmountMinorSchema.nullable(),
+  priceCurrency: dkkCurrencySchema,
+  componentKey: z.string().min(1).nullable(),
+  source: maintenanceTaskSourceSchema,
+  recurrence: maintenanceRecurrenceSchema.nullable(),
+  createdAt: z.string().datetime()
+});
+
+export type MaintenanceHistoryEntry = z.infer<
+  typeof maintenanceHistoryEntrySchema
+>;
+
+export const maintenanceHistoryResponseSchema = z.object({
+  history: z.array(maintenanceHistoryEntrySchema),
+  generatedAt: z.string().datetime()
+});
+
+export type MaintenanceHistoryResponse = z.infer<
+  typeof maintenanceHistoryResponseSchema
+>;
+
+export const maintenanceHistoryQuerySchema = z.object({
+  year: z.coerce.number().int().min(1900).max(2200).optional(),
+  componentKey: z.string().trim().min(1).max(80).optional()
+});
+
+export type MaintenanceHistoryQuery = z.infer<
+  typeof maintenanceHistoryQuerySchema
+>;
+
+export const maintenanceHistoryDetailSchema = maintenanceHistoryEntrySchema.extend({
+  recommendation: maintenanceRecommendationSchema.nullable()
+});
+
+export type MaintenanceHistoryDetail = z.infer<
+  typeof maintenanceHistoryDetailSchema
+>;
+
+export const maintenanceHistoryDetailResponseSchema = z.object({
+  historyEntry: maintenanceHistoryDetailSchema
+});
+
+export type MaintenanceHistoryDetailResponse = z.infer<
+  typeof maintenanceHistoryDetailResponseSchema
 >;
 
 export const houseImprovementCategorySchema = z.enum([

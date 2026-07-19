@@ -1884,7 +1884,9 @@ export const publicBuildingSchema = z.object({
   materials: z.object({
     outerWall: publicCodeValueSchema.nullable(),
     roof: publicCodeValueSchema.nullable(),
-    asbestos: publicCodeValueSchema.nullable()
+    supplementaryOuterWall: publicCodeValueSchema.nullable().optional(),
+    // Legacy compatibility for snapshots written before 2026-07-17.
+    asbestos: publicCodeValueSchema.nullable().optional()
   }),
   areas: z.object({
     totalBuildingAreaM2: z.number().int().nonnegative().nullable(),
@@ -2503,7 +2505,7 @@ export function buildHousePublicDataProfile(
         ? [
             codeFact("outer_wall", "Ydervæg", displayBuilding.materials.outerWall),
             codeFact("roof", "Tag", displayBuilding.materials.roof),
-            codeFact("supplementary", "Supplerende materiale", displayBuilding.materials.asbestos)
+            codeFact("supplementary_outer_wall", "Supplerende ydervæg", (displayBuilding.materials.supplementaryOuterWall ?? displayBuilding.materials.asbestos ?? null))
           ]
         : []
     },

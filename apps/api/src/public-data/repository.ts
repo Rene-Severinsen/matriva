@@ -275,7 +275,7 @@ export async function saveHousePublicDataSnapshot(
           building.registeredFloorCount,
           building.materials.outerWall?.code ?? null,
           building.materials.roof?.code ?? null,
-          building.materials.asbestos?.code ?? null,
+          (building.materials.supplementaryOuterWall ?? building.materials.asbestos)?.code ?? null,
           building.heating.installation?.code ?? null,
           building.heating.source?.code ?? null,
           building.heating.supplementary?.code ?? null,

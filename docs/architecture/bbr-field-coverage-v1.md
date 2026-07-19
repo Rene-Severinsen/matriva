@@ -28,7 +28,7 @@ GraphQL introspection did not expose usable field lists for the BBR object types
 |---|---|---|
 | `BBR_Bygning` | ydervaegsmateriale | `byg032YdervaeggensMateriale` |
 | `BBR_Bygning` | tagmateriale | `byg033Tagdaekningsmateriale` |
-| `BBR_Bygning` | supplerende materiale/asbest source field | `byg034SupplerendeYdervaeggensMateriale` |
+| `BBR_Bygning` | supplerende ydervægsmateriale | `byg034SupplerendeYdervaeggensMateriale` |
 | `BBR_Bygning` | lukkede overdaekninger | `byg046SamletArealAfLukkedeOverdaekningerPaaBygningen` |
 | `BBR_Bygning` | oevrigt areal/affaldsrum | `byg047ArealAfAffaldsrumITerraenniveau` |
 | `BBR_Enhed` | koekkenforhold | `enh034Koekkenforhold` |
@@ -119,7 +119,7 @@ Unknown codes are still preserved with `known: false`.
 | Building | floor count | `byg054AntalEtager` | Yes | Yes | Yes | `registered_floor_count` | Yes | Bygningen | value/registered_empty |
 | Materials | outer wall | `byg032YdervaeggensMateriale` | Yes | Yes | Yes | `outer_wall_code` | Yes | Materialer | value/registered_empty |
 | Materials | roof | `byg033Tagdaekningsmateriale` | Yes | Yes | Yes | `roof_code` | Yes | Materialer | value/registered_empty |
-| Materials | supplementary material | `byg034SupplerendeYdervaeggensMateriale` | Yes | Yes | Yes | `supplementary_outer_wall_code` | Yes | Materialer | value/registered_empty |
+| Materials | supplementary outer-wall material | `byg034SupplerendeYdervaeggensMateriale` | Yes | Yes | Yes | `supplementary_outer_wall_code` | Yes | Materialer | value/registered_empty |
 | Heating | installation | `byg056Varmeinstallation` | Yes | Yes | Yes | `heating_installation_code` | Yes | Topkort/Varme | value/registered_empty |
 | Heating | source | `byg057Opvarmningsmiddel` | Yes | Yes | Yes | `heating_source_code` | Yes | Varme | value/registered_empty |
 | Heating | supplementary | `byg058SupplerendeVarme` | Yes | Yes | Yes | `supplementary_heating_code` | Yes | Varme | value/registered_empty |

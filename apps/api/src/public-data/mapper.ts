@@ -313,8 +313,8 @@ export function mapPublicData(
       building.byg032YdervaeggensMateriale
     );
     const roof = lookupCode("roofMaterial", building.byg033Tagdaekningsmateriale);
-    const asbestos = lookupCode(
-      "asbestosMaterial",
+    const supplementaryOuterWall = lookupCode(
+      "supplementaryOuterWallMaterial",
       building.byg034SupplerendeYdervaeggensMateriale
     );
 
@@ -326,7 +326,7 @@ export function mapPublicData(
       buildingHeating.supplementary,
       outerWall,
       roof,
-      asbestos
+      supplementaryOuterWall
     ]);
 
     for (const unit of units) {
@@ -370,7 +370,7 @@ export function mapPublicData(
       materials: {
         outerWall,
         roof,
-        asbestos
+        supplementaryOuterWall
       },
       areas: {
         totalBuildingAreaM2: intValue(building, "byg038SamletBygningsareal"),
@@ -399,7 +399,7 @@ export function mapPublicData(
       registeredFloorCount: intValue(building, "byg054AntalEtager"),
       heating: buildingHeating,
       availability: {
-        materials: codeAvailability([outerWall, roof, asbestos]),
+        materials: codeAvailability([outerWall, roof, supplementaryOuterWall]),
         coveredArea: numberAvailability([
           intValue(
             building,

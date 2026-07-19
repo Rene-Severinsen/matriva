@@ -26,8 +26,9 @@
     "smoke:public-data:product": "npm run build && node tools/smoke-public-data-product.mjs",
     "smoke:bbr:live": "npm run build && node tools/smoke-bbr-live.mjs",
     "smoke:bbr:live:complex": "npm run build && node tools/smoke-bbr-live-complex.mjs",
-    "check": "npm run check:no-firebase && npm run check:secrets && npm run check:bbr-public-data-parity && npm run typecheck && npm run lint",
-    "smoke:auth": "node tools/smoke-auth.mjs"
+    "check": "npm run check:no-firebase && npm run check:secrets && npm run check:bbr-codebooks && npm run check:bbr-public-data-parity && npm run typecheck && npm run lint",
+    "smoke:auth": "node tools/smoke-auth.mjs",
+    "check:bbr-codebooks": "node tools/check-bbr-codebooks.mjs"
   },
   "engines": {
     "node": ">=22"

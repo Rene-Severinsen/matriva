@@ -1,0 +1,2140 @@
+{
+  "contract": "matriva_bbr_codebooks.v1",
+  "generatedOn": "2026-07-19",
+  "source": "BBR Teknik",
+  "codebooks": {
+    "buildingUse": {
+      "sourceSlug": "BygAnvendelse",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/BygAnvendelse",
+      "entries": {
+        "110": {
+          "label": "Stuehus til landbrugsejendom",
+          "rawLabel": "Stuehus til landbrugsejendom",
+          "deprecated": false
+        },
+        "120": {
+          "label": "Fritliggende enfamiliehus",
+          "rawLabel": "Fritliggende enfamiliehus",
+          "deprecated": false
+        },
+        "121": {
+          "label": "Sammenbygget enfamiliehus",
+          "rawLabel": "Sammenbygget enfamiliehus",
+          "deprecated": false
+        },
+        "122": {
+          "label": "Fritliggende enfamiliehus i tæt-lav bebyggelse",
+          "rawLabel": "Fritliggende enfamiliehus i tæt-lav bebyggelse",
+          "deprecated": false
+        },
+        "130": {
+          "label": "Række-, kæde-, eller dobbelthus (lodret adskillelse mellem enhederne).",
+          "rawLabel": "(UDFASES) Række-, kæde-, eller dobbelthus (lodret adskillelse mellem enhederne).",
+          "deprecated": true
+        },
+        "131": {
+          "label": "Række-, kæde- og klyngehus",
+          "rawLabel": "Række-, kæde- og klyngehus",
+          "deprecated": false
+        },
+        "132": {
+          "label": "Dobbelthus",
+          "rawLabel": "Dobbelthus",
+          "deprecated": false
+        },
+        "140": {
+          "label": "Etagebolig-bygning, flerfamiliehus eller to-familiehus",
+          "rawLabel": "Etagebolig-bygning, flerfamiliehus eller to-familiehus",
+          "deprecated": false
+        },
+        "150": {
+          "label": "Kollegium",
+          "rawLabel": "Kollegium",
+          "deprecated": false
+        },
+        "160": {
+          "label": "Boligbygning til døgninstitution",
+          "rawLabel": "Boligbygning til døgninstitution",
+          "deprecated": false
+        },
+        "185": {
+          "label": "Anneks i tilknytning til helårsbolig.",
+          "rawLabel": "Anneks i tilknytning til helårsbolig.",
+          "deprecated": false
+        },
+        "190": {
+          "label": "Anden bygning til helårsbeboelse",
+          "rawLabel": "Anden bygning til helårsbeboelse",
+          "deprecated": false
+        },
+        "210": {
+          "label": "Bygning til erhvervsmæssig produktion vedrørende landbrug, gartneri, råstofudvinding o. lign",
+          "rawLabel": "(UDFASES) Bygning til erhvervsmæssig produktion vedrørende landbrug, gartneri, råstofudvinding o. lign",
+          "deprecated": true
+        },
+        "211": {
+          "label": "Stald til svin",
+          "rawLabel": "Stald til svin",
+          "deprecated": false
+        },
+        "212": {
+          "label": "Stald til kvæg, får mv.",
+          "rawLabel": "Stald til kvæg, får mv.",
+          "deprecated": false
+        },
+        "213": {
+          "label": "Stald til fjerkræ",
+          "rawLabel": "Stald til fjerkræ",
+          "deprecated": false
+        },
+        "214": {
+          "label": "Minkhal",
+          "rawLabel": "Minkhal",
+          "deprecated": false
+        },
+        "215": {
+          "label": "Væksthus",
+          "rawLabel": "Væksthus",
+          "deprecated": false
+        },
+        "216": {
+          "label": "Lade til foder, afgrøder mv.",
+          "rawLabel": "Lade til foder, afgrøder mv.",
+          "deprecated": false
+        },
+        "217": {
+          "label": "Maskinhus, garage mv.",
+          "rawLabel": "Maskinhus, garage mv.",
+          "deprecated": false
+        },
+        "218": {
+          "label": "Lade til halm, hø mv.",
+          "rawLabel": "Lade til halm, hø mv.",
+          "deprecated": false
+        },
+        "219": {
+          "label": "Anden bygning til landbrug mv.",
+          "rawLabel": "Anden bygning til landbrug mv.",
+          "deprecated": false
+        },
+        "220": {
+          "label": "Bygning til erhvervsmæssig produktion vedrørende industri, håndværk m.v. (fabrik, værksted o.lign.)",
+          "rawLabel": "(UDFASES) Bygning til erhvervsmæssig produktion vedrørende industri, håndværk m.v. (fabrik, værksted o.lign.)",
+          "deprecated": true
+        },
+        "221": {
+          "label": "Bygning til industri med integreret produktionsapparat",
+          "rawLabel": "Bygning til industri med integreret produktionsapparat",
+          "deprecated": false
+        },
+        "222": {
+          "label": "Bygning til industri uden integreret produktionsapparat",
+          "rawLabel": "Bygning til industri uden integreret produktionsapparat",
+          "deprecated": false
+        },
+        "223": {
+          "label": "Værksted",
+          "rawLabel": "Værksted",
+          "deprecated": false
+        },
+        "229": {
+          "label": "Anden bygning til produktion",
+          "rawLabel": "Anden bygning til produktion",
+          "deprecated": false
+        },
+        "230": {
+          "label": "El-, gas-, vand- eller varmeværk, forbrændingsanstalt m.v.",
+          "rawLabel": "(UDFASES) El-, gas-, vand- eller varmeværk, forbrændingsanstalt m.v.",
+          "deprecated": true
+        },
+        "231": {
+          "label": "Bygning til energiproduktion",
+          "rawLabel": "Bygning til energiproduktion",
+          "deprecated": false
+        },
+        "232": {
+          "label": "Bygning til energidistribution",
+          "rawLabel": "Bygning til energidistribution",
+          "deprecated": false
+        },
+        "233": {
+          "label": "Bygning til vandforsyning",
+          "rawLabel": "Bygning til vandforsyning",
+          "deprecated": false
+        },
+        "234": {
+          "label": "Bygning til håndtering af affald og spildevand",
+          "rawLabel": "Bygning til håndtering af affald og spildevand",
+          "deprecated": false
+        },
+        "239": {
+          "label": "Anden bygning til energiproduktion og forsyning",
+          "rawLabel": "Anden bygning til energiproduktion og forsyning",
+          "deprecated": false
+        },
+        "290": {
+          "label": "Anden bygning til landbrug, industri etc.",
+          "rawLabel": "(UDFASES) Anden bygning til landbrug, industri etc.",
+          "deprecated": true
+        },
+        "310": {
+          "label": "Transport- og garageanlæg (fragtmandshal, lufthavnsbygning, banegårdsbygning, parkeringshus). Garage med plads til et eller to køretøjer registreres med anvendelseskode 910",
+          "rawLabel": "(UDFASES) Transport- og garageanlæg (fragtmandshal, lufthavnsbygning, banegårdsbygning, parkeringshus). Garage med plads til et eller to køretøjer registreres med anvendelseskode 910",
+          "deprecated": true
+        },
+        "311": {
+          "label": "Bygning til jernbane- og busdrift",
+          "rawLabel": "Bygning til jernbane- og busdrift",
+          "deprecated": false
+        },
+        "312": {
+          "label": "Bygning til luftfart",
+          "rawLabel": "Bygning til luftfart",
+          "deprecated": false
+        },
+        "313": {
+          "label": "Bygning til parkering- og transportanlæg",
+          "rawLabel": "Bygning til parkering- og transportanlæg",
+          "deprecated": false
+        },
+        "314": {
+          "label": "Bygning til parkering af flere end to køretøjer i tilknytning til boliger",
+          "rawLabel": "Bygning til parkering af flere end to køretøjer i tilknytning til boliger",
+          "deprecated": false
+        },
+        "315": {
+          "label": "Havneanlæg",
+          "rawLabel": "Havneanlæg",
+          "deprecated": false
+        },
+        "319": {
+          "label": "Andet transportanlæg",
+          "rawLabel": "Andet transportanlæg",
+          "deprecated": false
+        },
+        "320": {
+          "label": "Bygning til kontor, handel, lager, herunder offentlig administration",
+          "rawLabel": "(UDFASES) Bygning til kontor, handel, lager, herunder offentlig administration",
+          "deprecated": true
+        },
+        "321": {
+          "label": "Bygning til kontor",
+          "rawLabel": "Bygning til kontor",
+          "deprecated": false
+        },
+        "322": {
+          "label": "Bygning til detailhandel",
+          "rawLabel": "Bygning til detailhandel",
+          "deprecated": false
+        },
+        "323": {
+          "label": "Bygning til lager",
+          "rawLabel": "Bygning til lager",
+          "deprecated": false
+        },
+        "324": {
+          "label": "Butikscenter",
+          "rawLabel": "Butikscenter",
+          "deprecated": false
+        },
+        "325": {
+          "label": "Tankstation",
+          "rawLabel": "Tankstation",
+          "deprecated": false
+        },
+        "329": {
+          "label": "Anden bygning til kontor, handel og lager",
+          "rawLabel": "Anden bygning til kontor, handel og lager",
+          "deprecated": false
+        },
+        "330": {
+          "label": "Bygning til hotel, restaurant, vaskeri, frisør og anden servicevirksomhed",
+          "rawLabel": "(UDFASES) Bygning til hotel, restaurant, vaskeri, frisør og anden servicevirksomhed",
+          "deprecated": true
+        },
+        "331": {
+          "label": "Hotel, kro eller konferencecenter med overnatning",
+          "rawLabel": "Hotel, kro eller konferencecenter med overnatning",
+          "deprecated": false
+        },
+        "332": {
+          "label": "Bed & breakfast mv.",
+          "rawLabel": "Bed & breakfast mv.",
+          "deprecated": false
+        },
+        "333": {
+          "label": "Restaurant, café og konferencecenter uden overnatning",
+          "rawLabel": "Restaurant, café og konferencecenter uden overnatning",
+          "deprecated": false
+        },
+        "334": {
+          "label": "Privat servicevirksomhed som frisør, vaskeri, netcafé mv.",
+          "rawLabel": "Privat servicevirksomhed som frisør, vaskeri, netcafé mv.",
+          "deprecated": false
+        },
+        "339": {
+          "label": "Anden bygning til serviceerhverv",
+          "rawLabel": "Anden bygning til serviceerhverv",
+          "deprecated": false
+        },
+        "390": {
+          "label": "Anden bygning til transport, handel etc",
+          "rawLabel": "(UDFASES) Anden bygning til transport, handel etc",
+          "deprecated": true
+        },
+        "410": {
+          "label": "Bygning til biograf, teater, erhvervsmæssig udstilling, bibliotek, museum, kirke o. lign.",
+          "rawLabel": "(UDFASES) Bygning til biograf, teater, erhvervsmæssig udstilling, bibliotek, museum, kirke o. lign.",
+          "deprecated": true
+        },
+        "411": {
+          "label": "Biograf, teater, koncertsted mv.",
+          "rawLabel": "Biograf, teater, koncertsted mv.",
+          "deprecated": false
+        },
+        "412": {
+          "label": "Museum",
+          "rawLabel": "Museum",
+          "deprecated": false
+        },
+        "413": {
+          "label": "Bibliotek",
+          "rawLabel": "Bibliotek",
+          "deprecated": false
+        },
+        "414": {
+          "label": "Kirke eller anden bygning til trosudøvelse for statsanerkendte trossamfund",
+          "rawLabel": "Kirke eller anden bygning til trosudøvelse for statsanerkendte trossamfund",
+          "deprecated": false
+        },
+        "415": {
+          "label": "Forsamlingshus",
+          "rawLabel": "Forsamlingshus",
+          "deprecated": false
+        },
+        "416": {
+          "label": "Forlystelsespark",
+          "rawLabel": "Forlystelsespark",
+          "deprecated": false
+        },
+        "419": {
+          "label": "Anden bygning til kulturelle formål",
+          "rawLabel": "Anden bygning til kulturelle formål",
+          "deprecated": false
+        },
+        "420": {
+          "label": "Bygning til undervisning og forskning (skole, gymnasium, forskningslabratorium o.lign.).",
+          "rawLabel": "(UDFASES) Bygning til undervisning og forskning (skole, gymnasium, forskningslabratorium o.lign.).",
+          "deprecated": true
+        },
+        "421": {
+          "label": "Grundskole",
+          "rawLabel": "Grundskole",
+          "deprecated": false
+        },
+        "422": {
+          "label": "Universitet",
+          "rawLabel": "Universitet",
+          "deprecated": false
+        },
+        "429": {
+          "label": "Anden bygning til undervisning og forskning",
+          "rawLabel": "Anden bygning til undervisning og forskning",
+          "deprecated": false
+        },
+        "430": {
+          "label": "Bygning til hospital, sygehjem, fødeklinik o. lign.",
+          "rawLabel": "(UDFASES) Bygning til hospital, sygehjem, fødeklinik o. lign.",
+          "deprecated": true
+        },
+        "431": {
+          "label": "Hospital og sygehus",
+          "rawLabel": "Hospital og sygehus",
+          "deprecated": false
+        },
+        "432": {
+          "label": "Hospice, behandlingshjem mv.",
+          "rawLabel": "Hospice, behandlingshjem mv.",
+          "deprecated": false
+        },
+        "433": {
+          "label": "Sundhedscenter, lægehus, fødeklinik mv.",
+          "rawLabel": "Sundhedscenter, lægehus, fødeklinik mv.",
+          "deprecated": false
+        },
+        "439": {
+          "label": "Anden bygning til sundhedsformål",
+          "rawLabel": "Anden bygning til sundhedsformål",
+          "deprecated": false
+        },
+        "440": {
+          "label": "Bygning til daginstitution",
+          "rawLabel": "(UDFASES) Bygning til daginstitution",
+          "deprecated": true
+        },
+        "441": {
+          "label": "Daginstitution",
+          "rawLabel": "Daginstitution",
+          "deprecated": false
+        },
+        "442": {
+          "label": "Servicefunktion på døgninstitution",
+          "rawLabel": "Servicefunktion på døgninstitution",
+          "deprecated": false
+        },
+        "443": {
+          "label": "Kaserne",
+          "rawLabel": "Kaserne",
+          "deprecated": false
+        },
+        "444": {
+          "label": "Fængsel, arresthus mv.",
+          "rawLabel": "Fængsel, arresthus mv.",
+          "deprecated": false
+        },
+        "449": {
+          "label": "Anden bygning til institutionsformål",
+          "rawLabel": "Anden bygning til institutionsformål",
+          "deprecated": false
+        },
+        "451": {
+          "label": "Beskyttelsesrum",
+          "rawLabel": "Beskyttelsesrum",
+          "deprecated": false
+        },
+        "490": {
+          "label": "Bygning til anden institution, herunder kaserne, fængsel o. lign.",
+          "rawLabel": "(UDFASES) Bygning til anden institution, herunder kaserne, fængsel o. lign.",
+          "deprecated": true
+        },
+        "510": {
+          "label": "Sommerhus",
+          "rawLabel": "Sommerhus",
+          "deprecated": false
+        },
+        "520": {
+          "label": "Bygning til feriekoloni, vandrehjem o.lign. bortset fra sommerhus",
+          "rawLabel": "(UDFASES) Bygning til feriekoloni, vandrehjem o.lign. bortset fra sommerhus",
+          "deprecated": true
+        },
+        "521": {
+          "label": "Feriecenter, center til campingplads mv.",
+          "rawLabel": "Feriecenter, center til campingplads mv.",
+          "deprecated": false
+        },
+        "522": {
+          "label": "Bygning med ferielejligheder til erhvervsmæssig udlejning",
+          "rawLabel": "Bygning med ferielejligheder til erhvervsmæssig udlejning",
+          "deprecated": false
+        },
+        "523": {
+          "label": "Bygning med ferielejligheder til eget brug",
+          "rawLabel": "Bygning med ferielejligheder til eget brug",
+          "deprecated": false
+        },
+        "529": {
+          "label": "Anden bygning til ferieformål",
+          "rawLabel": "Anden bygning til ferieformål",
+          "deprecated": false
+        },
+        "530": {
+          "label": "Bygning i forbindelse med idrætsudøvelse (klubhus, idrætshal, svømmehal o. lign.)",
+          "rawLabel": "(UDFASES) Bygning i forbindelse med idrætsudøvelse (klubhus, idrætshal, svømmehal o. lign.)",
+          "deprecated": true
+        },
+        "531": {
+          "label": "Klubhus i forbindelse med fritid og idræt",
+          "rawLabel": "Klubhus i forbindelse med fritid og idræt",
+          "deprecated": false
+        },
+        "532": {
+          "label": "Svømmehal",
+          "rawLabel": "Svømmehal",
+          "deprecated": false
+        },
+        "533": {
+          "label": "Idrætshal",
+          "rawLabel": "Idrætshal",
+          "deprecated": false
+        },
+        "534": {
+          "label": "Tribune i forbindelse med stadion",
+          "rawLabel": "Tribune i forbindelse med stadion",
+          "deprecated": false
+        },
+        "535": {
+          "label": "Bygning til træning og opstaldning af heste",
+          "rawLabel": "Bygning til træning og opstaldning af heste",
+          "deprecated": false
+        },
+        "539": {
+          "label": "Anden bygning til idrætformål",
+          "rawLabel": "Anden bygning til idrætformål",
+          "deprecated": false
+        },
+        "540": {
+          "label": "Kolonihavehus",
+          "rawLabel": "Kolonihavehus",
+          "deprecated": false
+        },
+        "585": {
+          "label": "Anneks i tilknytning til fritids- og sommerhus",
+          "rawLabel": "Anneks i tilknytning til fritids- og sommerhus",
+          "deprecated": false
+        },
+        "590": {
+          "label": "Anden bygning til fritidsformål",
+          "rawLabel": "Anden bygning til fritidsformål",
+          "deprecated": false
+        },
+        "910": {
+          "label": "Garage",
+          "rawLabel": "Garage",
+          "deprecated": false
+        },
+        "920": {
+          "label": "Carport",
+          "rawLabel": "Carport",
+          "deprecated": false
+        },
+        "930": {
+          "label": "Udhus",
+          "rawLabel": "Udhus",
+          "deprecated": false
+        },
+        "940": {
+          "label": "Drivhus",
+          "rawLabel": "Drivhus",
+          "deprecated": false
+        },
+        "950": {
+          "label": "Fritliggende overdækning",
+          "rawLabel": "Fritliggende overdækning",
+          "deprecated": false
+        },
+        "960": {
+          "label": "Fritliggende udestue",
+          "rawLabel": "Fritliggende udestue",
+          "deprecated": false
+        },
+        "970": {
+          "label": "Tiloversbleven landbrugsbygning",
+          "rawLabel": "Tiloversbleven landbrugsbygning",
+          "deprecated": false
+        },
+        "990": {
+          "label": "Faldefærdig bygning",
+          "rawLabel": "Faldefærdig bygning",
+          "deprecated": false
+        },
+        "999": {
+          "label": "Ukendt bygning",
+          "rawLabel": "Ukendt bygning",
+          "deprecated": false
+        }
+      }
+    },
+    "lifecycle": {
+      "sourceSlug": "Livscyklus",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/Livscyklus",
+      "entries": {
+        "1": {
+          "label": "Start",
+          "rawLabel": "Start",
+          "deprecated": false
+        },
+        "2": {
+          "label": "Projekteret",
+          "rawLabel": "Projekteret",
+          "deprecated": false
+        },
+        "3": {
+          "label": "Under Opførelse",
+          "rawLabel": "Under Opførelse",
+          "deprecated": false
+        },
+        "4": {
+          "label": "Sagsgrund",
+          "rawLabel": "Sagsgrund",
+          "deprecated": false
+        },
+        "5": {
+          "label": "Oprettet",
+          "rawLabel": "Oprettet",
+          "deprecated": false
+        },
+        "6": {
+          "label": "Opført",
+          "rawLabel": "Opført",
+          "deprecated": false
+        },
+        "7": {
+          "label": "Gældende",
+          "rawLabel": "Gældende",
+          "deprecated": false
+        },
+        "8": {
+          "label": "Godkendt",
+          "rawLabel": "Godkendt",
+          "deprecated": false
+        },
+        "9": {
+          "label": "Afsluttet",
+          "rawLabel": "Afsluttet",
+          "deprecated": false
+        },
+        "10": {
+          "label": "Historisk",
+          "rawLabel": "Historisk",
+          "deprecated": false
+        },
+        "11": {
+          "label": "Fejlregistreret",
+          "rawLabel": "Fejlregistreret",
+          "deprecated": false
+        },
+        "12": {
+          "label": "Midlertidig Afsluttet",
+          "rawLabel": "Midlertidig Afsluttet",
+          "deprecated": false
+        },
+        "13": {
+          "label": "Delvis Afsluttet",
+          "rawLabel": "Delvis Afsluttet",
+          "deprecated": false
+        },
+        "14": {
+          "label": "Henlagt",
+          "rawLabel": "Henlagt",
+          "deprecated": false
+        },
+        "15": {
+          "label": "Modtaget",
+          "rawLabel": "Modtaget",
+          "deprecated": false
+        },
+        "16": {
+          "label": "UnderBehandling",
+          "rawLabel": "UnderBehandling",
+          "deprecated": false
+        },
+        "17": {
+          "label": "Fejl",
+          "rawLabel": "Fejl",
+          "deprecated": false
+        },
+        "18": {
+          "label": "Udført",
+          "rawLabel": "Udført",
+          "deprecated": false
+        },
+        "19": {
+          "label": "Foreløbig",
+          "rawLabel": "Foreløbig",
+          "deprecated": false
+        },
+        "20": {
+          "label": "BomSagModtaget",
+          "rawLabel": "BomSagModtaget",
+          "deprecated": false
+        },
+        "21": {
+          "label": "BomSagUnderBehandling",
+          "rawLabel": "BomSagUnderBehandling",
+          "deprecated": false
+        },
+        "22": {
+          "label": "BomSagFejl",
+          "rawLabel": "BomSagFejl",
+          "deprecated": false
+        },
+        "23": {
+          "label": "BomSagUdført",
+          "rawLabel": "BomSagUdført",
+          "deprecated": false
+        }
+      }
+    },
+    "outerWallMaterial": {
+      "sourceSlug": "YdervaeggenesMateriale",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/YdervaeggenesMateriale",
+      "entries": {
+        "1": {
+          "label": "Mursten",
+          "rawLabel": "Mursten",
+          "deprecated": false
+        },
+        "2": {
+          "label": "Letbetonsten",
+          "rawLabel": "Letbetonsten",
+          "deprecated": false
+        },
+        "3": {
+          "label": "Fibercement herunder asbest",
+          "rawLabel": "Fibercement herunder asbest",
+          "deprecated": false
+        },
+        "4": {
+          "label": "Bindingsværk",
+          "rawLabel": "Bindingsværk",
+          "deprecated": false
+        },
+        "5": {
+          "label": "Træ",
+          "rawLabel": "Træ",
+          "deprecated": false
+        },
+        "6": {
+          "label": "Betonelementer",
+          "rawLabel": "Betonelementer",
+          "deprecated": false
+        },
+        "8": {
+          "label": "Metal",
+          "rawLabel": "Metal",
+          "deprecated": false
+        },
+        "10": {
+          "label": "Fibercement uden asbest",
+          "rawLabel": "Fibercement uden asbest",
+          "deprecated": false
+        },
+        "11": {
+          "label": "Plastmaterialer",
+          "rawLabel": "Plastmaterialer",
+          "deprecated": false
+        },
+        "12": {
+          "label": "Glas",
+          "rawLabel": "Glas",
+          "deprecated": false
+        },
+        "80": {
+          "label": "Ingen",
+          "rawLabel": "Ingen",
+          "deprecated": false
+        },
+        "90": {
+          "label": "Andet materiale",
+          "rawLabel": "Andet materiale",
+          "deprecated": false
+        }
+      }
+    },
+    "roofMaterial": {
+      "sourceSlug": "Tagdaekningsmateriale",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/Tagdaekningsmateriale",
+      "entries": {
+        "1": {
+          "label": "Tagpap med lille hældning",
+          "rawLabel": "Tagpap med lille hældning",
+          "deprecated": false
+        },
+        "2": {
+          "label": "Tagpap med stor hældning",
+          "rawLabel": "Tagpap med stor hældning",
+          "deprecated": false
+        },
+        "3": {
+          "label": "Fibercement herunder asbest",
+          "rawLabel": "Fibercement herunder asbest",
+          "deprecated": false
+        },
+        "4": {
+          "label": "Betontagsten",
+          "rawLabel": "Betontagsten",
+          "deprecated": false
+        },
+        "5": {
+          "label": "Tegl",
+          "rawLabel": "Tegl",
+          "deprecated": false
+        },
+        "6": {
+          "label": "Metal",
+          "rawLabel": "Metal",
+          "deprecated": false
+        },
+        "7": {
+          "label": "Stråtag",
+          "rawLabel": "Stråtag",
+          "deprecated": false
+        },
+        "10": {
+          "label": "Fibercement uden asbest",
+          "rawLabel": "Fibercement uden asbest",
+          "deprecated": false
+        },
+        "11": {
+          "label": "Plastmaterialer",
+          "rawLabel": "Plastmaterialer",
+          "deprecated": false
+        },
+        "12": {
+          "label": "Glas",
+          "rawLabel": "Glas",
+          "deprecated": false
+        },
+        "20": {
+          "label": "Levende tage",
+          "rawLabel": "Levende tage",
+          "deprecated": false
+        },
+        "80": {
+          "label": "Ingen",
+          "rawLabel": "(UDFASES) Ingen",
+          "deprecated": true
+        },
+        "90": {
+          "label": "Andet materiale",
+          "rawLabel": "Andet materiale",
+          "deprecated": false
+        }
+      }
+    },
+    "supplementaryOuterWallMaterial": {
+      "sourceSlug": "YdervaeggenesMateriale",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/YdervaeggenesMateriale",
+      "entries": {
+        "1": {
+          "label": "Mursten",
+          "rawLabel": "Mursten",
+          "deprecated": false
+        },
+        "2": {
+          "label": "Letbetonsten",
+          "rawLabel": "Letbetonsten",
+          "deprecated": false
+        },
+        "3": {
+          "label": "Fibercement herunder asbest",
+          "rawLabel": "Fibercement herunder asbest",
+          "deprecated": false
+        },
+        "4": {
+          "label": "Bindingsværk",
+          "rawLabel": "Bindingsværk",
+          "deprecated": false
+        },
+        "5": {
+          "label": "Træ",
+          "rawLabel": "Træ",
+          "deprecated": false
+        },
+        "6": {
+          "label": "Betonelementer",
+          "rawLabel": "Betonelementer",
+          "deprecated": false
+        },
+        "8": {
+          "label": "Metal",
+          "rawLabel": "Metal",
+          "deprecated": false
+        },
+        "10": {
+          "label": "Fibercement uden asbest",
+          "rawLabel": "Fibercement uden asbest",
+          "deprecated": false
+        },
+        "11": {
+          "label": "Plastmaterialer",
+          "rawLabel": "Plastmaterialer",
+          "deprecated": false
+        },
+        "12": {
+          "label": "Glas",
+          "rawLabel": "Glas",
+          "deprecated": false
+        },
+        "80": {
+          "label": "Ingen",
+          "rawLabel": "Ingen",
+          "deprecated": false
+        },
+        "90": {
+          "label": "Andet materiale",
+          "rawLabel": "Andet materiale",
+          "deprecated": false
+        }
+      }
+    },
+    "heatingInstallation": {
+      "sourceSlug": "BygVarmeinstallation",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/BygVarmeinstallation",
+      "entries": {
+        "1": {
+          "label": "Fjernvarme/blokvarme",
+          "rawLabel": "Fjernvarme/blokvarme",
+          "deprecated": false
+        },
+        "2": {
+          "label": "Centralvarme med én fyringsenhed",
+          "rawLabel": "Centralvarme med én fyringsenhed",
+          "deprecated": false
+        },
+        "3": {
+          "label": "Ovn til fast og flydende brændsel",
+          "rawLabel": "Ovn til fast og flydende brændsel",
+          "deprecated": false
+        },
+        "5": {
+          "label": "Varmepumpe",
+          "rawLabel": "Varmepumpe",
+          "deprecated": false
+        },
+        "6": {
+          "label": "Centralvarme med to fyringsenheder",
+          "rawLabel": "Centralvarme med to fyringsenheder",
+          "deprecated": false
+        },
+        "7": {
+          "label": "Elvarme",
+          "rawLabel": "Elvarme",
+          "deprecated": false
+        },
+        "8": {
+          "label": "Gasradiator",
+          "rawLabel": "Gasradiator",
+          "deprecated": false
+        },
+        "9": {
+          "label": "Ingen varmeinstallation",
+          "rawLabel": "Ingen varmeinstallation",
+          "deprecated": false
+        },
+        "99": {
+          "label": "Varmeinstallation er registreret på enheder",
+          "rawLabel": "Varmeinstallation er registreret på enheder",
+          "deprecated": false
+        }
+      }
+    },
+    "heatingSource": {
+      "sourceSlug": "Opvarmningsmiddel",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/Opvarmningsmiddel",
+      "entries": {
+        "1": {
+          "label": "Elektricitet",
+          "rawLabel": "Elektricitet",
+          "deprecated": false
+        },
+        "2": {
+          "label": "Gasværksgas",
+          "rawLabel": "Gasværksgas",
+          "deprecated": false
+        },
+        "3": {
+          "label": "Flydende brændsel",
+          "rawLabel": "Flydende brændsel",
+          "deprecated": false
+        },
+        "4": {
+          "label": "Fast brændsel",
+          "rawLabel": "Fast brændsel",
+          "deprecated": false
+        },
+        "6": {
+          "label": "Halm",
+          "rawLabel": "Halm",
+          "deprecated": false
+        },
+        "7": {
+          "label": "Naturgas",
+          "rawLabel": "Naturgas",
+          "deprecated": false
+        },
+        "9": {
+          "label": "Andet",
+          "rawLabel": "Andet",
+          "deprecated": false
+        }
+      }
+    },
+    "supplementaryHeating": {
+      "sourceSlug": "BygSupplerendeVarme",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/BygSupplerendeVarme",
+      "entries": {
+        "0": {
+          "label": "Ikke oplyst",
+          "rawLabel": "Ikke oplyst",
+          "deprecated": false
+        },
+        "1": {
+          "label": "Varmepumpe",
+          "rawLabel": "Varmepumpe",
+          "deprecated": false
+        },
+        "2": {
+          "label": "Brændeovne og lignende med skorsten",
+          "rawLabel": "Brændeovne og lignende med skorsten",
+          "deprecated": false
+        },
+        "3": {
+          "label": "Biopejse og lignende uden skorsten",
+          "rawLabel": "Biopejse og lignende uden skorsten",
+          "deprecated": false
+        },
+        "4": {
+          "label": "Solvarmeanlæg",
+          "rawLabel": "Solvarmeanlæg",
+          "deprecated": false
+        },
+        "5": {
+          "label": "Pejs",
+          "rawLabel": "Pejs",
+          "deprecated": false
+        },
+        "6": {
+          "label": "Gasradiator",
+          "rawLabel": "Gasradiator",
+          "deprecated": false
+        },
+        "7": {
+          "label": "Elvarme",
+          "rawLabel": "Elvarme",
+          "deprecated": false
+        },
+        "10": {
+          "label": "Biogasanlæg",
+          "rawLabel": "Biogasanlæg",
+          "deprecated": false
+        },
+        "80": {
+          "label": "Andet",
+          "rawLabel": "Andet",
+          "deprecated": false
+        },
+        "90": {
+          "label": "Bygningen har ingen supplerende varme",
+          "rawLabel": "(UDFASES) Bygningen har ingen supplerende varme",
+          "deprecated": true
+        }
+      }
+    },
+    "unitUse": {
+      "sourceSlug": "EnhAnvendelse",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/EnhAnvendelse",
+      "entries": {
+        "110": {
+          "label": "Stuehus til landbrugsejendom",
+          "rawLabel": "Stuehus til landbrugsejendom",
+          "deprecated": false
+        },
+        "120": {
+          "label": "Fritliggende enfamiliehus",
+          "rawLabel": "Fritliggende enfamiliehus",
+          "deprecated": false
+        },
+        "121": {
+          "label": "Sammenbygget enfamiliehus",
+          "rawLabel": "Sammenbygget enfamiliehus",
+          "deprecated": false
+        },
+        "122": {
+          "label": "Fritliggende enfamiliehus i tæt-lav bebyggelse",
+          "rawLabel": "Fritliggende enfamiliehus i tæt-lav bebyggelse",
+          "deprecated": false
+        },
+        "130": {
+          "label": "Række-, kæde- eller dobbelthus (lodret adskillelse mellem enhederne).",
+          "rawLabel": "(UDFASES) Række-, kæde- eller dobbelthus (lodret adskillelse mellem enhederne).",
+          "deprecated": true
+        },
+        "131": {
+          "label": "Række-, kæde- og klyngehus",
+          "rawLabel": "Række-, kæde- og klyngehus",
+          "deprecated": false
+        },
+        "132": {
+          "label": "Dobbelthus",
+          "rawLabel": "Dobbelthus",
+          "deprecated": false
+        },
+        "140": {
+          "label": "Bolig i etageejendom, flerfamiliehus eller to-familiehus",
+          "rawLabel": "Bolig i etageejendom, flerfamiliehus eller to-familiehus",
+          "deprecated": false
+        },
+        "150": {
+          "label": "Kollegiebolig",
+          "rawLabel": "Kollegiebolig",
+          "deprecated": false
+        },
+        "160": {
+          "label": "Bolig i døgninstitution",
+          "rawLabel": "Bolig i døgninstitution",
+          "deprecated": false
+        },
+        "185": {
+          "label": "Anneks i tilknytning til helårsbolig",
+          "rawLabel": "Anneks i tilknytning til helårsbolig",
+          "deprecated": false
+        },
+        "190": {
+          "label": "Anden enhed til helårsbeboelse",
+          "rawLabel": "Anden enhed til helårsbeboelse",
+          "deprecated": false
+        },
+        "210": {
+          "label": "Erhvervsmæssig produktion vedrørende landbrug, skovbrug, gartneri, råstofudvinding og lign.",
+          "rawLabel": "(UDFASES) Erhvervsmæssig produktion vedrørende landbrug, skovbrug, gartneri, råstofudvinding og lign.",
+          "deprecated": true
+        },
+        "211": {
+          "label": "Stald til svin",
+          "rawLabel": "Stald til svin",
+          "deprecated": false
+        },
+        "212": {
+          "label": "Stald til kvæg, får mv.",
+          "rawLabel": "Stald til kvæg, får mv.",
+          "deprecated": false
+        },
+        "213": {
+          "label": "Stald til fjerkræ",
+          "rawLabel": "Stald til fjerkræ",
+          "deprecated": false
+        },
+        "214": {
+          "label": "Minkhal",
+          "rawLabel": "Minkhal",
+          "deprecated": false
+        },
+        "215": {
+          "label": "Væksthus",
+          "rawLabel": "Væksthus",
+          "deprecated": false
+        },
+        "216": {
+          "label": "Lade til foder, afgrøder mv.",
+          "rawLabel": "Lade til foder, afgrøder mv.",
+          "deprecated": false
+        },
+        "217": {
+          "label": "Maskinhus, garage mv.",
+          "rawLabel": "Maskinhus, garage mv.",
+          "deprecated": false
+        },
+        "218": {
+          "label": "Lade til halm, hø mv.",
+          "rawLabel": "Lade til halm, hø mv.",
+          "deprecated": false
+        },
+        "219": {
+          "label": "Anden enhed til landbrug mv.",
+          "rawLabel": "Anden enhed til landbrug mv.",
+          "deprecated": false
+        },
+        "220": {
+          "label": "Erhvervsmæssig produktion vedrørende industri, håndværk m.v. (fabrik, værksted o. lign.)",
+          "rawLabel": "(UDFASES) Erhvervsmæssig produktion vedrørende industri, håndværk m.v. (fabrik, værksted o. lign.)",
+          "deprecated": true
+        },
+        "221": {
+          "label": "Enhed til industri med integreret produktionsapparat",
+          "rawLabel": "Enhed til industri med integreret produktionsapparat",
+          "deprecated": false
+        },
+        "222": {
+          "label": "Enhed til industri uden integreret produktionsapparat",
+          "rawLabel": "Enhed til industri uden integreret produktionsapparat",
+          "deprecated": false
+        },
+        "223": {
+          "label": "Værksted",
+          "rawLabel": "Værksted",
+          "deprecated": false
+        },
+        "229": {
+          "label": "Anden enhed til produktion",
+          "rawLabel": "Anden enhed til produktion",
+          "deprecated": false
+        },
+        "230": {
+          "label": "El-, gas-, vand- eller varmeværk, forbrændingsanstalt o. lign.",
+          "rawLabel": "(UDFASES) El-, gas-, vand- eller varmeværk, forbrændingsanstalt o. lign.",
+          "deprecated": true
+        },
+        "231": {
+          "label": "Enhed til energiproduktion",
+          "rawLabel": "Enhed til energiproduktion",
+          "deprecated": false
+        },
+        "232": {
+          "label": "Enhed til energidistribution",
+          "rawLabel": "Enhed til energidistribution",
+          "deprecated": false
+        },
+        "233": {
+          "label": "Enhed til vandforsyning",
+          "rawLabel": "Enhed til vandforsyning",
+          "deprecated": false
+        },
+        "234": {
+          "label": "Enhed til håndtering af affald og spildevand",
+          "rawLabel": "Enhed til håndtering af affald og spildevand",
+          "deprecated": false
+        },
+        "239": {
+          "label": "Anden enhed til energiproduktion og forsyning",
+          "rawLabel": "Anden enhed til energiproduktion og forsyning",
+          "deprecated": false
+        },
+        "290": {
+          "label": "Anden enhed til produktion og lager i forbindelse med landbrug, industri o. lign.",
+          "rawLabel": "(UDFASES) Anden enhed til produktion og lager i forbindelse med landbrug, industri o. lign.",
+          "deprecated": true
+        },
+        "310": {
+          "label": "Transport- og garageanlæg (fragtmandshal, lufthavnsbygning,banegårdsbygning o. lign.)",
+          "rawLabel": "(UDFASES) Transport- og garageanlæg (fragtmandshal, lufthavnsbygning,banegårdsbygning o. lign.)",
+          "deprecated": true
+        },
+        "311": {
+          "label": "Enhed til jernbane- og busdrift",
+          "rawLabel": "Enhed til jernbane- og busdrift",
+          "deprecated": false
+        },
+        "312": {
+          "label": "Enhed til luftfart",
+          "rawLabel": "Enhed til luftfart",
+          "deprecated": false
+        },
+        "313": {
+          "label": "Enhed til parkerings- og transportanlæg",
+          "rawLabel": "Enhed til parkerings- og transportanlæg",
+          "deprecated": false
+        },
+        "314": {
+          "label": "Enhed til parkering af flere end to køretøjer i tilknytning til boliger",
+          "rawLabel": "Enhed til parkering af flere end to køretøjer i tilknytning til boliger",
+          "deprecated": false
+        },
+        "315": {
+          "label": "Havneanlæg",
+          "rawLabel": "Havneanlæg",
+          "deprecated": false
+        },
+        "319": {
+          "label": "Andet transportanlæg",
+          "rawLabel": "Andet transportanlæg",
+          "deprecated": false
+        },
+        "320": {
+          "label": "Engroshandel og lager.",
+          "rawLabel": "(UDFASES) Engroshandel og lager.",
+          "deprecated": true
+        },
+        "321": {
+          "label": "Enhed til kontor",
+          "rawLabel": "Enhed til kontor",
+          "deprecated": false
+        },
+        "322": {
+          "label": "Enhed til detailhandel",
+          "rawLabel": "Enhed til detailhandel",
+          "deprecated": false
+        },
+        "323": {
+          "label": "Enhed til lager",
+          "rawLabel": "Enhed til lager",
+          "deprecated": false
+        },
+        "324": {
+          "label": "Butikscenter",
+          "rawLabel": "Butikscenter",
+          "deprecated": false
+        },
+        "325": {
+          "label": "Tankstation",
+          "rawLabel": "Tankstation",
+          "deprecated": false
+        },
+        "329": {
+          "label": "Anden enhed til kontor, handel og lager",
+          "rawLabel": "Anden enhed til kontor, handel og lager",
+          "deprecated": false
+        },
+        "330": {
+          "label": "Detailhandel m.v.",
+          "rawLabel": "(UDFASES) Detailhandel m.v.",
+          "deprecated": true
+        },
+        "331": {
+          "label": "Hotel, kro eller konferencecenter med overnatning",
+          "rawLabel": "Hotel, kro eller konferencecenter med overnatning",
+          "deprecated": false
+        },
+        "332": {
+          "label": "Bed & breakfast mv.",
+          "rawLabel": "Bed & breakfast mv.",
+          "deprecated": false
+        },
+        "333": {
+          "label": "Restaurant, café og konferencecenter uden overnatning",
+          "rawLabel": "Restaurant, café og konferencecenter uden overnatning",
+          "deprecated": false
+        },
+        "334": {
+          "label": "Privat servicevirksomhed som frisør, vaskeri, netcafé mv.",
+          "rawLabel": "Privat servicevirksomhed som frisør, vaskeri, netcafé mv.",
+          "deprecated": false
+        },
+        "339": {
+          "label": "Anden enhed til serviceerhverv",
+          "rawLabel": "Anden enhed til serviceerhverv",
+          "deprecated": false
+        },
+        "340": {
+          "label": "Pengeinstitut, forsikringsvirksomhed m.v.",
+          "rawLabel": "(UDFASES) Pengeinstitut, forsikringsvirksomhed m.v.",
+          "deprecated": true
+        },
+        "350": {
+          "label": "Kontor og liberale erhverv bortset fra offentlig administration (kontorer for advokater, rådgivende ingeniører, klinikker o.lign.)",
+          "rawLabel": "(UDFASES) Kontor og liberale erhverv bortset fra offentlig administration (kontorer for advokater, rådgivende ingeniører, klinikker o.lign.)",
+          "deprecated": true
+        },
+        "360": {
+          "label": "Offentlig administration.",
+          "rawLabel": "(UDFASES) Offentlig administration.",
+          "deprecated": true
+        },
+        "370": {
+          "label": "Hotel, restauration, vaskeri, frisør og anden servicevirksomhed.",
+          "rawLabel": "(UDFASES) Hotel, restauration, vaskeri, frisør og anden servicevirksomhed.",
+          "deprecated": true
+        },
+        "390": {
+          "label": "Anden enhed til handel, transport etc.",
+          "rawLabel": "(UDFASES) Anden enhed til handel, transport etc.",
+          "deprecated": true
+        },
+        "410": {
+          "label": "Biograf, teater, erhvervsmæssig udstilling m.v.",
+          "rawLabel": "(UDFASES) Biograf, teater, erhvervsmæssig udstilling m.v.",
+          "deprecated": true
+        },
+        "411": {
+          "label": "Biograf, teater, koncertsted mv.",
+          "rawLabel": "Biograf, teater, koncertsted mv.",
+          "deprecated": false
+        },
+        "412": {
+          "label": "Museum",
+          "rawLabel": "Museum",
+          "deprecated": false
+        },
+        "413": {
+          "label": "Bibliotek",
+          "rawLabel": "Bibliotek",
+          "deprecated": false
+        },
+        "414": {
+          "label": "Kirke eller anden enhed til trosudøvelse for statsanerkendte trossamfund",
+          "rawLabel": "Kirke eller anden enhed til trosudøvelse for statsanerkendte trossamfund",
+          "deprecated": false
+        },
+        "415": {
+          "label": "Forsamlingshus",
+          "rawLabel": "Forsamlingshus",
+          "deprecated": false
+        },
+        "416": {
+          "label": "Forlystelsespark",
+          "rawLabel": "Forlystelsespark",
+          "deprecated": false
+        },
+        "419": {
+          "label": "Anden enhed til kulturelle formål",
+          "rawLabel": "Anden enhed til kulturelle formål",
+          "deprecated": false
+        },
+        "420": {
+          "label": "Bibliotek, museum, kirke o. lign.",
+          "rawLabel": "(UDFASES) Bibliotek, museum, kirke o. lign.",
+          "deprecated": true
+        },
+        "421": {
+          "label": "Grundskole",
+          "rawLabel": "Grundskole",
+          "deprecated": false
+        },
+        "422": {
+          "label": "Universitet",
+          "rawLabel": "Universitet",
+          "deprecated": false
+        },
+        "429": {
+          "label": "Anden enhed til undervisning og forskning",
+          "rawLabel": "Anden enhed til undervisning og forskning",
+          "deprecated": false
+        },
+        "430": {
+          "label": "Undervisning og forskning (skole, gymnasium, forskningslaboratorium).",
+          "rawLabel": "(UDFASES) Undervisning og forskning (skole, gymnasium, forskningslaboratorium).",
+          "deprecated": true
+        },
+        "431": {
+          "label": "Hospital og sygehus",
+          "rawLabel": "Hospital og sygehus",
+          "deprecated": false
+        },
+        "432": {
+          "label": "Hospice, behandlingshjem mv.",
+          "rawLabel": "Hospice, behandlingshjem mv.",
+          "deprecated": false
+        },
+        "433": {
+          "label": "Sundhedscenter, lægehus, fødeklinik mv.",
+          "rawLabel": "Sundhedscenter, lægehus, fødeklinik mv.",
+          "deprecated": false
+        },
+        "439": {
+          "label": "Anden enhed til sundhedsformål",
+          "rawLabel": "Anden enhed til sundhedsformål",
+          "deprecated": false
+        },
+        "440": {
+          "label": "Hospital, fødeklinik o. lign.",
+          "rawLabel": "(UDFASES) Hospital, fødeklinik o. lign.",
+          "deprecated": true
+        },
+        "441": {
+          "label": "Daginstitution",
+          "rawLabel": "Daginstitution",
+          "deprecated": false
+        },
+        "442": {
+          "label": "Servicefunktion på døgninstitution",
+          "rawLabel": "Servicefunktion på døgninstitution",
+          "deprecated": false
+        },
+        "443": {
+          "label": "Kaserne",
+          "rawLabel": "Kaserne",
+          "deprecated": false
+        },
+        "444": {
+          "label": "Fængsel, arresthus mv.",
+          "rawLabel": "Fængsel, arresthus mv.",
+          "deprecated": false
+        },
+        "449": {
+          "label": "Anden enhed til institutionsformål",
+          "rawLabel": "Anden enhed til institutionsformål",
+          "deprecated": false
+        },
+        "450": {
+          "label": "Daginstitution.",
+          "rawLabel": "(UDFASES) Daginstitution.",
+          "deprecated": true
+        },
+        "451": {
+          "label": "Enhed til beskyttelsesrum",
+          "rawLabel": "Enhed til beskyttelsesrum",
+          "deprecated": false
+        },
+        "490": {
+          "label": "Anden institution, herunder kaserne, fængsel m.v.",
+          "rawLabel": "(UDFASES) Anden institution, herunder kaserne, fængsel m.v.",
+          "deprecated": true
+        },
+        "510": {
+          "label": "Sommerhus.",
+          "rawLabel": "Sommerhus.",
+          "deprecated": false
+        },
+        "520": {
+          "label": "Enhed til feriekoloni, vandrehjem o.lign. bortset fra sommerhus",
+          "rawLabel": "(UDFASES) Enhed til feriekoloni, vandrehjem o.lign. bortset fra sommerhus",
+          "deprecated": true
+        },
+        "521": {
+          "label": "Feriecenter, center til campingplads mv.",
+          "rawLabel": "Feriecenter, center til campingplads mv.",
+          "deprecated": false
+        },
+        "522": {
+          "label": "Ferielejlighed til erhvervsmæssig udlejning",
+          "rawLabel": "Ferielejlighed til erhvervsmæssig udlejning",
+          "deprecated": false
+        },
+        "523": {
+          "label": "Ferielejlighed til eget brug",
+          "rawLabel": "Ferielejlighed til eget brug",
+          "deprecated": false
+        },
+        "529": {
+          "label": "Anden enhed til ferieformål",
+          "rawLabel": "Anden enhed til ferieformål",
+          "deprecated": false
+        },
+        "530": {
+          "label": "Enhed i forbindelse med idrætsudøvelse (klubhus, idrætshal, svømmehal o. lign.).",
+          "rawLabel": "(UDFASES) Enhed i forbindelse med idrætsudøvelse (klubhus, idrætshal, svømmehal o. lign.).",
+          "deprecated": true
+        },
+        "531": {
+          "label": "Klubhus i forbindelse med fritid- og idræt",
+          "rawLabel": "Klubhus i forbindelse med fritid- og idræt",
+          "deprecated": false
+        },
+        "532": {
+          "label": "Svømmehal",
+          "rawLabel": "Svømmehal",
+          "deprecated": false
+        },
+        "533": {
+          "label": "Idrætshal",
+          "rawLabel": "Idrætshal",
+          "deprecated": false
+        },
+        "534": {
+          "label": "Tribune i forbindelse med stadion",
+          "rawLabel": "Tribune i forbindelse med stadion",
+          "deprecated": false
+        },
+        "535": {
+          "label": "Enhed til træning og opstaldning af heste",
+          "rawLabel": "Enhed til træning og opstaldning af heste",
+          "deprecated": false
+        },
+        "539": {
+          "label": "Anden enhed til idrætsformål",
+          "rawLabel": "Anden enhed til idrætsformål",
+          "deprecated": false
+        },
+        "540": {
+          "label": "Kolonihavehus",
+          "rawLabel": "Kolonihavehus",
+          "deprecated": false
+        },
+        "585": {
+          "label": "Anneks i tilknytning til fritids- og sommerhus",
+          "rawLabel": "Anneks i tilknytning til fritids- og sommerhus",
+          "deprecated": false
+        },
+        "590": {
+          "label": "Anden enhed til fritidsformål",
+          "rawLabel": "Anden enhed til fritidsformål",
+          "deprecated": false
+        }
+      }
+    },
+    "unitHousingType": {
+      "sourceSlug": "Boligtype",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/Boligtype",
+      "entries": {
+        "1": {
+          "label": "Egentlig beboelseslejlighed med eget køkken",
+          "rawLabel": "Egentlig beboelseslejlighed med eget køkken",
+          "deprecated": false
+        },
+        "2": {
+          "label": "Blandet bolig og erhverv med eget køkken",
+          "rawLabel": "Blandet bolig og erhverv med eget køkken",
+          "deprecated": false
+        },
+        "3": {
+          "label": "Enkeltværelse uden eget køkken",
+          "rawLabel": "Enkeltværelse uden eget køkken",
+          "deprecated": false
+        },
+        "4": {
+          "label": "Fællesbolig",
+          "rawLabel": "Fællesbolig",
+          "deprecated": false
+        },
+        "5": {
+          "label": "Sommer- eller fritidsbolig",
+          "rawLabel": "Sommer- eller fritidsbolig",
+          "deprecated": false
+        },
+        "E": {
+          "label": "Andet",
+          "rawLabel": "Andet",
+          "deprecated": false
+        }
+      }
+    },
+    "unitAreaSource": {
+      "sourceSlug": "KildeTilOplysninger",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/KildeTilOplysninger",
+      "entries": {
+        "1": {
+          "label": "Oplyst af ejer eller dennes repræsentant",
+          "rawLabel": "Oplyst af ejer eller dennes repræsentant",
+          "deprecated": false
+        },
+        "2": {
+          "label": "Oplyst af kommunen",
+          "rawLabel": "Oplyst af kommunen",
+          "deprecated": false
+        },
+        "3": {
+          "label": "Oplyst af andre",
+          "rawLabel": "Oplyst af andre",
+          "deprecated": false
+        },
+        "4": {
+          "label": "Maskinelt oprettet",
+          "rawLabel": "Maskinelt oprettet",
+          "deprecated": false
+        },
+        "5": {
+          "label": "Oplyst og kontrolleret af kommunen",
+          "rawLabel": "Oplyst og kontrolleret af kommunen",
+          "deprecated": false
+        }
+      }
+    },
+    "unitFlexHomePermission": {
+      "sourceSlug": "Tilladelsesart",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/Tilladelsesart",
+      "entries": {
+        "1": {
+          "label": "Upersonlig tilladelse uden tidsbegrænsning",
+          "rawLabel": "Upersonlig tilladelse uden tidsbegrænsning",
+          "deprecated": false
+        },
+        "2": {
+          "label": "Personlig tilladelse uden tidsbegrænsning",
+          "rawLabel": "Personlig tilladelse uden tidsbegrænsning",
+          "deprecated": false
+        },
+        "3": {
+          "label": "Upersonlig tilladelse med tidsbegrænsing",
+          "rawLabel": "Upersonlig tilladelse med tidsbegrænsing",
+          "deprecated": false
+        },
+        "4": {
+          "label": "Personlig tilladelse med tidsbegrænsing",
+          "rawLabel": "Personlig tilladelse med tidsbegrænsing",
+          "deprecated": false
+        }
+      }
+    },
+    "unitAddressFunction": {
+      "sourceSlug": "EnhedHvorSkalEnhedVises",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/EnhedHvorSkalEnhedVises",
+      "entries": {
+        "0": {
+          "label": "Vis Enheder under Opgange",
+          "rawLabel": "Vis Enheder under Opgange",
+          "deprecated": false
+        },
+        "1": {
+          "label": "Vis Enheder under Etager",
+          "rawLabel": "Vis Enheder under Etager",
+          "deprecated": false
+        },
+        "2": {
+          "label": "Vis Enheder under både Opgange og Etager",
+          "rawLabel": "Vis Enheder under både Opgange og Etager",
+          "deprecated": false
+        }
+      }
+    },
+    "unitToilet": {
+      "sourceSlug": "Toiletforhold",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/Toiletforhold",
+      "entries": {
+        "A": {
+          "label": "Vandskyllende toilet uden for enheden",
+          "rawLabel": "Vandskyllende toilet uden for enheden",
+          "deprecated": false
+        },
+        "B": {
+          "label": "Intet vandskyllende toilet",
+          "rawLabel": "Intet vandskyllende toilet",
+          "deprecated": false
+        },
+        "T": {
+          "label": "Vandskyllende toilet i enheden",
+          "rawLabel": "Vandskyllende toilet i enheden",
+          "deprecated": false
+        }
+      }
+    },
+    "unitBath": {
+      "sourceSlug": "Badeforhold",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/Badeforhold",
+      "entries": {
+        "C": {
+          "label": "Adgang til badeværelse",
+          "rawLabel": "Adgang til badeværelse",
+          "deprecated": false
+        },
+        "D": {
+          "label": "Hverken badeværelse eller adgang til badeværelse",
+          "rawLabel": "Hverken badeværelse eller adgang til badeværelse",
+          "deprecated": false
+        },
+        "V": {
+          "label": "Badeværelse i enheden",
+          "rawLabel": "Badeværelse i enheden",
+          "deprecated": false
+        }
+      }
+    },
+    "unitKitchen": {
+      "sourceSlug": "Koekkenforhold",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/Koekkenforhold",
+      "entries": {
+        "E": {
+          "label": "Eget køkken med afløb",
+          "rawLabel": "Eget køkken med afløb",
+          "deprecated": false
+        },
+        "F": {
+          "label": "Adgang til fælles køkken",
+          "rawLabel": "Adgang til fælles køkken",
+          "deprecated": false
+        },
+        "G": {
+          "label": "Fast kogeinstallation i værelse eller på gang",
+          "rawLabel": "Fast kogeinstallation i værelse eller på gang",
+          "deprecated": false
+        },
+        "H": {
+          "label": "Ingen fast kogeinstallation",
+          "rawLabel": "Ingen fast kogeinstallation",
+          "deprecated": false
+        }
+      }
+    },
+    "floorType": {
+      "sourceSlug": "EtageType",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/EtageType",
+      "entries": {
+        "0": {
+          "label": "Regulær etage",
+          "rawLabel": "Regulær etage",
+          "deprecated": false
+        },
+        "1": {
+          "label": "Tagetage",
+          "rawLabel": "Tagetage",
+          "deprecated": false
+        },
+        "2": {
+          "label": "Kælder",
+          "rawLabel": "Kælder",
+          "deprecated": false
+        }
+      }
+    },
+    "groundWaterSupply": {
+      "sourceSlug": "GruVandforsyning",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/GruVandforsyning",
+      "entries": {
+        "1": {
+          "label": "Alment vandforsyningsanlæg",
+          "rawLabel": "Alment vandforsyningsanlæg",
+          "deprecated": false
+        },
+        "2": {
+          "label": "Privat vandforsyningsanlæg",
+          "rawLabel": "Privat vandforsyningsanlæg",
+          "deprecated": false
+        },
+        "3": {
+          "label": "Enkeltindvindingsanlæg",
+          "rawLabel": "Enkeltindvindingsanlæg",
+          "deprecated": false
+        },
+        "4": {
+          "label": "Brønd",
+          "rawLabel": "Brønd",
+          "deprecated": false
+        },
+        "6": {
+          "label": "Ikke alment vandforsyningsanlæg",
+          "rawLabel": "Ikke alment vandforsyningsanlæg",
+          "deprecated": false
+        },
+        "7": {
+          "label": "Vandforsyning er registreret på bygninger",
+          "rawLabel": "Vandforsyning er registreret på bygninger",
+          "deprecated": false
+        },
+        "9": {
+          "label": "Ingen vandforsyning",
+          "rawLabel": "Ingen vandforsyning",
+          "deprecated": false
+        }
+      }
+    },
+    "groundSewer": {
+      "sourceSlug": "GruAfloebsforhold",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/GruAfloebsforhold",
+      "entries": {
+        "1": {
+          "label": "Fælleskloakeret: spildevand + tag- og overfladevand",
+          "rawLabel": "Fælleskloakeret: spildevand + tag- og overfladevand",
+          "deprecated": false
+        },
+        "2": {
+          "label": "Fælleskloakeret: spildevand + delvis tag- og overfladevand",
+          "rawLabel": "Fælleskloakeret: spildevand + delvis tag- og overfladevand",
+          "deprecated": false
+        },
+        "3": {
+          "label": "Fælleskloakeret: spildevand",
+          "rawLabel": "Fælleskloakeret: spildevand",
+          "deprecated": false
+        },
+        "4": {
+          "label": "Fælleskloakeret: tag- og overfladevand",
+          "rawLabel": "Fælleskloakeret: tag- og overfladevand",
+          "deprecated": false
+        },
+        "5": {
+          "label": "Separatkloakeret: spildevand + tag- og overfladevand",
+          "rawLabel": "Separatkloakeret: spildevand + tag- og overfladevand",
+          "deprecated": false
+        },
+        "6": {
+          "label": "Separatkloakeret: spildevand + delvis tag- og overfladevand",
+          "rawLabel": "Separatkloakeret: spildevand + delvis tag- og overfladevand",
+          "deprecated": false
+        },
+        "7": {
+          "label": "Separatkloakeret: spildevand",
+          "rawLabel": "Separatkloakeret: spildevand",
+          "deprecated": false
+        },
+        "8": {
+          "label": "Separatkloakeret: tag- og overfladevand",
+          "rawLabel": "Separatkloakeret: tag- og overfladevand",
+          "deprecated": false
+        },
+        "9": {
+          "label": "Spildevandskloakeret: Spildevand",
+          "rawLabel": "Spildevandskloakeret: Spildevand",
+          "deprecated": false
+        },
+        "10": {
+          "label": "Afløb til offentligt kloaksystem",
+          "rawLabel": "Afløb til offentligt kloaksystem",
+          "deprecated": false
+        },
+        "11": {
+          "label": "Afløb til fællesprivat kloaksystem",
+          "rawLabel": "Afløb til fællesprivat kloaksystem",
+          "deprecated": false
+        },
+        "12": {
+          "label": "Afløb til fællesprivat kloaksystem med tilslutning til spildevandsforsyningens kloaksystem",
+          "rawLabel": "Afløb til fællesprivat kloaksystem med tilslutning til spildevandsforsyningens kloaksystem",
+          "deprecated": false
+        },
+        "20": {
+          "label": "Afløb til samletank",
+          "rawLabel": "Afløb til samletank",
+          "deprecated": false
+        },
+        "21": {
+          "label": "Afløb til samletank for toiletvand og mekanisk rensning af øvrigt spildevand",
+          "rawLabel": "Afløb til samletank for toiletvand og mekanisk rensning af øvrigt spildevand",
+          "deprecated": false
+        },
+        "29": {
+          "label": "Mekanisk rensning med nedsivningsanlæg med tilladelse",
+          "rawLabel": "Mekanisk rensning med nedsivningsanlæg med tilladelse",
+          "deprecated": false
+        },
+        "30": {
+          "label": "Mekanisk rensning med nedsivningsanlæg (tilladelse ikke påkrævet)",
+          "rawLabel": "Mekanisk rensning med nedsivningsanlæg (tilladelse ikke påkrævet)",
+          "deprecated": false
+        },
+        "31": {
+          "label": "Mekanisk rensning med privat udledning direkte til vandløb, søer eller havet",
+          "rawLabel": "Mekanisk rensning med privat udledning direkte til vandløb, søer eller havet",
+          "deprecated": false
+        },
+        "32": {
+          "label": "Mekanisk og biologisk rensning (ældre anlæg uden renseklasse)",
+          "rawLabel": "Mekanisk og biologisk rensning (ældre anlæg uden renseklasse)",
+          "deprecated": false
+        },
+        "70": {
+          "label": "Udledning uden rensning direkte til vandløb, søer eller havet",
+          "rawLabel": "Udledning uden rensning direkte til vandløb, søer eller havet",
+          "deprecated": false
+        },
+        "75": {
+          "label": "Afløbsforhold er registreret på bygninger",
+          "rawLabel": "Afløbsforhold er registreret på bygninger",
+          "deprecated": false
+        },
+        "80": {
+          "label": "Anden type afløb",
+          "rawLabel": "Anden type afløb",
+          "deprecated": false
+        },
+        "90": {
+          "label": "Ingen udledning",
+          "rawLabel": "Ingen udledning",
+          "deprecated": false
+        },
+        "101": {
+          "label": "SOP: Minirenseanlæg med direkte udledning",
+          "rawLabel": "SOP: Minirenseanlæg med direkte udledning",
+          "deprecated": false
+        },
+        "102": {
+          "label": "SOP: Minirenseanlæg med udledning til markdræn",
+          "rawLabel": "SOP: Minirenseanlæg med udledning til markdræn",
+          "deprecated": false
+        },
+        "103": {
+          "label": "SOP: Minirenseanlæg med nedsivning i faskine",
+          "rawLabel": "SOP: Minirenseanlæg med nedsivning i faskine",
+          "deprecated": false
+        },
+        "104": {
+          "label": "SOP: Nedsivning til sivedræn",
+          "rawLabel": "SOP: Nedsivning til sivedræn",
+          "deprecated": false
+        },
+        "105": {
+          "label": "SOP: Samletank",
+          "rawLabel": "SOP: Samletank",
+          "deprecated": false
+        },
+        "106": {
+          "label": "SOP: Pileanlæg med nedsivning (uden membran)",
+          "rawLabel": "SOP: Pileanlæg med nedsivning (uden membran)",
+          "deprecated": false
+        },
+        "107": {
+          "label": "SOP: Pileanlæg uden udledning (med membran)",
+          "rawLabel": "SOP: Pileanlæg uden udledning (med membran)",
+          "deprecated": false
+        },
+        "108": {
+          "label": "SOP: Beplantede filteranlæg med nedsivning i faskine",
+          "rawLabel": "SOP: Beplantede filteranlæg med nedsivning i faskine",
+          "deprecated": false
+        },
+        "109": {
+          "label": "SOP: Sandfiltre med P-fældning i bundfældningstanken og direkte udledning",
+          "rawLabel": "SOP: Sandfiltre med P-fældning i bundfældningstanken og direkte udledning",
+          "deprecated": false
+        },
+        "110": {
+          "label": "SOP: Sandfiltre med P-fældning i bundfældningstanken og udledning til markdræn",
+          "rawLabel": "SOP: Sandfiltre med P-fældning i bundfældningstanken og udledning til markdræn",
+          "deprecated": false
+        },
+        "190": {
+          "label": "SOP: Andet",
+          "rawLabel": "SOP: Andet",
+          "deprecated": false
+        },
+        "201": {
+          "label": "SO: Biologisk sandfilter med direkte udledning",
+          "rawLabel": "SO: Biologisk sandfilter med direkte udledning",
+          "deprecated": false
+        },
+        "202": {
+          "label": "SO: Biologisk sandfilter med udledning til markdræn",
+          "rawLabel": "SO: Biologisk sandfilter med udledning til markdræn",
+          "deprecated": false
+        },
+        "203": {
+          "label": "SO: Minirensanlæg med direkte udledning",
+          "rawLabel": "SO: Minirensanlæg med direkte udledning",
+          "deprecated": false
+        },
+        "204": {
+          "label": "SO: Minirenseanlæg med udledning til markdræn",
+          "rawLabel": "SO: Minirenseanlæg med udledning til markdræn",
+          "deprecated": false
+        },
+        "205": {
+          "label": "SO: Beplantede filteranlæg med direkte udledning",
+          "rawLabel": "SO: Beplantede filteranlæg med direkte udledning",
+          "deprecated": false
+        },
+        "206": {
+          "label": "SO: Beplantede filteranlæg med udledning til markdræn",
+          "rawLabel": "SO: Beplantede filteranlæg med udledning til markdræn",
+          "deprecated": false
+        },
+        "290": {
+          "label": "SO: Andet",
+          "rawLabel": "SO: Andet",
+          "deprecated": false
+        },
+        "301": {
+          "label": "OP: Minirenseanlæg med direkte udledning",
+          "rawLabel": "OP: Minirenseanlæg med direkte udledning",
+          "deprecated": false
+        },
+        "302": {
+          "label": "OP: Minirenseanlæg med udledning til markdræn",
+          "rawLabel": "OP: Minirenseanlæg med udledning til markdræn",
+          "deprecated": false
+        },
+        "390": {
+          "label": "OP: Andet",
+          "rawLabel": "OP: Andet",
+          "deprecated": false
+        },
+        "401": {
+          "label": "O: Rodzoneanlæg med direkte udledning",
+          "rawLabel": "O: Rodzoneanlæg med direkte udledning",
+          "deprecated": false
+        },
+        "402": {
+          "label": "O: Rodzoneanlæg med udledning til markdræn",
+          "rawLabel": "O: Rodzoneanlæg med udledning til markdræn",
+          "deprecated": false
+        },
+        "403": {
+          "label": "O: Minirenseanlæg med direkte udledning",
+          "rawLabel": "O: Minirenseanlæg med direkte udledning",
+          "deprecated": false
+        },
+        "404": {
+          "label": "O: Minirenseanlæg med udledning til markdræn",
+          "rawLabel": "O: Minirenseanlæg med udledning til markdræn",
+          "deprecated": false
+        },
+        "490": {
+          "label": "O: Andet",
+          "rawLabel": "O: Andet",
+          "deprecated": false
+        },
+        "501": {
+          "label": "Øvrige renseløsninger: Mekanisk med direkte udledning",
+          "rawLabel": "Øvrige renseløsninger: Mekanisk med direkte udledning",
+          "deprecated": false
+        },
+        "502": {
+          "label": "Øvrige renseløsninger: Mekanisk med udledning til markdræn",
+          "rawLabel": "Øvrige renseløsninger: Mekanisk med udledning til markdræn",
+          "deprecated": false
+        },
+        "503": {
+          "label": "Øvrige renseløsninger: Ældre nedsivningsanlæg med nedsivning til sivebrønd",
+          "rawLabel": "Øvrige renseløsninger: Ældre nedsivningsanlæg med nedsivning til sivebrønd",
+          "deprecated": false
+        },
+        "504": {
+          "label": "Udledning til jordoverfladen",
+          "rawLabel": "Udledning til jordoverfladen",
+          "deprecated": false
+        },
+        "505": {
+          "label": "Udledning urenset",
+          "rawLabel": "Udledning urenset",
+          "deprecated": false
+        },
+        "590": {
+          "label": "Øvrige renseløsninger: Andet",
+          "rawLabel": "Øvrige renseløsninger: Andet",
+          "deprecated": false
+        },
+        "601": {
+          "label": "Anden type afløb (større end 30 PE med egen udledning)",
+          "rawLabel": "Anden type afløb (større end 30 PE med egen udledning)",
+          "deprecated": false
+        },
+        "701": {
+          "label": "Intet afløb",
+          "rawLabel": "Intet afløb",
+          "deprecated": false
+        }
+      }
+    },
+    "propertyType": {
+      "sourceSlug": "Ejendomstype",
+      "sourceUrl": "https://teknik.bbr.dk/kodelister/0/1/0/Ejendomstype",
+      "entries": {
+        "1": {
+          "label": "Matrikuleret Areal",
+          "rawLabel": "Matrikuleret Areal",
+          "deprecated": false
+        },
+        "2": {
+          "label": "BPFG",
+          "rawLabel": "BPFG",
+          "deprecated": false
+        },
+        "3": {
+          "label": "Ejerlejlighed",
+          "rawLabel": "Ejerlejlighed",
+          "deprecated": false
+        }
+      }
+    }
+  },
+  "fieldMappings": {
+    "buildingUse": [
+      "byg021BygningensAnvendelse"
+    ],
+    "lifecycle": [
+      "sfeStatus",
+      "status"
+    ],
+    "outerWallMaterial": [
+      "byg032YdervaeggensMateriale"
+    ],
+    "supplementaryOuterWallMaterial": [
+      "byg034SupplerendeYdervaeggensMateriale"
+    ],
+    "roofMaterial": [
+      "byg033Tagdaekningsmateriale"
+    ],
+    "heatingInstallation": [
+      "byg056Varmeinstallation"
+    ],
+    "heatingSource": [
+      "byg057Opvarmningsmiddel"
+    ],
+    "supplementaryHeating": [
+      "byg058SupplerendeVarme"
+    ],
+    "unitUse": [
+      "enh020EnhedensAnvendelse"
+    ],
+    "unitHousingType": [
+      "enh023Boligtype"
+    ],
+    "unitAreaSource": [
+      "enh030KildeTilEnhedensArealer"
+    ],
+    "unitFlexHomePermission": [
+      "enh068FlexboligTilladelsesart"
+    ],
+    "unitAddressFunction": [
+      "enh071AdresseFunktion"
+    ],
+    "unitToilet": [
+      "enh032Toiletforhold"
+    ],
+    "unitBath": [
+      "enh033Badeforhold"
+    ],
+    "unitKitchen": [
+      "enh034Koekkenforhold"
+    ],
+    "floorType": [
+      "eta024EtageType"
+    ],
+    "groundWaterSupply": [
+      "gru009Vandforsyning"
+    ],
+    "groundSewer": [
+      "gru010Afloebsforhold"
+    ],
+    "propertyType": [
+      "sfeEjendomstype"
+    ]
+  }
+}

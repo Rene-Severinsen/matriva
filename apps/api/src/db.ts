@@ -9,6 +9,7 @@ import {
   appBootstrapResponseSchema,
   maintenanceHistoryEntrySchema,
   maintenanceHistoryDetailSchema,
+  maintenanceRecommendationOriginSnapshotSchema,
   maintenanceRecommendationSchema,
   currentUserSchema,
   houseDocumentSchema,
@@ -33,6 +34,7 @@ import type {
   MaintenanceHistoryQuery,
   MaintenanceHistoryDetail,
   MaintenanceRecommendation,
+  MaintenanceRecommendationDismissMode,
   MaintenanceTask,
   MaintenanceTaskStatus,
   MaintenanceTaskTiming,
@@ -45,6 +47,12 @@ import type {
   UpdateProfileRequest,
   UserProfile
 } from "@matriva/shared";
+import {
+  maintenanceCatalogItems,
+  recommendedPeriodLabel,
+  type MaintenanceCatalogItem,
+  type MaintenanceCatalogPeriod
+} from "./maintenance-catalog.ts";
 
 const { Pool } = pg;
 
@@ -126,16 +134,28 @@ type MaintenanceTaskRow = {
   component_key: string | null;
   archived_at: Date | null;
   recommendation_id: string | null;
+  origin_catalog_key: string | null;
+  origin_catalog_version: string | null;
+  origin_recommendation_instance_id: string | null;
+  origin_snapshot: unknown;
 };
 
 type MaintenanceRecommendationRow = {
   id: string;
   house_id: string;
+  catalog_key: string | null;
+  catalog_version: string | null;
   source_type: MaintenanceRecommendation["sourceType"];
   status: MaintenanceRecommendation["status"];
   title: string;
   description: string;
   recommended_timing_label: string;
+  recommended_period: MaintenanceRecommendation["recommendedPeriod"] | null;
+  period_key: string | null;
+  suggested_due_date: string | null;
+  priority: MaintenanceRecommendation["priority"] | null;
+  disclaimer_class: MaintenanceRecommendation["disclaimerClass"] | null;
+  why: string | null;
   timing_type: MaintenanceTaskTiming["type"];
   due_date: string | null;
   season: MaintenanceTaskTiming["season"] | null;
@@ -148,6 +168,22 @@ type MaintenanceRecommendationRow = {
   dismissed_at: Date | null;
   created_at: Date;
   updated_at: Date;
+};
+
+type MaintenanceCatalogItemRow = {
+  id: string;
+  catalog_key: string;
+  catalog_version: string;
+  title: string;
+  short_description: string;
+  component_key: string;
+  season: MaintenanceTaskTiming["season"];
+  recommended_period: MaintenanceCatalogPeriod;
+  default_recurrence_interval: string;
+  priority: MaintenanceRecommendation["priority"];
+  eligibility_rules: MaintenanceCatalogItem["eligibilityRules"];
+  disclaimer_class: MaintenanceRecommendation["disclaimerClass"];
+  is_active: boolean;
 };
 
 type MaintenanceCompletionRow = {
@@ -249,6 +285,8 @@ export function createOpaqueId(
     | "impr"
     | "media"
     | "mrec"
+    | "mcat"
+    | "mhide"
     | "mcomp"
     | "doc"
 ) {
@@ -311,6 +349,150 @@ function addDerivedTiming(
   return timing;
 }
 
+function maintenanceTaskReturningColumns() {
+  return `
+    id,
+    house_id,
+    title,
+    description,
+    source,
+    status,
+    timing_type,
+    to_char(due_date, 'YYYY-MM-DD') as due_date,
+    season,
+    price_amount_minor,
+    price_currency,
+    recommendation,
+    recurrence_interval,
+    recurrence_anchor,
+    component_key,
+    archived_at,
+    recommendation_id,
+    origin_catalog_key,
+    origin_catalog_version,
+    origin_recommendation_instance_id,
+    origin_snapshot,
+    created_at,
+    updated_at,
+    completed_at
+  `;
+}
+
+function maintenanceRecommendationReturningColumns() {
+  return `
+    id,
+    house_id,
+    catalog_key,
+    catalog_version,
+    source_type,
+    status,
+    title,
+    description,
+    recommended_timing_label,
+    recommended_period,
+    period_key,
+    to_char(suggested_due_date, 'YYYY-MM-DD') as suggested_due_date,
+    priority,
+    disclaimer_class,
+    why,
+    timing_type,
+    to_char(due_date, 'YYYY-MM-DD') as due_date,
+    season,
+    recurrence_interval,
+    recurrence_anchor,
+    component_key,
+    provenance,
+    recommendation_key,
+    accepted_task_id,
+    dismissed_at,
+    created_at,
+    updated_at
+  `;
+}
+
+function currentDateOnly() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function dateOnlyFromParts(year: number, month: number, day: number) {
+  return `${year}-${`${month}`.padStart(2, "0")}-${`${day}`.padStart(2, "0")}`;
+}
+
+function addDays(dateOnly: string, days: number) {
+  const date = new Date(`${dateOnly}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function periodKeyForCatalogItem(item: Pick<MaintenanceCatalogItemRow, "season">, today = currentDateOnly()) {
+  const year = Number(today.slice(0, 4));
+
+  if (item.season === "spring") {
+    return `${year}-spring`;
+  }
+
+  if (item.season === "autumn") {
+    return `${year}-autumn`;
+  }
+
+  return `${year}-all-year`;
+}
+
+function suggestedDueDateForCatalogItem(
+  item: Pick<MaintenanceCatalogItemRow, "season">,
+  today = currentDateOnly()
+) {
+  const year = Number(today.slice(0, 4));
+
+  if (item.season === "spring") {
+    const springEnd = dateOnlyFromParts(year, 5, 31);
+
+    if (today > springEnd) {
+      return null;
+    }
+
+    const springDefault = dateOnlyFromParts(year, 4, 15);
+    return today <= springDefault ? springDefault : addDays(today, 7) <= springEnd ? addDays(today, 7) : springEnd;
+  }
+
+  if (item.season === "autumn") {
+    const autumnEnd = dateOnlyFromParts(year, 11, 30);
+
+    if (today > autumnEnd) {
+      return null;
+    }
+
+    const autumnDefault = dateOnlyFromParts(year, 10, 15);
+    return today <= autumnDefault ? autumnDefault : addDays(today, 7) <= autumnEnd ? addDays(today, 7) : autumnEnd;
+  }
+
+  const yearEnd = dateOnlyFromParts(year, 12, 31);
+  const suggested = addDays(today, 30);
+  return suggested <= yearEnd ? suggested : yearEnd;
+}
+
+function evaluateCatalogEligibility(item: MaintenanceCatalogItemRow) {
+  if (item.eligibility_rules?.type !== "universal_house") {
+    return {
+      eligible: false,
+      snapshot: {
+        type: item.eligibility_rules?.type ?? "unknown",
+        eligible: false,
+        reason: "Ukendt eligibility-regel blev afvist."
+      }
+    };
+  }
+
+  return {
+    eligible: true,
+    snapshot: {
+      type: "universal_house",
+      eligible: true,
+      reason: "Generel vedligeholdelsesanbefaling for huset."
+    }
+  };
+}
+
 function toCurrentUser(row: UserRow): CurrentUser {
   return currentUserSchema.parse({
     id: row.id,
@@ -344,6 +526,10 @@ function toSavedHouse(row: HouseRow): SavedHouse {
 }
 
 function toMaintenanceTask(row: MaintenanceTaskRow): MaintenanceTask {
+  const parsedOriginSnapshot =
+    row.origin_snapshot === null || row.origin_snapshot === undefined
+      ? null
+      : maintenanceRecommendationOriginSnapshotSchema.safeParse(row.origin_snapshot);
   const timing = addDerivedTiming(
     {
       type: row.timing_type,
@@ -372,6 +558,13 @@ function toMaintenanceTask(row: MaintenanceTaskRow): MaintenanceTask {
       : null,
     componentKey: row.component_key,
     archivedAt: isoDate(row.archived_at),
+    originCatalogKey: row.origin_catalog_key,
+    originCatalogVersion: row.origin_catalog_version,
+    originRecommendationInstanceId: row.origin_recommendation_instance_id,
+    originSnapshot:
+      parsedOriginSnapshot && parsedOriginSnapshot.success
+        ? parsedOriginSnapshot.data
+        : null,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
     ...(row.completed_at ? { completedAt: row.completed_at.toISOString() } : {})
@@ -386,9 +579,23 @@ function toMaintenanceRecommendation(
     houseId: row.house_id,
     sourceType: row.source_type,
     status: row.status,
+    ...(row.catalog_key ? { catalogKey: row.catalog_key } : {}),
+    ...(row.catalog_version ? { catalogVersion: row.catalog_version } : {}),
     title: row.title,
     description: row.description,
     recommendedTimingLabel: row.recommended_timing_label,
+    ...(row.recommended_period ? { recommendedPeriod: row.recommended_period } : {}),
+    ...(row.period_key ? { periodKey: row.period_key } : {}),
+    ...(row.suggested_due_date ? { suggestedDueDate: row.suggested_due_date } : {}),
+    defaultRecurrence: row.recurrence_interval
+      ? {
+          interval: row.recurrence_interval,
+          anchor: row.recurrence_anchor ?? "completed_date"
+        }
+      : null,
+    ...(row.priority ? { priority: row.priority } : {}),
+    ...(row.disclaimer_class ? { disclaimerClass: row.disclaimer_class } : {}),
+    ...(row.why ? { why: row.why } : {}),
     timing: {
       type: row.timing_type,
       ...(row.due_date ? { dueDate: row.due_date } : {}),
@@ -957,26 +1164,7 @@ export async function createMaintenanceTaskForHouse(
       )
       values ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10, $11, $12, $13::jsonb, $14, $15, $16, $17)
       returning
-        id,
-        house_id,
-        title,
-        description,
-        source,
-        status,
-        timing_type,
-        to_char(due_date, 'YYYY-MM-DD') as due_date,
-        season,
-        price_amount_minor,
-        price_currency,
-        recommendation,
-        recurrence_interval,
-        recurrence_anchor,
-        component_key,
-        archived_at,
-        recommendation_id,
-        created_at,
-        updated_at,
-        completed_at
+        ${maintenanceTaskReturningColumns()}
     `,
     [
       createOpaqueId("task"),
@@ -1007,26 +1195,7 @@ export async function listMaintenanceTasksForHouse(userId: string, houseId: stri
   const result = await pool.query<MaintenanceTaskRow>(
     `
       select
-        id,
-        house_id,
-        title,
-        description,
-        source,
-        status,
-        timing_type,
-        to_char(due_date, 'YYYY-MM-DD') as due_date,
-        season,
-        price_amount_minor,
-        price_currency,
-        recommendation,
-        recurrence_interval,
-        recurrence_anchor,
-        component_key,
-        archived_at,
-        recommendation_id,
-        created_at,
-        updated_at,
-        completed_at
+        ${maintenanceTaskReturningColumns()}
       from maintenance_tasks
       where house_id = $1
         and deleted_at is null
@@ -1060,26 +1229,7 @@ export async function updateMaintenanceTaskStatus(
         updated_at = now()
       where id = $1 and house_id = $2
       returning
-        id,
-        house_id,
-        title,
-        description,
-        source,
-        status,
-        timing_type,
-        to_char(due_date, 'YYYY-MM-DD') as due_date,
-        season,
-        price_amount_minor,
-        price_currency,
-        recommendation,
-        recurrence_interval,
-        recurrence_anchor,
-        component_key,
-        archived_at,
-        recommendation_id,
-        created_at,
-        updated_at,
-        completed_at
+        ${maintenanceTaskReturningColumns()}
     `,
     [taskId, house.id, status]
   );
@@ -1121,26 +1271,7 @@ export async function getMaintenanceTaskForHouse(
   const result = await pool.query<MaintenanceTaskRow>(
     `
       select
-        id,
-        house_id,
-        title,
-        description,
-        source,
-        status,
-        timing_type,
-        to_char(due_date, 'YYYY-MM-DD') as due_date,
-        season,
-        price_amount_minor,
-        price_currency,
-        recommendation,
-        recurrence_interval,
-        recurrence_anchor,
-        component_key,
-        archived_at,
-        recommendation_id,
-        created_at,
-        updated_at,
-        completed_at
+        ${maintenanceTaskReturningColumns()}
       from maintenance_tasks
       where id = $1 and house_id = $2 and deleted_at is null
     `,
@@ -1185,26 +1316,7 @@ export async function updateMaintenanceTaskForHouse(
         updated_at = now()
       where id = $1 and house_id = $2 and deleted_at is null and archived_at is null
       returning
-        id,
-        house_id,
-        title,
-        description,
-        source,
-        status,
-        timing_type,
-        to_char(due_date, 'YYYY-MM-DD') as due_date,
-        season,
-        price_amount_minor,
-        price_currency,
-        recommendation,
-        recurrence_interval,
-        recurrence_anchor,
-        component_key,
-        archived_at,
-        recommendation_id,
-        created_at,
-        updated_at,
-        completed_at
+        ${maintenanceTaskReturningColumns()}
     `,
     [
       taskId,
@@ -1259,26 +1371,7 @@ export async function archiveMaintenanceTaskForHouse(
       set archived_at = now(), updated_at = now()
       where id = $1 and house_id = $2 and status <> 'done' and archived_at is null
       returning
-        id,
-        house_id,
-        title,
-        description,
-        source,
-        status,
-        timing_type,
-        to_char(due_date, 'YYYY-MM-DD') as due_date,
-        season,
-        price_amount_minor,
-        price_currency,
-        recommendation,
-        recurrence_interval,
-        recurrence_anchor,
-        component_key,
-        archived_at,
-        recommendation_id,
-        created_at,
-        updated_at,
-        completed_at
+        ${maintenanceTaskReturningColumns()}
     `,
     [taskId, existing.houseId]
   );
@@ -1290,94 +1383,213 @@ export async function archiveMaintenanceTaskForHouse(
   return toMaintenanceTask(result.rows[0] as MaintenanceTaskRow);
 }
 
-async function ensureCatalogRecommendations(userId: string, houseId: string) {
-  const catalog = [
-    {
-      key: "matriva.gutters.autumn.v1",
-      title: "Rens tagrender",
-      description: "Blade og snavs kan give overløb ved kraftig regn. Tjek tagrenderne før vinteren.",
-      timingLabel: "Efterår",
-      season: "autumn",
-      recurrenceInterval: "yearly",
-      componentKey: "roof"
-    },
-    {
-      key: "matriva.smoke_alarm.winter.v1",
-      title: "Test røgalarm",
-      description: "En kort test sikrer, at alarm og batteri stadig virker.",
-      timingLabel: "Vinter",
-      season: "winter",
-      recurrenceInterval: "half_yearly",
-      componentKey: "installations"
-    },
-    {
-      key: "matriva.facade.spring.v1",
-      title: "Gennemgå facade og sokkel",
-      description: "Frost og fugt kan give revner. En visuel gennemgang hjælper med at opdage små skader tidligt.",
-      timingLabel: "Forår",
-      season: "spring",
-      recurrenceInterval: "yearly",
-      componentKey: "facade"
-    }
-  ] as const;
+async function syncMaintenanceCatalogItems() {
+  for (const item of maintenanceCatalogItems) {
+    await pool.query(
+      `
+        insert into maintenance_catalog_items (
+          id,
+          catalog_key,
+          catalog_version,
+          title,
+          short_description,
+          component_key,
+          season,
+          recommended_period,
+          default_recurrence_interval,
+          priority,
+          eligibility_rules,
+          disclaimer_class,
+          is_active
+        )
+        values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11::jsonb, $12, $13)
+        on conflict (catalog_key, catalog_version) do update
+        set
+          title = excluded.title,
+          short_description = excluded.short_description,
+          component_key = excluded.component_key,
+          season = excluded.season,
+          recommended_period = excluded.recommended_period,
+          default_recurrence_interval = excluded.default_recurrence_interval,
+          priority = excluded.priority,
+          eligibility_rules = excluded.eligibility_rules,
+          disclaimer_class = excluded.disclaimer_class,
+          is_active = excluded.is_active,
+          updated_at = now()
+      `,
+      [
+        createOpaqueId("mcat"),
+        item.catalogKey,
+        item.catalogVersion,
+        item.title,
+        item.shortDescription,
+        item.componentKey,
+        item.season,
+        JSON.stringify(item.recommendedPeriod),
+        item.defaultRecurrenceInterval,
+        item.priority,
+        JSON.stringify(item.eligibilityRules),
+        item.disclaimerClass,
+        item.isActive
+      ]
+    );
+  }
+}
 
-  for (const item of catalog) {
+async function ensureMaintenanceRecommendationInstancesForHouse(
+  userId: string,
+  houseId: string
+) {
+  await syncMaintenanceCatalogItems();
+  const result = await pool.query<MaintenanceCatalogItemRow>(
+    `
+      select
+        id,
+        catalog_key,
+        catalog_version,
+        title,
+        short_description,
+        component_key,
+        season,
+        recommended_period,
+        default_recurrence_interval,
+        priority,
+        eligibility_rules,
+        disclaimer_class,
+        is_active
+      from maintenance_catalog_items
+      where is_active
+      order by catalog_key, catalog_version
+    `
+  );
+
+  for (const item of result.rows) {
+    const eligibility = evaluateCatalogEligibility(item);
+
+    if (!eligibility.eligible) {
+      continue;
+    }
+
+    const suggestedDueDate = suggestedDueDateForCatalogItem(item);
+
+    if (!suggestedDueDate) {
+      continue;
+    }
+
+    const periodKey = periodKeyForCatalogItem(item);
+    const blockers = await pool.query<{ id: string }>(
+      `
+        select h.id
+        from maintenance_recommendation_hides h
+        where h.house_id = $1
+          and h.catalog_key = $2
+          and h.unhidden_at is null
+        union all
+        select t.id
+        from maintenance_tasks t
+        where t.house_id = $1
+          and t.user_id = $3
+          and t.origin_catalog_key = $2
+          and t.deleted_at is null
+          and t.archived_at is null
+          and t.status <> 'done'
+        limit 1
+      `,
+      [houseId, item.catalog_key, userId]
+    );
+
+    if (blockers.rows[0]) {
+      continue;
+    }
+
     await pool.query(
       `
         insert into maintenance_recommendations (
           id,
           house_id,
           user_id,
+          catalog_item_id,
+          catalog_key,
+          catalog_version,
           source_type,
           title,
           description,
           recommended_timing_label,
+          recommended_period,
+          period_key,
+          suggested_due_date,
           timing_type,
+          due_date,
           season,
           recurrence_interval,
           recurrence_anchor,
           component_key,
           provenance,
+          eligibility_snapshot,
           recommendation_key,
-          version_key
+          version_key,
+          priority,
+          disclaimer_class,
+          why
         )
         values (
           $1,
           $2,
           $3,
-          'matriva_catalog',
           $4,
           $5,
           $6,
-          'seasonal_window',
+          'matriva_catalog',
           $7,
           $8,
-          'completed_date',
           $9,
           $10::jsonb,
           $11,
-          $12
+          $12::date,
+          'specific_deadline',
+          $12::date,
+          null,
+          $13,
+          'completed_date',
+          $14,
+          $15::jsonb,
+          $16::jsonb,
+          $5,
+          $17,
+          $18,
+          $19,
+          $20
         )
-        on conflict (house_id, version_key) do nothing
+        on conflict (house_id, catalog_item_id, period_key)
+        where catalog_item_id is not null and period_key is not null
+        do nothing
       `,
       [
         createOpaqueId("mrec"),
         houseId,
         userId,
+        item.id,
+        item.catalog_key,
+        item.catalog_version,
         item.title,
-        item.description,
-        item.timingLabel,
-        item.season,
-        item.recurrenceInterval,
-        item.componentKey,
+        item.short_description,
+        recommendedPeriodLabel(item.recommended_period),
+        JSON.stringify(item.recommended_period),
+        periodKey,
+        suggestedDueDate,
+        item.default_recurrence_interval,
+        item.component_key,
         JSON.stringify({
-          extractionMethod: "matriva_catalog_v1",
+          extractionMethod: "matriva_catalog",
           originalTitle: item.title,
-          originalDescription: item.description,
-          originalTiming: item.timingLabel
+          originalDescription: item.short_description,
+          originalTiming: recommendedPeriodLabel(item.recommended_period)
         }),
-        item.key,
-        item.key
+        JSON.stringify(eligibility.snapshot),
+        `${item.catalog_key}:${item.catalog_version}:${periodKey}`,
+        item.priority,
+        item.disclaimer_class,
+        eligibility.snapshot.reason
       ]
     );
   }
@@ -1388,32 +1600,17 @@ export async function listMaintenanceRecommendationsForHouse(
   houseId: string
 ) {
   const house = await getSavedHouse(userId, houseId);
-  await ensureCatalogRecommendations(userId, house.id);
+  await ensureMaintenanceRecommendationInstancesForHouse(userId, house.id);
   const result = await pool.query<MaintenanceRecommendationRow>(
     `
       select
-        id,
-        house_id,
-        source_type,
-        status,
-        title,
-        description,
-        recommended_timing_label,
-        timing_type,
-        to_char(due_date, 'YYYY-MM-DD') as due_date,
-        season,
-        recurrence_interval,
-        recurrence_anchor,
-        component_key,
-        provenance,
-        recommendation_key,
-        accepted_task_id,
-        dismissed_at,
-        created_at,
-        updated_at
+        ${maintenanceRecommendationReturningColumns()}
       from maintenance_recommendations
       where house_id = $1 and user_id = $2 and status = 'pending'
-      order by created_at desc
+      order by
+        suggested_due_date asc nulls last,
+        case priority when 'high' then 1 when 'normal' then 2 else 3 end,
+        created_at asc
     `,
     [house.id, userId]
   );
@@ -1435,25 +1632,7 @@ export async function acceptMaintenanceRecommendationForHouse(
     const recommendationResult = await client.query<MaintenanceRecommendationRow>(
       `
         select
-          id,
-          house_id,
-          source_type,
-          status,
-          title,
-          description,
-          recommended_timing_label,
-          timing_type,
-          to_char(due_date, 'YYYY-MM-DD') as due_date,
-          season,
-          recurrence_interval,
-          recurrence_anchor,
-          component_key,
-          provenance,
-          recommendation_key,
-          accepted_task_id,
-          dismissed_at,
-          created_at,
-          updated_at
+          ${maintenanceRecommendationReturningColumns()}
         from maintenance_recommendations
         where id = $1 and house_id = $2 and user_id = $3
         for update
@@ -1480,13 +1659,31 @@ export async function acceptMaintenanceRecommendationForHouse(
       throw new ApiError(409, "maintenance_recommendation_dismissed", "Forslaget er allerede afvist.");
     }
 
+    const selectedDueDate =
+      input.dueDate ??
+      (input.timing?.type === "specific_deadline" ? input.timing.dueDate : undefined);
+
+    if (!selectedDueDate) {
+      throw new ApiError(
+        400,
+        "maintenance_recommendation_due_date_required",
+        "Tilføj til vedligeholdelse kræver en valgt dato."
+      );
+    }
+
     const timing = input.timing ?? {
-      type: recommendation.timing_type,
-      ...(recommendation.due_date ? { dueDate: recommendation.due_date } : {}),
-      ...(recommendation.season ? { season: recommendation.season } : {})
+      type: "specific_deadline" as const,
+      dueDate: selectedDueDate
     };
     const recurrence = Object.prototype.hasOwnProperty.call(input, "recurrence")
       ? input.recurrence
+      : Object.prototype.hasOwnProperty.call(input, "recurrenceInterval")
+        ? input.recurrenceInterval
+          ? {
+              interval: input.recurrenceInterval,
+              anchor: "completed_date" as const
+            }
+          : null
       : recommendation.recurrence_interval
         ? {
             interval: recommendation.recurrence_interval,
@@ -1494,6 +1691,24 @@ export async function acceptMaintenanceRecommendationForHouse(
           }
         : null;
     const taskId = createOpaqueId("task");
+    const originSnapshot = {
+      title: recommendation.title,
+      shortDescription: recommendation.description,
+      componentKey: recommendation.component_key ?? "other",
+      season: recommendation.season ?? "all_year",
+      recommendedPeriod: recommendation.recommended_period ?? { type: "all_year" },
+      defaultRecurrence: recommendation.recurrence_interval
+        ? {
+            interval: recommendation.recurrence_interval,
+            anchor: recommendation.recurrence_anchor ?? "completed_date"
+          }
+        : null,
+      priority: recommendation.priority ?? "normal",
+      disclaimerClass: recommendation.disclaimer_class ?? "general",
+      catalogKey: recommendation.catalog_key ?? recommendation.recommendation_key,
+      catalogVersion: recommendation.catalog_version ?? recommendation.recommendation_key,
+      recommendationInstanceId: recommendation.id
+    };
     const taskResult = await client.query<MaintenanceTaskRow>(
       `
         insert into maintenance_tasks (
@@ -1511,30 +1726,15 @@ export async function acceptMaintenanceRecommendationForHouse(
           recommendation_id,
           recurrence_interval,
           recurrence_anchor,
-          component_key
-        )
-        values ($1, $2, $3, $4, $5, 'recommendation_accepted', 'planned', $6, $7::date, $8, $9::jsonb, $10, $11, $12, $13)
-        returning
-          id,
-          house_id,
-          title,
-          description,
-          source,
-          status,
-          timing_type,
-          to_char(due_date, 'YYYY-MM-DD') as due_date,
-          season,
-          price_amount_minor,
-          price_currency,
-          recommendation,
-          recurrence_interval,
-          recurrence_anchor,
           component_key,
-          archived_at,
-          recommendation_id,
-          created_at,
-          updated_at,
-          completed_at
+          origin_catalog_key,
+          origin_catalog_version,
+          origin_recommendation_instance_id,
+          origin_snapshot
+        )
+        values ($1, $2, $3, $4, $5, 'recommendation_accepted', 'planned', $6, $7::date, $8, $9::jsonb, $10, $11, $12, $13, $14, $15, $10, $16::jsonb)
+        returning
+          ${maintenanceTaskReturningColumns()}
       `,
       [
         taskId,
@@ -1548,6 +1748,9 @@ export async function acceptMaintenanceRecommendationForHouse(
         JSON.stringify({
           recommendationId: recommendation.id,
           recommendationKey: recommendation.recommendation_key,
+          catalogKey: originSnapshot.catalogKey,
+          catalogVersion: originSnapshot.catalogVersion,
+          recommendationInstanceId: recommendation.id,
           componentKey: recommendation.component_key ?? undefined,
           season: recommendation.season ?? undefined,
           reason: recommendation.description
@@ -1555,7 +1758,10 @@ export async function acceptMaintenanceRecommendationForHouse(
         recommendation.id,
         recurrence?.interval ?? null,
         recurrence?.anchor ?? null,
-        recommendation.component_key
+        recommendation.component_key,
+        originSnapshot.catalogKey,
+        originSnapshot.catalogVersion,
+        JSON.stringify(originSnapshot)
       ]
     );
 
@@ -1580,43 +1786,67 @@ export async function acceptMaintenanceRecommendationForHouse(
 export async function dismissMaintenanceRecommendationForHouse(
   userId: string,
   houseId: string,
-  recommendationId: string
+  recommendationId: string,
+  mode: MaintenanceRecommendationDismissMode = "not_now"
 ) {
   const house = await getSavedHouse(userId, houseId);
-  const result = await pool.query<MaintenanceRecommendationRow>(
-    `
-      update maintenance_recommendations
-      set status = 'dismissed', dismissed_at = coalesce(dismissed_at, now()), updated_at = now()
-      where id = $1 and house_id = $2 and user_id = $3 and status = 'pending'
-      returning
-        id,
-        house_id,
-        source_type,
-        status,
-        title,
-        description,
-        recommended_timing_label,
-        timing_type,
-        to_char(due_date, 'YYYY-MM-DD') as due_date,
-        season,
-        recurrence_interval,
-        recurrence_anchor,
-        component_key,
-        provenance,
-        recommendation_key,
-        accepted_task_id,
-        dismissed_at,
-        created_at,
-        updated_at
-    `,
-    [recommendationId, house.id, userId]
-  );
+  const client = await pool.connect();
 
-  if (!result.rows[0]) {
-    throw new ApiError(404, "maintenance_recommendation_not_found", "Forslaget blev ikke fundet.");
+  try {
+    await client.query("begin");
+    const existing = await client.query<MaintenanceRecommendationRow>(
+      `
+        select
+          ${maintenanceRecommendationReturningColumns()}
+        from maintenance_recommendations
+        where id = $1 and house_id = $2 and user_id = $3
+        for update
+      `,
+      [recommendationId, house.id, userId]
+    );
+    const recommendation = existing.rows[0];
+
+    if (!recommendation || recommendation.status !== "pending") {
+      throw new ApiError(404, "maintenance_recommendation_not_found", "Forslaget blev ikke fundet.");
+    }
+
+    if (mode === "hide_forever") {
+      const catalogKey = recommendation.catalog_key ?? recommendation.recommendation_key;
+      await client.query(
+        `
+          insert into maintenance_recommendation_hides (
+            id,
+            house_id,
+            catalog_key
+          )
+          values ($1, $2, $3)
+          on conflict (house_id, catalog_key) where unhidden_at is null do update
+          set hidden_at = coalesce(maintenance_recommendation_hides.hidden_at, now()),
+              updated_at = now()
+        `,
+        [createOpaqueId("mhide"), house.id, catalogKey]
+      );
+    }
+
+    const result = await client.query<MaintenanceRecommendationRow>(
+      `
+        update maintenance_recommendations
+        set status = 'dismissed', dismissed_at = coalesce(dismissed_at, now()), updated_at = now()
+        where id = $1 and house_id = $2 and user_id = $3 and status = 'pending'
+        returning
+          ${maintenanceRecommendationReturningColumns()}
+      `,
+      [recommendationId, house.id, userId]
+    );
+
+    await client.query("commit");
+    return toMaintenanceRecommendation(result.rows[0] as MaintenanceRecommendationRow);
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
   }
-
-  return toMaintenanceRecommendation(result.rows[0] as MaintenanceRecommendationRow);
 }
 
 export async function completeMaintenanceTaskForHouse(
@@ -1634,26 +1864,7 @@ export async function completeMaintenanceTaskForHouse(
     const taskResult = await client.query<MaintenanceTaskRow>(
       `
         select
-          id,
-          house_id,
-          title,
-          description,
-          source,
-          status,
-          timing_type,
-          to_char(due_date, 'YYYY-MM-DD') as due_date,
-          season,
-          price_amount_minor,
-          price_currency,
-          recommendation,
-          recurrence_interval,
-          recurrence_anchor,
-          component_key,
-          archived_at,
-          recommendation_id,
-          created_at,
-          updated_at,
-          completed_at
+          ${maintenanceTaskReturningColumns()}
         from maintenance_tasks
         where id = $1 and house_id = $2 and deleted_at is null and archived_at is null
         for update
@@ -1789,9 +2000,13 @@ export async function completeMaintenanceTaskForHouse(
               recommendation_id,
               recurrence_interval,
               recurrence_anchor,
-              component_key
+              component_key,
+              origin_catalog_key,
+              origin_catalog_version,
+              origin_recommendation_instance_id,
+              origin_snapshot
             )
-            values ($1, $2, $3, $4, $5, $6, 'planned', $7, $8::date, $9, $10, $11, $12::jsonb, $13, $14, $15, $16)
+            values ($1, $2, $3, $4, $5, $6, 'planned', $7, $8::date, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, $18, $19, $20::jsonb)
           `,
           [
             createOpaqueId("task"),
@@ -1809,7 +2024,11 @@ export async function completeMaintenanceTaskForHouse(
             task.recommendation_id,
             task.recurrence_interval,
             task.recurrence_anchor ?? "completed_date",
-            task.component_key
+            task.component_key,
+            task.origin_catalog_key,
+            task.origin_catalog_version,
+            task.origin_recommendation_instance_id,
+            task.origin_snapshot ? JSON.stringify(task.origin_snapshot) : null
           ]
         );
       }
@@ -1917,25 +2136,7 @@ export async function getMaintenanceHistoryEntryForHouse(
     const recommendationResult = await pool.query<MaintenanceRecommendationRow>(
       `
         select
-          id,
-          house_id,
-          source_type,
-          status,
-          title,
-          description,
-          recommended_timing_label,
-          timing_type,
-          to_char(due_date, 'YYYY-MM-DD') as due_date,
-          season,
-          recurrence_interval,
-          recurrence_anchor,
-          component_key,
-          provenance,
-          recommendation_key,
-          accepted_task_id,
-          dismissed_at,
-          created_at,
-          updated_at
+          ${maintenanceRecommendationReturningColumns()}
         from maintenance_recommendations
         where id = $1 and house_id = $2 and user_id = $3
       `,

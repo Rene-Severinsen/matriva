@@ -482,6 +482,80 @@ export const maintenanceRecurrenceSchema = z.object({
 
 export type MaintenanceRecurrence = z.infer<typeof maintenanceRecurrenceSchema>;
 
+export const maintenanceRecommendationPrioritySchema = z.enum([
+  "low",
+  "normal",
+  "high"
+]);
+
+export type MaintenanceRecommendationPriority = z.infer<
+  typeof maintenanceRecommendationPrioritySchema
+>;
+
+export const maintenanceRecommendationDismissModeSchema = z.enum([
+  "not_now",
+  "hide_forever"
+]);
+
+export type MaintenanceRecommendationDismissMode = z.infer<
+  typeof maintenanceRecommendationDismissModeSchema
+>;
+
+export const maintenanceRecommendationDisclaimerClassSchema = z.enum([
+  "general",
+  "safety",
+  "professional_review"
+]);
+
+export type MaintenanceRecommendationDisclaimerClass = z.infer<
+  typeof maintenanceRecommendationDisclaimerClassSchema
+>;
+
+export const maintenanceRecommendationPeriodSchema = z.union([
+  z.object({
+    type: z.literal("all_year")
+  }),
+  z.object({
+    type: z.literal("season"),
+    season: z.enum(["spring", "autumn"])
+  }),
+  z.object({
+    type: z.literal("month_range"),
+    startMonth: z.number().int().min(1).max(12),
+    endMonth: z.number().int().min(1).max(12)
+  })
+]);
+
+export type MaintenanceRecommendationPeriod = z.infer<
+  typeof maintenanceRecommendationPeriodSchema
+>;
+
+export const maintenanceCatalogEligibilityRuleSchema = z.object({
+  type: z.literal("universal_house")
+});
+
+export type MaintenanceCatalogEligibilityRule = z.infer<
+  typeof maintenanceCatalogEligibilityRuleSchema
+>;
+
+export const maintenanceRecommendationOriginSnapshotSchema = z.object({
+  title: z.string().min(1),
+  shortDescription: z.string().min(1),
+  componentKey: z.string().min(1),
+  season: maintenanceSeasonSchema,
+  recommendedPeriod: maintenanceRecommendationPeriodSchema,
+  defaultRecurrence: maintenanceRecurrenceSchema.nullable(),
+  priority: maintenanceRecommendationPrioritySchema,
+  disclaimerClass: maintenanceRecommendationDisclaimerClassSchema,
+  catalogKey: z.string().min(1),
+  catalogVersion: z.string().min(1),
+  recommendationInstanceId: maintenanceRecommendationIdSchema
+});
+
+export type MaintenanceRecommendationOriginSnapshot = z.infer<
+  typeof maintenanceRecommendationOriginSnapshotSchema
+>;
+
 export const dkkCurrencySchema = z.literal("DKK");
 
 export type DkkCurrency = z.infer<typeof dkkCurrencySchema>;
@@ -601,6 +675,9 @@ export type MaintenanceTaskTiming = z.infer<
 export const recommendedMaintenanceTaskMetadataSchema = z.object({
   recommendationKey: z.string().min(1),
   recommendationId: maintenanceRecommendationIdSchema.optional(),
+  catalogKey: z.string().min(1).optional(),
+  catalogVersion: z.string().min(1).optional(),
+  recommendationInstanceId: maintenanceRecommendationIdSchema.optional(),
   componentKey: z.string().min(1).optional(),
   housingTypeKey: z.string().min(1).optional(),
   season: maintenanceSeasonSchema.optional(),
@@ -625,6 +702,10 @@ export const maintenanceTaskSchema = z
     recommendation: recommendedMaintenanceTaskMetadataSchema.optional(),
     recurrence: maintenanceRecurrenceSchema.nullable().optional(),
     componentKey: z.string().min(1).nullable().optional(),
+    originCatalogKey: z.string().min(1).nullable().optional(),
+    originCatalogVersion: z.string().min(1).nullable().optional(),
+    originRecommendationInstanceId: maintenanceRecommendationIdSchema.nullable().optional(),
+    originSnapshot: maintenanceRecommendationOriginSnapshotSchema.nullable().optional(),
     archivedAt: z.string().datetime().nullable().optional(),
     createdAt: z.string().datetime().optional(),
     updatedAt: z.string().datetime().optional(),
@@ -1029,9 +1110,18 @@ export const maintenanceRecommendationSchema = z.object({
   houseId: houseIdSchema,
   sourceType: maintenanceRecommendationSourceTypeSchema,
   status: maintenanceRecommendationStatusSchema,
+  catalogKey: z.string().min(1).optional(),
+  catalogVersion: z.string().min(1).optional(),
   title: z.string().min(1),
   description: z.string().min(1),
   recommendedTimingLabel: z.string().min(1),
+  recommendedPeriod: maintenanceRecommendationPeriodSchema.optional(),
+  periodKey: z.string().min(1).optional(),
+  suggestedDueDate: z.string().date().optional(),
+  defaultRecurrence: maintenanceRecurrenceSchema.nullable().optional(),
+  priority: maintenanceRecommendationPrioritySchema.optional(),
+  disclaimerClass: maintenanceRecommendationDisclaimerClassSchema.optional(),
+  why: z.string().min(1).optional(),
   timing: createMaintenanceTaskTimingSchema,
   recurrence: maintenanceRecurrenceSchema.nullable(),
   componentKey: z.string().min(1).nullable(),
@@ -1057,6 +1147,8 @@ export type MaintenanceRecommendationsResponse = z.infer<
 >;
 
 export const acceptMaintenanceRecommendationRequestSchema = z.object({
+  dueDate: z.string().date().optional(),
+  recurrenceInterval: maintenanceRecurrenceIntervalSchema.nullable().optional(),
   timing: createMaintenanceTaskTimingSchema.optional(),
   description: z.string().trim().min(1).optional(),
   recurrence: maintenanceRecurrenceSchema.nullable().optional()
@@ -1064,6 +1156,14 @@ export const acceptMaintenanceRecommendationRequestSchema = z.object({
 
 export type AcceptMaintenanceRecommendationRequest = z.infer<
   typeof acceptMaintenanceRecommendationRequestSchema
+>;
+
+export const dismissMaintenanceRecommendationRequestSchema = z.object({
+  mode: maintenanceRecommendationDismissModeSchema.default("not_now")
+});
+
+export type DismissMaintenanceRecommendationRequest = z.infer<
+  typeof dismissMaintenanceRecommendationRequestSchema
 >;
 
 export const dismissMaintenanceRecommendationResponseSchema = z.object({

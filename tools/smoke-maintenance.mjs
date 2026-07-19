@@ -233,19 +233,34 @@ async function runSmoke() {
   );
   assert(recommendations.recommendations.length > 0, "Recommendations must be returned.");
   assert(
+    recommendations.recommendations.some((item) => item.catalogKey === "smoke_alarm_check"),
+    "Generic V1 catalog recommendations must be returned."
+  );
+  assert(
+    recommendations.recommendations.every((item) => item.suggestedDueDate && item.periodKey),
+    "Recommendations must include suggested dates and period keys."
+  );
+  assert(
+    recommendations.recommendations.every((item) =>
+      ["roof", "facade", "windows", "doors", "foundation", "drainage", "heating", "plumbing", "electricity", "interior", "garden", "other", "none"].includes(item.componentKey)
+    ),
+    "Recommendations must use approved maintenance component keys."
+  );
+  assert(
     recommendations.recommendations[0].provenance.originalTitle,
     "Recommendation provenance must be preserved."
   );
 
   const recommendation = recommendations.recommendations[0];
+  const initialRecommendationCount = recommendations.recommendations.length;
   const accepted = await fetchJson(
     `/v1/houses/${houseId}/maintenance-recommendations/${recommendation.id}/accept`,
     {
       method: "POST",
       headers: authHeaders(session, { "content-type": "application/json" }),
       body: JSON.stringify({
-        timing: { type: "specific_deadline", dueDate: "2026-09-15" },
-        recurrence: recommendation.recurrence
+        dueDate: "2026-09-15",
+        recurrenceInterval: recommendation.defaultRecurrence?.interval ?? recommendation.recurrence?.interval ?? "yearly"
       })
     }
   );
@@ -255,8 +270,8 @@ async function runSmoke() {
       method: "POST",
       headers: authHeaders(session, { "content-type": "application/json" }),
       body: JSON.stringify({
-        timing: { type: "specific_deadline", dueDate: "2026-09-15" },
-        recurrence: recommendation.recurrence
+        dueDate: "2026-09-15",
+        recurrenceInterval: recommendation.defaultRecurrence?.interval ?? recommendation.recurrence?.interval ?? "yearly"
       })
     }
   );
@@ -266,8 +281,20 @@ async function runSmoke() {
   );
   assert(
     accepted.task.timing.type === "specific_deadline" &&
-      accepted.task.timing.dueDate === "2026-09-15",
+    accepted.task.timing.dueDate === "2026-09-15",
     "Accepted recommendations must support concrete user-selected dates."
+  );
+  assert(
+    accepted.task.originCatalogKey === recommendation.catalogKey,
+    "Accepted recommendation tasks must preserve origin catalog key."
+  );
+  assert(
+    accepted.task.originRecommendationInstanceId === recommendation.id,
+    "Accepted recommendation tasks must preserve origin recommendation instance."
+  );
+  assert(
+    accepted.task.originSnapshot?.catalogKey === recommendation.catalogKey,
+    "Accepted recommendation tasks must snapshot catalog metadata."
   );
   const acceptedCompletion = await fetchJson(
     `/v1/houses/${houseId}/maintenance-tasks/${accepted.task.id}/complete`,
@@ -286,6 +313,24 @@ async function runSmoke() {
     !afterAcceptedCompletionTasks.tasks.some((item) => item.id === accepted.task.id),
     "Completed recommendation task must leave the active plan."
   );
+  const acceptedSuccessor = afterAcceptedCompletionTasks.tasks.find(
+    (item) => item.originCatalogKey === recommendation.catalogKey
+  );
+  assert(acceptedSuccessor, "Recurring accepted recommendation must create a successor.");
+  assert(
+    acceptedSuccessor.originSnapshot?.catalogKey === recommendation.catalogKey,
+    "Recurring successor must inherit origin snapshot."
+  );
+  const afterSuccessorRecommendations = await fetchJson(
+    `/v1/houses/${houseId}/maintenance-recommendations`,
+    { headers: authHeaders(session) }
+  );
+  assert(
+    !afterSuccessorRecommendations.recommendations.some(
+      (item) => item.catalogKey === recommendation.catalogKey
+    ),
+    "Active accepted successor must block parallel catalog recommendations."
+  );
 
   const remainingRecommendations = await fetchJson(
     `/v1/houses/${houseId}/maintenance-recommendations`,
@@ -298,7 +343,7 @@ async function runSmoke() {
       {
         method: "POST",
         headers: authHeaders(session, { "content-type": "application/json" }),
-        body: JSON.stringify({})
+        body: JSON.stringify({ mode: "not_now" })
       }
     );
     const afterDismiss = await fetchJson(
@@ -310,6 +355,33 @@ async function runSmoke() {
       "Dismissed recommendation must be hidden."
     );
   }
+
+  const hideCandidates = await fetchJson(
+    `/v1/houses/${houseId}/maintenance-recommendations`,
+    { headers: authHeaders(session) }
+  );
+  const hideTarget = hideCandidates.recommendations.find(
+    (item) => item.catalogKey !== recommendation.catalogKey
+  );
+  if (hideTarget) {
+    await fetchJson(
+      `/v1/houses/${houseId}/maintenance-recommendations/${hideTarget.id}/dismiss`,
+      {
+        method: "POST",
+        headers: authHeaders(session, { "content-type": "application/json" }),
+        body: JSON.stringify({ mode: "hide_forever" })
+      }
+    );
+    const afterHide = await fetchJson(
+      `/v1/houses/${houseId}/maintenance-recommendations`,
+      { headers: authHeaders(session) }
+    );
+    assert(
+      !afterHide.recommendations.some((item) => item.catalogKey === hideTarget.catalogKey),
+      "Permanently hidden catalog recommendation must not be shown again for the house."
+    );
+  }
+  assert(initialRecommendationCount >= 6, "Smoke should exercise multiple generic catalog items.");
 
   const task = await fetchJson(`/v1/houses/${houseId}/maintenance-tasks`, {
     method: "POST",

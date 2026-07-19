@@ -59,7 +59,7 @@ import { clearStoredSession, readStoredSession, writeStoredSession } from "./aut
 type TabKey = "dashboard" | "house" | "maintenance" | "documents" | "more";
 type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" | "publicData" | "improvement" | "photo" | "recommendation" | "logout";
 type MaintenanceFilter = "current" | "spring" | "summer" | "autumn" | "winter" | "all";
-type MaintenanceView = "main" | "history" | "historyDetail" | "taskDetail";
+type MaintenanceView = "main" | "history" | "historyDetail" | "taskDetail" | "recommendations";
 type AuthStatus = "restoring" | "anonymous" | "authenticated";
 type MoreView = "menu" | "profile";
 type HouseView = "overview" | "details" | "improvements" | "addImprovement";
@@ -167,6 +167,29 @@ function isTaskOverdueForDisplay(task: MaintenanceTask) {
     !!task.timing.dueDate &&
     task.timing.dueDate < todayDateOnly()
   );
+}
+
+function maintenanceTaskDueDate(task: MaintenanceTask) {
+  return task.timing.type === "specific_deadline" ? task.timing.dueDate ?? null : null;
+}
+
+function compareMaintenanceTasksByDueDate(a: MaintenanceTask, b: MaintenanceTask) {
+  const aDueDate = maintenanceTaskDueDate(a);
+  const bDueDate = maintenanceTaskDueDate(b);
+
+  if (aDueDate && bDueDate && aDueDate !== bDueDate) {
+    return aDueDate.localeCompare(bDueDate);
+  }
+
+  if (aDueDate && !bDueDate) {
+    return -1;
+  }
+
+  if (!aDueDate && bDueDate) {
+    return 1;
+  }
+
+  return a.title.localeCompare(b.title, "da");
 }
 
 function formatTiming(task: MaintenanceTask) {
@@ -1909,15 +1932,15 @@ const maintenanceComponentOptions = [
   { key: "", label: "Ingen" },
   { key: "roof", label: "Tag" },
   { key: "facade", label: "Facade" },
-  { key: "windows_doors", label: "Vinduer og døre" },
-  { key: "foundation_plinth", label: "Fundament og sokkel" },
-  { key: "installations", label: "Installationer" },
-  { key: "heating_ventilation", label: "Varme og ventilation" },
+  { key: "windows", label: "Vinduer" },
+  { key: "doors", label: "Døre" },
+  { key: "foundation", label: "Fundament" },
+  { key: "drainage", label: "Afvanding" },
+  { key: "heating", label: "Varme" },
+  { key: "plumbing", label: "Vand og rør" },
+  { key: "electricity", label: "El" },
   { key: "interior", label: "Indvendigt" },
-  { key: "kitchen", label: "Køkken" },
-  { key: "bathroom", label: "Bad" },
-  { key: "outdoor_areas", label: "Udearealer" },
-  { key: "garage_carport", label: "Garage og carport" },
+  { key: "garden", label: "Have" },
   { key: "other", label: "Andet" }
 ] as const;
 
@@ -1980,13 +2003,16 @@ function RecommendationCard({
   onAccept: (recommendation: MaintenanceRecommendation) => void;
   onDismiss: (recommendation: MaintenanceRecommendation) => void;
 }) {
+  const componentLabel = maintenanceComponentLabel(recommendation.componentKey);
+  const timingText = recommendation.recommendedTimingLabel;
+  const meta = [timingText, componentLabel].filter(Boolean).join(" · ");
+
   return (
     <View style={styles.taskRow}>
       <View style={styles.taskRowBody}>
         <Text style={styles.taskRowTitle}>{recommendation.title}</Text>
-        <Text style={styles.taskTiming}>{recommendation.recommendedTimingLabel}</Text>
+        <Text style={styles.taskTiming}>{meta}</Text>
         <Text style={styles.compactBodyText}>{recommendation.description}</Text>
-        <Text style={styles.metaText}>Kilde: Matriva-katalog</Text>
       </View>
       <View style={styles.recommendationActions}>
         <SecondaryButton
@@ -2087,6 +2113,7 @@ function MaintenanceScreen({
   onHistoryYearFilterChange,
   onHistoryComponentFilterChange,
   onOpenFullHistory,
+  onOpenAllRecommendations,
   onBackToMaintenance,
   onOpenTaskDetail,
   onOpenHistoryDetail,
@@ -2134,6 +2161,7 @@ function MaintenanceScreen({
   onHistoryYearFilterChange: (year: number | null) => void;
   onHistoryComponentFilterChange: (componentKey: string | null) => void;
   onOpenFullHistory: () => void;
+  onOpenAllRecommendations: () => void;
   onBackToMaintenance: () => void;
   onOpenTaskDetail: (task: MaintenanceTask) => void;
   onOpenHistoryDetail: (entry: MaintenanceHistoryEntry) => void;
@@ -2451,6 +2479,40 @@ function MaintenanceScreen({
     );
   }
 
+  if (view === "recommendations") {
+    return (
+      <View style={styles.stack}>
+        <SecondaryButton label="Tilbage" onPress={onBackToMaintenance} />
+        <SectionHeader
+          title="Anbefalet til dit hus"
+          subtitle="Generelle forslag fra Matriva-kataloget."
+        />
+        <Text style={styles.compactBodyText}>
+          Matrivas anbefalinger er generelle forslag. Følg altid producentens anvisninger,
+          og kontakt en fagperson ved tvivl.
+        </Text>
+        {recommendations.length > 0 ? (
+          <View style={styles.taskList}>
+            {recommendations.map((recommendation) => (
+              <RecommendationCard
+                isSaving={isSaving}
+                key={recommendation.id}
+                onAccept={onAcceptRecommendation}
+                onDismiss={onDismissRecommendation}
+                recommendation={recommendation}
+              />
+            ))}
+          </View>
+        ) : (
+          <EmptyState
+            title="Ingen nye anbefalinger lige nu"
+            body="Vi viser nye forslag, når de bliver relevante for dit hus og perioden."
+          />
+        )}
+      </View>
+    );
+  }
+
   if (view === "historyDetail" && historyDetail) {
     const detailMeta = [
       historyDetail.note,
@@ -2584,14 +2646,14 @@ function MaintenanceScreen({
       return true;
     });
   const overdueTasks = takeSectionTasks(
-    filteredTasks.filter((task) => task.status === "overdue" || !!task.timing.daysOverdue)
+    activeTasks.filter(isTaskOverdueForDisplay).sort(compareMaintenanceTasksByDueDate)
   );
   const soonTasks = takeSectionTasks(
     filteredTasks.filter(
       (task) =>
         task.timing.daysUntilDue !== undefined &&
         task.timing.daysUntilDue <= 30
-    )
+    ).sort(compareMaintenanceTasksByDueDate)
   );
   const seasonalTasks = takeSectionTasks(
     filteredTasks.filter(
@@ -2612,6 +2674,8 @@ function MaintenanceScreen({
   );
   const laterTasks = takeSectionTasks(filteredTasks);
   const latestHistory = history.slice(0, 3);
+  const visibleRecommendations = recommendations.slice(0, 3);
+  const hiddenRecommendationCount = Math.max(recommendations.length - visibleRecommendations.length, 0);
 
   return (
     <View style={styles.stack}>
@@ -2627,35 +2691,29 @@ function MaintenanceScreen({
         {!showForm ? <SecondaryButton label="Opret opgave" onPress={onShowForm} /> : null}
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.filterScroll}
-      >
-        <View style={styles.filterChipRow}>
-          {maintenanceFilters.map((item) => {
-            const selected = item.key === filter;
+      <View style={styles.maintenanceFilterGrid}>
+        {maintenanceFilters.map((item) => {
+          const selected = item.key === filter;
 
-            return (
-              <Pressable
-                accessibilityRole="button"
-                key={item.key}
-                onPress={() => onFilterChange(item.key)}
-                style={[styles.filterChip, selected ? styles.filterChipSelected : null]}
+          return (
+            <Pressable
+              accessibilityRole="button"
+              key={item.key}
+              onPress={() => onFilterChange(item.key)}
+              style={[styles.filterChip, selected ? styles.filterChipSelected : null]}
+            >
+              <Text
+                style={[
+                  styles.filterChipText,
+                  selected ? styles.filterChipTextSelected : null
+                ]}
               >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    selected ? styles.filterChipTextSelected : null
-                  ]}
-                >
-                  {item.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
+                {item.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
 
       {showForm ? (
         <Card variant="plain">
@@ -2871,7 +2929,11 @@ function MaintenanceScreen({
           {recommendations.length > 0 ? (
             <View style={styles.taskList}>
               <Text style={styles.sectionEyebrow}>Anbefalet til dit hus</Text>
-              {recommendations.map((recommendation) => (
+              <Text style={styles.compactBodyText}>
+                Matrivas anbefalinger er generelle forslag. Følg altid producentens anvisninger,
+                og kontakt en fagperson ved tvivl.
+              </Text>
+              {visibleRecommendations.map((recommendation) => (
                 <RecommendationCard
                   isSaving={isSaving}
                   key={recommendation.id}
@@ -2880,6 +2942,12 @@ function MaintenanceScreen({
                   recommendation={recommendation}
                 />
               ))}
+              {hiddenRecommendationCount > 0 ? (
+                <SecondaryButton
+                  label={`Vis alle (${recommendations.length})`}
+                  onPress={onOpenAllRecommendations}
+                />
+              ) : null}
             </View>
           ) : (
             <EmptyState
@@ -3328,11 +3396,6 @@ export default function App() {
   const [historyYearFilter, setHistoryYearFilter] = useState<number | null>(null);
   const [historyComponentFilter, setHistoryComponentFilter] =
     useState<string | null>(null);
-  const [pendingRecommendationAccept, setPendingRecommendationAccept] =
-    useState<MaintenanceRecommendation | null>(null);
-  const [recommendationAcceptDate, setRecommendationAcceptDate] = useState("");
-  const [showRecommendationDatePicker, setShowRecommendationDatePicker] =
-    useState(false);
   const [improvements, setImprovements] = useState<HouseImprovement[]>([]);
   const [housePhoto, setHousePhoto] = useState<HouseMedia | null>(null);
   const [query, setQuery] = useState("");
@@ -3402,9 +3465,6 @@ export default function App() {
     setError(null);
     setShowTaskForm(false);
     setShowDeadlinePicker(false);
-    setPendingRecommendationAccept(null);
-    setRecommendationAcceptDate("");
-    setShowRecommendationDatePicker(false);
     setCompletingTaskId(null);
     setTaskTitle("");
     setTaskDescription("");
@@ -4139,13 +4199,16 @@ export default function App() {
       return;
     }
 
-    if (
-      recommendation.timing.type !== "specific_deadline" ||
-      !recommendation.timing.dueDate
-    ) {
-      setPendingRecommendationAccept(recommendation);
-      setRecommendationAcceptDate("");
-      setShowRecommendationDatePicker(true);
+    const dueDate =
+      recommendation.suggestedDueDate ??
+      (recommendation.timing.type === "specific_deadline"
+        ? recommendation.timing.dueDate ?? ""
+        : "");
+    const recurrenceInterval =
+      recommendation.defaultRecurrence?.interval ?? recommendation.recurrence?.interval ?? null;
+
+    if (!dueDate) {
+      setError("Anbefalingen mangler en foreslået periode. Prøv at hente anbefalinger igen.");
       return;
     }
 
@@ -4157,37 +4220,10 @@ export default function App() {
         selectedHouse.id,
         recommendation.id,
         {
-          timing: recommendation.timing,
-          recurrence: recommendation.recurrence
+          dueDate,
+          recurrenceInterval
         }
       );
-      await loadMaintenanceV1(selectedHouse.id);
-    } catch (caughtError) {
-      setError(userFacingError(caughtError));
-    } finally {
-      setLoadingAction(null);
-    }
-  }
-
-  async function acceptRecommendationWithDate(dateOnly: string) {
-    if (!selectedHouse || !pendingRecommendationAccept) {
-      return;
-    }
-
-    setLoadingAction("recommendation");
-    setError(null);
-
-    try {
-      await apiClient.acceptMaintenanceRecommendation(
-        selectedHouse.id,
-        pendingRecommendationAccept.id,
-        {
-          timing: { type: "specific_deadline", dueDate: dateOnly },
-          recurrence: pendingRecommendationAccept.recurrence
-        }
-      );
-      setPendingRecommendationAccept(null);
-      setRecommendationAcceptDate("");
       await loadMaintenanceV1(selectedHouse.id);
     } catch (caughtError) {
       setError(userFacingError(caughtError));
@@ -4202,11 +4238,35 @@ export default function App() {
       return;
     }
 
+    Alert.alert("Afvis anbefaling", "Hvordan vil du skjule anbefalingen?", [
+      { text: "Annuller", style: "cancel" },
+      {
+        text: "Ikke nu",
+        onPress: () => void dismissRecommendationWithMode(recommendation, "not_now")
+      },
+      {
+        text: "Vis ikke igen",
+        style: "destructive",
+        onPress: () => void dismissRecommendationWithMode(recommendation, "hide_forever")
+      }
+    ]);
+  }
+
+  async function dismissRecommendationWithMode(
+    recommendation: MaintenanceRecommendation,
+    mode: "not_now" | "hide_forever"
+  ) {
+    if (!selectedHouse) {
+      return;
+    }
+
     setLoadingAction("recommendation");
     setError(null);
 
     try {
-      await apiClient.dismissMaintenanceRecommendation(selectedHouse.id, recommendation.id);
+      await apiClient.dismissMaintenanceRecommendation(selectedHouse.id, recommendation.id, {
+        mode
+      });
       await loadMaintenanceV1(selectedHouse.id);
     } catch (caughtError) {
       setError(userFacingError(caughtError));
@@ -4556,6 +4616,7 @@ export default function App() {
           onHistoryYearFilterChange={setHistoryYearFilter}
           onHistoryComponentFilterChange={setHistoryComponentFilter}
           onOpenFullHistory={() => setMaintenanceView("history")}
+          onOpenAllRecommendations={() => setMaintenanceView("recommendations")}
           onBackToMaintenance={() => {
             setMaintenanceView("main");
             setSelectedHistoryDetail(null);
@@ -4794,25 +4855,6 @@ export default function App() {
           ) : null}
           {renderActiveScreen()}
         </ScrollView>
-        <DeadlineDatePicker
-          visible={showRecommendationDatePicker}
-          selectedDate={recommendationAcceptDate}
-          onClose={() => {
-            setShowRecommendationDatePicker(false);
-            if (!recommendationAcceptDate) {
-              setPendingRecommendationAccept(null);
-            }
-          }}
-          onClear={() => {
-            setRecommendationAcceptDate("");
-            setShowRecommendationDatePicker(false);
-          }}
-          onSelect={(value) => {
-            setRecommendationAcceptDate(value);
-            setShowRecommendationDatePicker(false);
-            void acceptRecommendationWithDate(value);
-          }}
-        />
         <View style={styles.tabBar}>
           {tabs.map((tab) => {
             const isActive = activeTab === tab.key;
@@ -5233,6 +5275,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     paddingHorizontal: 2,
     paddingVertical: 2
+  },
+  maintenanceFilterGrid: {
+    columnGap: 8,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    rowGap: 8
   },
   filterChip: {
     backgroundColor: theme.surface,

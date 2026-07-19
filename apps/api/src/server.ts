@@ -17,6 +17,7 @@ import {
   createMaintenanceTaskRequestSchema,
   acceptMaintenanceRecommendationRequestSchema,
   completeMaintenanceTaskRequestSchema,
+  dismissMaintenanceRecommendationRequestSchema,
   dismissMaintenanceRecommendationResponseSchema,
   createSavedHouseRequestSchema,
   enrichHouseDraftRequestSchema,
@@ -1655,10 +1656,25 @@ const server = createServer((request, response) => {
           return;
         }
 
+        const payload = await readJsonBody(request);
+        const parsedRequest =
+          dismissMaintenanceRecommendationRequestSchema.safeParse(payload ?? {});
+
+        if (!parsedRequest.success) {
+          writeApiError(
+            response,
+            400,
+            "maintenance_recommendation_dismiss_invalid",
+            "Afvisning kræver en gyldig handling."
+          );
+          return;
+        }
+
         const recommendation = await dismissMaintenanceRecommendationForHouse(
           userId,
           parsedHouseId.data,
-          parsedRecommendationId.data
+          parsedRecommendationId.data,
+          parsedRequest.data.mode
         );
         writeJson(
           response,

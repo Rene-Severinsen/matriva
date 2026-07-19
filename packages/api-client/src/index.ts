@@ -55,6 +55,7 @@ import {
   type MaintenanceHistoryQuery,
   type MaintenanceCompletionId,
   type MaintenanceRecommendationId,
+  type DismissMaintenanceRecommendationRequest,
   type MaintenanceRecommendationsResponse,
   type MoveMaintenanceTaskRequest,
   type RefreshSessionRequest,
@@ -176,7 +177,8 @@ export type MatrivaApiClient = {
   ) => Promise<MaintenanceTaskResponse>;
   dismissMaintenanceRecommendation: (
     houseId: HouseId,
-    recommendationId: MaintenanceRecommendationId
+    recommendationId: MaintenanceRecommendationId,
+    input?: DismissMaintenanceRecommendationRequest
   ) => Promise<unknown>;
   listHouseImprovements: (
     houseId: HouseId
@@ -642,7 +644,7 @@ export function createMatrivaApiClient(
         await parseApiResponse(response, "Could not accept maintenance recommendation.")
       );
     },
-    async dismissMaintenanceRecommendation(houseId, recommendationId) {
+    async dismissMaintenanceRecommendation(houseId, recommendationId, input) {
       const response = await fetcher(
         `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-recommendations/${recommendationId}/dismiss`,
         {
@@ -650,7 +652,7 @@ export function createMatrivaApiClient(
           headers: authHeaders({
             "content-type": "application/json"
           }),
-          body: JSON.stringify({})
+          body: JSON.stringify(input ?? {})
         }
       );
 

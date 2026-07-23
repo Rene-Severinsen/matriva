@@ -208,6 +208,77 @@ export type AdminBootstrapResponse = z.infer<
   typeof adminBootstrapResponseSchema
 >;
 
+export const adminDashboardPeriodKeySchema = z.enum([
+  "7d",
+  "30d",
+  "90d",
+  "365d"
+]);
+
+export type AdminDashboardPeriodKey = z.infer<
+  typeof adminDashboardPeriodKeySchema
+>;
+
+const adminDashboardCountSchema = z.number().int().nonnegative();
+const adminDashboardRatioSchema = z.number().min(0).max(1);
+
+export const adminDashboardSeriesPointSchema = z.object({
+  bucketStart: z.string().datetime(),
+  value: adminDashboardCountSchema
+});
+
+export type AdminDashboardSeriesPoint = z.infer<
+  typeof adminDashboardSeriesPointSchema
+>;
+
+export const adminDashboardResponseSchema = z.object({
+  period: z.object({
+    key: adminDashboardPeriodKeySchema,
+    from: z.string().datetime(),
+    to: z.string().datetime()
+  }),
+  totals: z.object({
+    users: adminDashboardCountSchema,
+    houses: adminDashboardCountSchema,
+    maintenanceTasks: adminDashboardCountSchema,
+    maintenanceCompletions: adminDashboardCountSchema
+  }),
+  periodMetrics: z.object({
+    newUsers: adminDashboardCountSchema,
+    activeUsers: adminDashboardCountSchema,
+    newHouses: adminDashboardCountSchema,
+    createdTasks: adminDashboardCountSchema,
+    completedTasks: adminDashboardCountSchema,
+    acceptedRecommendations: adminDashboardCountSchema,
+    permanentRecommendationHides: adminDashboardCountSchema
+  }),
+  ratios: z.object({
+    usersWithHouseRate: adminDashboardRatioSchema,
+    completedTaskRate: adminDashboardRatioSchema
+  }),
+  funnel: z.object({
+    registeredUsers: adminDashboardCountSchema,
+    usersWithCompletedProfile: adminDashboardCountSchema,
+    usersWithHouse: adminDashboardCountSchema,
+    usersWithTask: adminDashboardCountSchema,
+    usersWithCompletion: adminDashboardCountSchema
+  }),
+  series: z.object({
+    newUsers: z.array(adminDashboardSeriesPointSchema),
+    newHouses: z.array(adminDashboardSeriesPointSchema),
+    completedTasks: z.array(adminDashboardSeriesPointSchema),
+    acceptedRecommendations: z.array(adminDashboardSeriesPointSchema)
+  }),
+  dataQuality: z.object({
+    acceptedRecommendations: z.literal("estimated")
+  }),
+  generatedAt: z.string().datetime()
+});
+
+export type AdminDashboardResponse = z.infer<
+  typeof adminDashboardResponseSchema
+>;
+
 export const updateProfileRequestSchema = z.object({
   displayName: z.string().trim().min(1).max(120),
   preferredLocale: z.literal("da-DK").optional()

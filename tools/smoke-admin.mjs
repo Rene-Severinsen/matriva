@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import pg from "pg";
 
@@ -28,6 +29,139 @@ async function request(path, options = {}) {
 
 function bearer(accessToken) {
   return { authorization: `Bearer ${accessToken}` };
+}
+
+function fixtureId(prefix) {
+  return `${prefix}_${randomUUID().replaceAll("-", "").slice(0, 24)}`;
+}
+
+function assertDashboardShape(dashboard, expectedPeriod) {
+  const sharedCounts = [
+    ...Object.values(dashboard.totals),
+    ...Object.values(dashboard.periodMetrics),
+    ...Object.values(dashboard.funnel)
+  ];
+
+  assert.equal(dashboard.period.key, expectedPeriod);
+  assert.ok(Date.parse(dashboard.period.from));
+  assert.ok(Date.parse(dashboard.period.to));
+  assert.ok(Date.parse(dashboard.generatedAt));
+  assert.ok(sharedCounts.every((value) => Number.isInteger(value) && value >= 0));
+  assert.ok(
+    Object.values(dashboard.ratios).every((value) => value >= 0 && value <= 1)
+  );
+  assert.equal(dashboard.dataQuality.acceptedRecommendations, "estimated");
+
+  for (const points of Object.values(dashboard.series)) {
+    assert.ok(points.length > 0);
+    assert.ok(
+      points.every(
+        (point) =>
+          Date.parse(point.bucketStart) &&
+          Number.isInteger(point.value) &&
+          point.value >= 0
+      )
+    );
+  }
+
+  const funnel = dashboard.funnel;
+  assert.ok(funnel.registeredUsers >= funnel.usersWithCompletedProfile);
+  assert.ok(funnel.usersWithCompletedProfile >= funnel.usersWithHouse);
+  assert.ok(funnel.usersWithHouse >= funnel.usersWithTask);
+  assert.ok(funnel.usersWithTask >= funnel.usersWithCompletion);
+}
+
+async function insertDashboardFixture(pool, userId) {
+  const houseId = fixtureId("house");
+  const completedTaskId = fixtureId("task");
+  const openTaskId = fixtureId("task");
+  const deletedTaskId = fixtureId("task");
+
+  await pool.query(
+    "update user_profiles set display_name = $2, updated_at = now() where user_id = $1",
+    [userId, "Admin dashboard smoke"]
+  );
+  await pool.query(
+    `
+      insert into houses (id, user_id, address_label)
+      values ($1, $2, $3)
+    `,
+    [houseId, userId, "Dashboardvej 1, 1000 København K"]
+  );
+  await pool.query(
+    `
+      insert into maintenance_tasks (
+        id, house_id, user_id, title, source, status, timing_type, completed_at
+      )
+      values
+        ($1, $4, $5, 'Dashboard completed task', 'user_created', 'done', 'none', now()),
+        ($2, $4, $5, 'Dashboard open task', 'user_created', 'planned', 'none', null),
+        ($3, $4, $5, 'Dashboard deleted task', 'user_created', 'planned', 'none', null)
+    `,
+    [completedTaskId, openTaskId, deletedTaskId, houseId, userId]
+  );
+  await pool.query(
+    "update maintenance_tasks set deleted_at = now() where id = $1",
+    [deletedTaskId]
+  );
+  await pool.query(
+    `
+      insert into maintenance_completions (
+        id, task_id, house_id, user_id, title_snapshot, completed_date, source
+      )
+      values ($1, $2, $3, $4, 'Dashboard completed task', current_date, 'user_created')
+    `,
+    [fixtureId("mcomp"), completedTaskId, houseId, userId]
+  );
+  await pool.query(
+    `
+      insert into maintenance_recommendations (
+        id,
+        house_id,
+        user_id,
+        source_type,
+        status,
+        title,
+        description,
+        recommended_timing_label,
+        timing_type,
+        recommendation_key,
+        version_key,
+        accepted_task_id
+      )
+      values (
+        $1,
+        $2,
+        $3,
+        'matriva_catalog',
+        'accepted',
+        'Dashboard recommendation',
+        'Controlled dashboard smoke recommendation',
+        'Når det passer',
+        'none',
+        $4,
+        $5,
+        $6
+      )
+    `,
+    [
+      fixtureId("mrec"),
+      houseId,
+      userId,
+      `dashboard_${randomUUID().slice(0, 8)}`,
+      `dashboard_${randomUUID().slice(0, 8)}`,
+      openTaskId
+    ]
+  );
+  await pool.query(
+    `
+      insert into maintenance_recommendation_hides (
+        id, house_id, catalog_key
+      )
+      values ($1, $2, $3)
+    `,
+    [fixtureId("mhide"), houseId, `dashboard_hide_${randomUUID().slice(0, 8)}`]
+  );
 }
 
 function startApi() {
@@ -129,6 +263,13 @@ async function runSmoke() {
     "regular authenticated users must not access admin"
   );
   assert.equal(forbidden.body.code, "admin_forbidden");
+  const forbiddenDashboard = await request("/v1/admin/dashboard", {
+    headers: bearer(regularSession.tokens.accessToken)
+  });
+  assert.equal(forbiddenDashboard.response.status, 403);
+
+  const missingDashboard = await request("/v1/admin/dashboard");
+  assert.equal(missingDashboard.response.status, 401);
 
   const adminSession = await login(superAdminEmail);
   const bootstrap = await request("/v1/admin/bootstrap", {
@@ -167,6 +308,121 @@ async function runSmoke() {
       1,
       "permanent SUPER_ADMIN provisioning must be idempotent"
     );
+
+    const defaultDashboard = await request("/v1/admin/dashboard", {
+      headers: bearer(adminSession.tokens.accessToken)
+    });
+    assert.equal(defaultDashboard.response.status, 200);
+    assertDashboardShape(defaultDashboard.body, "30d");
+
+    for (const period of ["7d", "30d", "90d", "365d"]) {
+      const result = await request(`/v1/admin/dashboard?period=${period}`, {
+        headers: bearer(adminSession.tokens.accessToken)
+      });
+      assert.equal(result.response.status, 200);
+      assertDashboardShape(result.body, period);
+    }
+
+    const invalidPeriod = await request("/v1/admin/dashboard?period=14d", {
+      headers: bearer(adminSession.tokens.accessToken)
+    });
+    assert.equal(invalidPeriod.response.status, 400);
+    assert.equal(invalidPeriod.body.code, "admin_dashboard_period_invalid");
+
+    const before = defaultDashboard.body;
+    await insertDashboardFixture(pool, regularSession.user.id);
+    const afterResult = await request("/v1/admin/dashboard?period=30d", {
+      headers: bearer(adminSession.tokens.accessToken)
+    });
+    assert.equal(afterResult.response.status, 200);
+    const after = afterResult.body;
+    assertDashboardShape(after, "30d");
+    assert.equal(after.totals.houses, before.totals.houses + 1);
+    assert.equal(after.totals.maintenanceTasks, before.totals.maintenanceTasks + 2);
+    assert.equal(
+      after.totals.maintenanceCompletions,
+      before.totals.maintenanceCompletions + 1
+    );
+    assert.equal(after.periodMetrics.newHouses, before.periodMetrics.newHouses + 1);
+    assert.equal(
+      after.periodMetrics.createdTasks,
+      before.periodMetrics.createdTasks + 2,
+      "soft-deleted tasks must not count"
+    );
+    assert.equal(
+      after.periodMetrics.completedTasks,
+      before.periodMetrics.completedTasks + 1
+    );
+    assert.equal(
+      after.periodMetrics.acceptedRecommendations,
+      before.periodMetrics.acceptedRecommendations + 1
+    );
+    assert.equal(
+      after.periodMetrics.permanentRecommendationHides,
+      before.periodMetrics.permanentRecommendationHides + 1
+    );
+    assert.equal(
+      after.funnel.usersWithCompletedProfile,
+      before.funnel.usersWithCompletedProfile + 1
+    );
+    assert.equal(after.funnel.usersWithHouse, before.funnel.usersWithHouse + 1);
+    assert.equal(after.funnel.usersWithTask, before.funnel.usersWithTask + 1);
+    assert.equal(
+      after.funnel.usersWithCompletion,
+      before.funnel.usersWithCompletion + 1
+    );
+
+    const expectedSnapshot = await pool.query(
+      `
+        select
+          (
+            select count(distinct task_id)::float
+            from maintenance_completions
+            where task_id in (
+              select id from maintenance_tasks where deleted_at is null
+            )
+          ) as completed_tasks,
+          (
+            select count(*)::float
+            from maintenance_tasks
+            where deleted_at is null
+          ) as total_tasks,
+          (
+            select count(distinct user_id)::int
+            from auth_sessions
+            where last_used_at >= $1 and last_used_at < $2
+          ) as active_users
+      `,
+      [after.period.from, after.period.to]
+    );
+    const snapshot = expectedSnapshot.rows[0];
+    const expectedCompletionRate =
+      snapshot.total_tasks === 0
+        ? 0
+        : snapshot.completed_tasks / snapshot.total_tasks;
+    assert.equal(after.ratios.completedTaskRate, expectedCompletionRate);
+    assert.equal(after.periodMetrics.activeUsers, snapshot.active_users);
+    assert.ok(
+      after.series.newUsers.some((point) => point.value === 0),
+      "zero-value buckets must be returned"
+    );
+
+    const leakedDashboard = JSON.stringify(after);
+    for (const forbiddenValue of [
+      "email",
+      "accessToken",
+      "refreshToken",
+      "token_hash",
+      "auth_sessions",
+      regularEmail,
+      superAdminEmail
+    ]) {
+      assert.equal(
+        leakedDashboard.includes(forbiddenValue),
+        false,
+        `dashboard must not leak ${forbiddenValue}`
+      );
+    }
   } finally {
     await pool.end();
   }

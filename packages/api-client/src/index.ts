@@ -1,6 +1,8 @@
 import {
   addressSearchResponseSchema,
   adminBootstrapResponseSchema,
+  adminDashboardPeriodKeySchema,
+  adminDashboardResponseSchema,
   appBootstrapResponseSchema,
   authSessionResponseSchema,
   currentUserResponseSchema,
@@ -28,6 +30,8 @@ import {
   housePublicDataWithProfileResponseV1Schema,
   type AddressSearchResponse,
   type AdminBootstrapResponse,
+  type AdminDashboardPeriodKey,
+  type AdminDashboardResponse,
   type AppBootstrapResponse,
   type AuthSessionResponse,
   type ConsumeMagicLinkRequest,
@@ -84,6 +88,18 @@ export type MatrivaApiClientOptions = {
   getAccessToken?: () => string | null | undefined;
 };
 
+export class MatrivaApiError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+
+  constructor(status: number, code: string | null, message: string) {
+    super(message);
+    this.name = "MatrivaApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
 export type MatrivaApiClient = {
   readonly baseUrl: string;
   getHealth: () => Promise<HealthResponse>;
@@ -95,6 +111,10 @@ export type MatrivaApiClient = {
   logout: (input: RefreshSessionRequest) => Promise<LogoutResponse>;
   getCurrentUser: () => Promise<CurrentUserResponse>;
   getAdminBootstrap: () => Promise<AdminBootstrapResponse>;
+  getAdminDashboard: (input?: {
+    period?: AdminDashboardPeriodKey;
+    signal?: AbortSignal;
+  }) => Promise<AdminDashboardResponse>;
   updateProfile: (input: UpdateProfileRequest) => Promise<UpdateProfileResponse>;
   getAppBootstrap: () => Promise<AppBootstrapResponse>;
   searchAddresses: (query: string) => Promise<AddressSearchResponse>;
@@ -219,6 +239,7 @@ export function createMatrivaApiClient(
     }
 
     let message = fallbackMessage;
+    let code: string | null = null;
 
     try {
       const payload = await response.json();
@@ -231,11 +252,20 @@ export function createMatrivaApiClient(
       ) {
         message = payload.message;
       }
+
+      if (
+        typeof payload === "object" &&
+        payload !== null &&
+        "code" in payload &&
+        typeof payload.code === "string"
+      ) {
+        code = payload.code;
+      }
     } catch {
       // Keep the route-specific fallback when the API response is not JSON.
     }
 
-    throw new Error(message);
+    throw new MatrivaApiError(response.status, code, message);
   }
 
   async function getHealth() {
@@ -322,6 +352,20 @@ export function createMatrivaApiClient(
 
       return adminBootstrapResponseSchema.parse(
         await parseApiResponse(response, "Could not load admin session.")
+      );
+    },
+    async getAdminDashboard(input = {}) {
+      const period = adminDashboardPeriodKeySchema.parse(input.period ?? "30d");
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/admin/dashboard?period=${period}`,
+        {
+          headers: authHeaders(),
+          ...(input.signal ? { signal: input.signal } : {})
+        }
+      );
+
+      return adminDashboardResponseSchema.parse(
+        await parseApiResponse(response, "Could not load admin dashboard.")
       );
     },
     async updateProfile(input) {

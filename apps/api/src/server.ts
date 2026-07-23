@@ -9,6 +9,8 @@ import {
   addressSearchQuerySchema,
   addressSearchResponseSchema,
   adminBootstrapResponseSchema,
+  adminDashboardPeriodKeySchema,
+  adminDashboardResponseSchema,
   apiErrorSchema,
   appBootstrapResponseSchema,
   authSessionResponseSchema,
@@ -64,6 +66,7 @@ import {
 } from "@matriva/shared";
 
 import { requireAdminUser, toAdminBootstrapResponse } from "./admin.ts";
+import { getAdminDashboard } from "./admin-dashboard.ts";
 import { sendMagicLinkEmail, createMagicLinkUrl } from "./auth/mailer.ts";
 import { getDatafordelerConfigStatus } from "./config/datafordeler.ts";
 import {
@@ -654,6 +657,38 @@ const server = createServer((request, response) => {
             toAdminBootstrapResponse(principal)
           )
         );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    (request.url === "/v1/admin/dashboard" ||
+      request.url?.startsWith("/v1/admin/dashboard?"))
+  ) {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        const url = new URL(request.url ?? "/", `http://${host}:${port}`);
+        const parsedPeriod = adminDashboardPeriodKeySchema.safeParse(
+          url.searchParams.get("period") ?? "30d"
+        );
+
+        if (!parsedPeriod.success) {
+          writeApiError(
+            response,
+            400,
+            "admin_dashboard_period_invalid",
+            "Dashboard period must be one of 7d, 30d, 90d, or 365d."
+          );
+          return;
+        }
+
+        const dashboard = await getAdminDashboard(parsedPeriod.data);
+        writeJson(response, 200, adminDashboardResponseSchema.parse(dashboard));
       } catch (error) {
         writeUnknownApiError(response, error);
       }

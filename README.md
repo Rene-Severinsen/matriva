@@ -103,9 +103,38 @@ API at `VITE_MATRIVA_API_BASE_URL`, defaulting locally to
 Admin v1 reuses the existing magic-link/session API. Access tokens are held in
 browser memory, refresh tokens may be kept in `sessionStorage` for reloads, and
 `SUPER_ADMIN` authorization is enforced by the backend. The permanent
-superuser is `rene@joinit.dk`. Admin v1 is read-only foundation work; dashboard
-data, user lists, house lists, recommendation analytics, writes, role
-management, and deployment are not implemented yet.
+superuser is `rene@joinit.dk`.
+
+The read-only admin dashboard is served by `GET /v1/admin/dashboard` and accepts
+the fixed periods `7d`, `30d`, `90d`, and `365d` (default `30d`). Counts use UTC
+half-open intervals (`from <= timestamp < to`). Daily buckets are used for 7
+and 30 days, weekly buckets for 90 days, and monthly buckets for 365 days.
+Empty buckets are returned as zeroes.
+
+Dashboard definitions:
+
+- Registered users include all `users`, including status `disabled`, so totals
+  remain historical. Active users are distinct users with an
+  `auth_sessions.last_used_at` in the selected period.
+- Maintenance task totals and created-task metrics exclude `deleted_at` rows
+  but include archived tasks. Completions use
+  `maintenance_completions.created_at`, which represents when Matriva recorded
+  the user action; the user-selected `completed_date` may be backdated.
+- "Andel afsluttede opgaver" is the current share of non-deleted tasks with a
+  completion, not completions divided by tasks created in the selected period.
+- The activation funnel is a current cumulative snapshot. "Profil gennemført"
+  uses the same `user_profiles.display_name is not null` rule as app
+  onboarding. Downstream cohorts also require the preceding profile step, so
+  inconsistent legacy data cannot make the funnel increase.
+- Accepted recommendation counts and series are temporarily estimated from
+  `maintenance_recommendations.updated_at` for rows with status `accepted`.
+  Permanent hides use `maintenance_recommendation_hides.hidden_at`.
+- `not_now` is intentionally omitted because the dismissal mode is not stored
+  reliably. There is no generic product event logging in this scope.
+
+User, house, and recommendation list pages, admin writes, role management,
+audit logging, period-over-period comparisons, and deployment are not
+implemented yet.
 
 `apps/mobile/.env.example` documents the local default:
 

@@ -29,6 +29,7 @@ type DashboardAggregateRow = {
   total_houses: number;
   total_tasks: number;
   total_completions: number;
+  total_public_data_warnings: number;
   new_users: number;
   active_users: number;
   new_houses: number;
@@ -141,6 +142,12 @@ export async function getAdminDashboard(
         (select count(*)::int from houses) as total_houses,
         (select count(*)::int from maintenance_tasks where deleted_at is null) as total_tasks,
         (select count(*)::int from maintenance_completions) as total_completions,
+        (
+          select coalesce(sum(jsonb_array_length(normalized_payload->'warnings')), 0)::int
+          from house_public_data_snapshots
+          where is_current
+            and jsonb_typeof(normalized_payload->'warnings') = 'array'
+        ) as total_public_data_warnings,
         (select count(*)::int from users where created_at >= $1 and created_at < $2) as new_users,
         (
           select count(distinct user_id)::int
@@ -263,7 +270,8 @@ export async function getAdminDashboard(
       users: totalUsers,
       houses: count(aggregate.total_houses),
       maintenanceTasks: totalTasks,
-      maintenanceCompletions: count(aggregate.total_completions)
+      maintenanceCompletions: count(aggregate.total_completions),
+      publicDataWarnings: count(aggregate.total_public_data_warnings)
     },
     periodMetrics: {
       newUsers: count(aggregate.new_users),

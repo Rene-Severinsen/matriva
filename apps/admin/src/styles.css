@@ -729,7 +729,7 @@ button:disabled {
 .kpi-grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
 .kpi-card,
@@ -786,6 +786,10 @@ button:disabled {
 
 .kpi-indigo .kpi-icon {
   background: #5267c9;
+}
+
+.kpi-yellow .kpi-icon {
+  background: #d69b1f;
 }
 
 .kpi-content {

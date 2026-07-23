@@ -132,7 +132,7 @@ function DashboardContent({ dashboard }: { dashboard: AdminDashboardResponse }) 
     value: number | string;
     note: string;
     icon: IconName;
-    tone: "blue" | "orange" | "green" | "teal" | "purple" | "indigo";
+    tone: "blue" | "orange" | "green" | "teal" | "purple" | "indigo" | "yellow";
     estimated?: boolean;
   }> = [
     {
@@ -155,6 +155,13 @@ function DashboardContent({ dashboard }: { dashboard: AdminDashboardResponse }) 
       note: "Alle oprettede boliger",
       icon: "houses" as IconName,
       tone: "green"
+    },
+    {
+      label: "BBR warnings",
+      value: dashboard.totals.publicDataWarnings,
+      note: "Warnings på tværs af boliger",
+      icon: "activity" as IconName,
+      tone: "yellow"
     },
     {
       label: "Udførte opgaver",

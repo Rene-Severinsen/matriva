@@ -241,7 +241,8 @@ export const adminDashboardResponseSchema = z.object({
     users: adminDashboardCountSchema,
     houses: adminDashboardCountSchema,
     maintenanceTasks: adminDashboardCountSchema,
-    maintenanceCompletions: adminDashboardCountSchema
+    maintenanceCompletions: adminDashboardCountSchema,
+    publicDataWarnings: adminDashboardCountSchema
   }),
   periodMetrics: z.object({
     newUsers: adminDashboardCountSchema,

@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import {
   addressSearchQuerySchema,
   addressSearchResponseSchema,
+  adminBootstrapResponseSchema,
   apiErrorSchema,
   appBootstrapResponseSchema,
   authSessionResponseSchema,
@@ -62,6 +63,7 @@ import {
   maintenanceHistoryQuerySchema
 } from "@matriva/shared";
 
+import { requireAdminUser, toAdminBootstrapResponse } from "./admin.ts";
 import { sendMagicLinkEmail, createMagicLinkUrl } from "./auth/mailer.ts";
 import { getDatafordelerConfigStatus } from "./config/datafordeler.ts";
 import {
@@ -128,6 +130,21 @@ const documentMaxBytes = Number.parseInt(
     `${15 * 1024 * 1024}`,
   10
 );
+const defaultAdminAllowedOrigins = [
+  "http://127.0.0.1:5173",
+  "http://localhost:5173",
+  "https://admin.matriva.dk"
+];
+const configuredAdminAllowedOrigins = (
+  process.env.MATRIVA_ADMIN_ALLOWED_ORIGINS ?? ""
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter((origin) => origin.length > 0);
+const adminAllowedOrigins = new Set([
+  ...defaultAdminAllowedOrigins,
+  ...configuredAdminAllowedOrigins
+]);
 
 type DawaAddress = {
   id?: unknown;
@@ -180,6 +197,20 @@ function writeApiError(
       message
     })
   );
+}
+
+function applyCorsHeaders(request: IncomingMessage, response: ServerResponse) {
+  const origin = request.headers.origin;
+
+  if (!origin || Array.isArray(origin) || !adminAllowedOrigins.has(origin)) {
+    return;
+  }
+
+  response.setHeader("access-control-allow-origin", origin);
+  response.setHeader("vary", "Origin");
+  response.setHeader("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+  response.setHeader("access-control-allow-headers", "authorization,content-type");
+  response.setHeader("access-control-max-age", "600");
 }
 
 
@@ -593,6 +624,14 @@ async function fetchDawaAddresses(query: string): Promise<DawaAddress[]> {
 }
 
 const server = createServer((request, response) => {
+  applyCorsHeaders(request, response);
+
+  if (request.method === "OPTIONS") {
+    response.writeHead(204);
+    response.end();
+    return;
+  }
+
   if (request.method === "GET" && request.url === "/health") {
     const body = healthResponseSchema.parse({
       status: "ok",
@@ -601,6 +640,24 @@ const server = createServer((request, response) => {
     });
 
     writeJson(response, 200, body);
+    return;
+  }
+
+  if (request.method === "GET" && request.url === "/v1/admin/bootstrap") {
+    void (async () => {
+      try {
+        const principal = await requireAdminUser(getBearerToken(request));
+        writeJson(
+          response,
+          200,
+          adminBootstrapResponseSchema.parse(
+            toAdminBootstrapResponse(principal)
+          )
+        );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
     return;
   }
 

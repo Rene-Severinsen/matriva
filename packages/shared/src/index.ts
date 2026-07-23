@@ -98,6 +98,10 @@ export const userStatusSchema = z.enum(["active", "disabled"]);
 
 export type UserStatus = z.infer<typeof userStatusSchema>;
 
+export const adminRoleSchema = z.enum(["SUPER_ADMIN"]);
+
+export type AdminRole = z.infer<typeof adminRoleSchema>;
+
 export const userProfileSchema = z.object({
   displayName: z.string().min(1).nullable(),
   preferredLocale: z.literal("da-DK")
@@ -189,6 +193,20 @@ export const currentUserResponseSchema = z.object({
 });
 
 export type CurrentUserResponse = z.infer<typeof currentUserResponseSchema>;
+
+export const adminBootstrapResponseSchema = z.object({
+  admin: z.object({
+    userId: userIdSchema,
+    email: z.string().email(),
+    displayName: z.string().min(1).nullable(),
+    roles: z.array(adminRoleSchema).min(1)
+  }),
+  generatedAt: z.string().datetime()
+});
+
+export type AdminBootstrapResponse = z.infer<
+  typeof adminBootstrapResponseSchema
+>;
 
 export const updateProfileRequestSchema = z.object({
   displayName: z.string().trim().min(1).max(120),

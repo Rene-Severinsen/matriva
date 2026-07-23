@@ -10,7 +10,9 @@
   "scripts": {
     "dev:mobile": "npm run build:packages && npm run start -w @matriva/mobile",
     "dev:api": "npm run build -w @matriva/shared && DATABASE_URL=${DATABASE_URL:-postgresql://matriva:matriva_dev_password@127.0.0.1:56432/matriva_dev} npm run dev -w @matriva/api",
-    "build": "npm run build:packages && npm run build -w @matriva/api",
+    "dev:admin": "npm run build:packages && npm run dev -w @matriva/admin",
+    "build": "npm run build:packages && npm run build -w @matriva/api && npm run build -w @matriva/admin",
+    "build:admin": "npm run build:packages && npm run build -w @matriva/admin",
     "build:packages": "npm run build -w @matriva/shared && npm run build -w @matriva/api-client",
     "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
     "lint": "npm run build:packages && npm run lint --workspaces --if-present",
@@ -20,6 +22,7 @@
     "check:bbr:parity": "npm run check:bbr-public-data-parity",
     "smoke:api:dev": "node tools/smoke-api-dev.mjs",
     "smoke:api:routes": "node tools/smoke-api-routes.mjs",
+    "smoke:admin": "node tools/smoke-admin.mjs",
     "smoke:maintenance": "node tools/smoke-maintenance.mjs",
     "smoke:storage": "node tools/smoke-storage.mjs",
     "smoke:bbr": "npm run build && node tools/smoke-bbr-public-data.mjs",

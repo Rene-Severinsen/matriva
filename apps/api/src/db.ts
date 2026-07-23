@@ -53,6 +53,7 @@ import {
   type MaintenanceCatalogItem,
   type MaintenanceCatalogPeriod
 } from "./maintenance-catalog.ts";
+import { ensurePermanentSuperAdminRoleForUser } from "./admin.ts";
 
 const { Pool } = pg;
 
@@ -765,6 +766,8 @@ export async function ensureUserForEmail(email: string) {
     `,
     [createOpaqueId("profile"), user.id]
   );
+
+  await ensurePermanentSuperAdminRoleForUser(user.id, user.email);
 
   return user;
 }

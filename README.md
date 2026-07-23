@@ -88,6 +88,25 @@ The mobile onboarding preview reads the API base URL from Expo public env:
 EXPO_PUBLIC_MATRIVA_API_BASE_URL=http://127.0.0.1:4000 npm run dev:mobile
 ```
 
+Run the local admin webapp:
+
+```sh
+npm run dev:admin
+```
+
+The admin app is a separate browser app in `apps/admin`. It expects the Matriva
+API at `VITE_MATRIVA_API_BASE_URL`, defaulting locally to
+`http://127.0.0.1:4000`. Local admin development uses
+`http://127.0.0.1:5173`; the future production origin is
+`https://admin.matriva.dk`.
+
+Admin v1 reuses the existing magic-link/session API. Access tokens are held in
+browser memory, refresh tokens may be kept in `sessionStorage` for reloads, and
+`SUPER_ADMIN` authorization is enforced by the backend. The permanent
+superuser is `rene@joinit.dk`. Admin v1 is read-only foundation work; dashboard
+data, user lists, house lists, recommendation analytics, writes, role
+management, and deployment are not implemented yet.
+
 `apps/mobile/.env.example` documents the local default:
 
 ```text

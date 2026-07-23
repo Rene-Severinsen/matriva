@@ -1,5 +1,6 @@
 import {
   addressSearchResponseSchema,
+  adminBootstrapResponseSchema,
   appBootstrapResponseSchema,
   authSessionResponseSchema,
   currentUserResponseSchema,
@@ -26,6 +27,7 @@ import {
   homeBootstrapResponseSchema,
   housePublicDataWithProfileResponseV1Schema,
   type AddressSearchResponse,
+  type AdminBootstrapResponse,
   type AppBootstrapResponse,
   type AuthSessionResponse,
   type ConsumeMagicLinkRequest,
@@ -92,6 +94,7 @@ export type MatrivaApiClient = {
   refreshSession: (input: RefreshSessionRequest) => Promise<AuthSessionResponse>;
   logout: (input: RefreshSessionRequest) => Promise<LogoutResponse>;
   getCurrentUser: () => Promise<CurrentUserResponse>;
+  getAdminBootstrap: () => Promise<AdminBootstrapResponse>;
   updateProfile: (input: UpdateProfileRequest) => Promise<UpdateProfileResponse>;
   getAppBootstrap: () => Promise<AppBootstrapResponse>;
   searchAddresses: (query: string) => Promise<AddressSearchResponse>;
@@ -310,6 +313,15 @@ export function createMatrivaApiClient(
 
       return currentUserResponseSchema.parse(
         await parseApiResponse(response, "Could not load profile.")
+      );
+    },
+    async getAdminBootstrap() {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/bootstrap`, {
+        headers: authHeaders()
+      });
+
+      return adminBootstrapResponseSchema.parse(
+        await parseApiResponse(response, "Could not load admin session.")
       );
     },
     async updateProfile(input) {

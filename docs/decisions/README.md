@@ -11,6 +11,7 @@ Use this folder for architectural decisions before implementing choices that aff
 * [ADR-0005: Dynamic Content Cards](./ADR-0005-dynamic-content-cards.md)
 * [ADR-0006: Opaque Domain IDs](./ADR-0006-opaque-domain-ids.md)
 * [ADR-0011: Backend-Owned Maintenance Recommendation Catalog](./ADR-0011-backend-owned-maintenance-recommendation-catalog.md)
+* [ADR-0012: Admin Foundation And Super Admin Role](./ADR-0012-admin-foundation-and-super-admin-role.md)
 
 ADR files should explain:
 

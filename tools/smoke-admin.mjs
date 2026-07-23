@@ -4,6 +4,11 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import pg from "pg";
 
+import {
+  assertSafeSmokeDatabase,
+  cleanupSmokeUsers
+} from "./smoke-database.mjs";
+
 const host = "127.0.0.1";
 const port = "4105";
 const baseUrl = `http://${host}:${port}`;
@@ -11,9 +16,12 @@ const databaseUrl =
   process.env.DATABASE_URL ??
   "postgresql://matriva:matriva_dev_password@127.0.0.1:56432/matriva_dev";
 const regularEmail = `admin-smoke-${Date.now()}@example.test`;
+const temporarySuperAdminEmail = `admin-super-smoke-${Date.now()}@example.test`;
 const superAdminEmail = "rene@joinit.dk";
 const startupTimeoutMs = 20_000;
 const pollIntervalMs = 250;
+
+assertSafeSmokeDatabase(databaseUrl);
 
 async function request(path, options = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
@@ -244,6 +252,22 @@ async function login(email) {
   return session.body;
 }
 
+async function provisionTemporarySuperAdmin(userId) {
+  const pool = new pg.Pool({ connectionString: databaseUrl });
+
+  try {
+    await pool.query(
+      `
+        insert into user_roles (user_id, role, provisioned_by)
+        values ($1, 'SUPER_ADMIN', 'smoke_admin')
+      `,
+      [userId]
+    );
+  } finally {
+    await pool.end();
+  }
+}
+
 async function runSmoke() {
   const missing = await request("/v1/admin/bootstrap");
   assert.equal(missing.response.status, 401, "admin route must require auth");
@@ -271,13 +295,14 @@ async function runSmoke() {
   const missingDashboard = await request("/v1/admin/dashboard");
   assert.equal(missingDashboard.response.status, 401);
 
-  const adminSession = await login(superAdminEmail);
+  const adminSession = await login(temporarySuperAdminEmail);
+  await provisionTemporarySuperAdmin(adminSession.user.id);
   const bootstrap = await request("/v1/admin/bootstrap", {
     headers: bearer(adminSession.tokens.accessToken)
   });
   assert.equal(bootstrap.response.status, 200);
   assert.equal(bootstrap.body.admin.userId, adminSession.user.id);
-  assert.equal(bootstrap.body.admin.email, superAdminEmail);
+  assert.equal(bootstrap.body.admin.email, temporarySuperAdminEmail);
   assert.deepEqual(bootstrap.body.admin.roles, ["SUPER_ADMIN"]);
   assert.ok(bootstrap.body.generatedAt);
 
@@ -415,7 +440,7 @@ async function runSmoke() {
       "token_hash",
       "auth_sessions",
       regularEmail,
-      superAdminEmail
+      temporarySuperAdminEmail
     ]) {
       assert.equal(
         leakedDashboard.includes(forbiddenValue),
@@ -431,7 +456,7 @@ async function runSmoke() {
     headers: bearer(adminSession.tokens.accessToken)
   });
   assert.equal(me.response.status, 200, "ordinary auth route must still work");
-  assert.equal(me.body.user.email, superAdminEmail);
+  assert.equal(me.body.user.email, temporarySuperAdminEmail);
 
   const refreshed = await request("/v1/auth/refresh", {
     method: "POST",
@@ -454,4 +479,8 @@ try {
   await runSmoke();
 } finally {
   stopApi(child);
+  await cleanupSmokeUsers(databaseUrl, [
+    regularEmail,
+    temporarySuperAdminEmail
+  ]);
 }

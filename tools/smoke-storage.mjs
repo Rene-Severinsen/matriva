@@ -5,6 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+import {
+  assertSafeSmokeDatabase,
+  cleanupSmokeUsers
+} from "./smoke-database.mjs";
+
 const host = "127.0.0.1";
 const port = "4103";
 const baseUrl = `http://${host}:${port}`;
@@ -13,6 +18,11 @@ const requestTimeoutMs = 4_000;
 const databaseUrl =
   process.env.DATABASE_URL ??
   "postgresql://matriva:matriva_dev_password@127.0.0.1:56432/matriva_dev";
+const smokeRunId = Date.now();
+const storageEmail = `storage-${smokeRunId}@example.test`;
+const storageOtherEmail = `storage-other-${smokeRunId}@example.test`;
+
+assertSafeSmokeDatabase(databaseUrl);
 
 let capturedOutput = "";
 
@@ -177,8 +187,8 @@ async function createHouse(session, label) {
 
 async function runSmoke() {
   await waitForApi();
-  const session = await login(`storage-${Date.now()}@example.test`);
-  const otherSession = await login(`storage-other-${Date.now()}@example.test`);
+  const session = await login(storageEmail);
+  const otherSession = await login(storageOtherEmail);
   const savedHouse = await createHouse(session, "Ringstedgade 130, 4700 Næstved");
   const otherHouse = await createHouse(otherSession, "Rådhuspladsen 1, 1550 København V");
   const houseId = savedHouse.house.id;
@@ -329,4 +339,5 @@ try {
   process.exitCode = 1;
 } finally {
   stopApi(child);
+  await cleanupSmokeUsers(databaseUrl, [storageEmail, storageOtherEmail]);
 }

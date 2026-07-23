@@ -1,6 +1,11 @@
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 
+import {
+  assertSafeSmokeDatabase,
+  cleanupSmokeUsers
+} from "./smoke-database.mjs";
+
 const host = "127.0.0.1";
 const port = "4100";
 const baseUrl = `http://${host}:${port}`;
@@ -8,12 +13,15 @@ const healthUrl = `${baseUrl}/health`;
 const databaseUrl =
   process.env.DATABASE_URL ??
   "postgresql://matriva:matriva_dev_password@127.0.0.1:56432/matriva_dev";
+const smokeEmail = `dev-smoke-${Date.now()}@example.test`;
 const startupTimeoutMs = 20_000;
 const pollIntervalMs = 250;
 const requestTimeoutMs = 1_000;
 const outputLimit = 8_000;
 
 let capturedOutput = "";
+
+assertSafeSmokeDatabase(databaseUrl);
 
 function appendOutput(chunk) {
   capturedOutput = `${capturedOutput}${chunk.toString("utf8")}`;
@@ -118,7 +126,7 @@ async function requestMagicLink() {
     const response = await fetch(`${baseUrl}/v1/auth/magic-link/request`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: `dev-smoke-${Date.now()}@example.test` }),
+      body: JSON.stringify({ email: smokeEmail }),
       signal: controller.signal
     });
 
@@ -176,4 +184,5 @@ try {
   process.exitCode = 1;
 } finally {
   stopApi(child);
+  await cleanupSmokeUsers(databaseUrl, [smokeEmail]);
 }

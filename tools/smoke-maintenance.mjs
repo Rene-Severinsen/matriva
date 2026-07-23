@@ -5,6 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+import {
+  assertSafeSmokeDatabase,
+  cleanupSmokeUsers
+} from "./smoke-database.mjs";
+
 const host = "127.0.0.1";
 const port = "4102";
 const baseUrl = `http://${host}:${port}`;
@@ -13,6 +18,11 @@ const requestTimeoutMs = 4_000;
 const databaseUrl =
   process.env.DATABASE_URL ??
   "postgresql://matriva:matriva_dev_password@127.0.0.1:56432/matriva_dev";
+const smokeRunId = Date.now();
+const maintenanceEmail = `maintenance-${smokeRunId}@example.test`;
+const maintenanceOtherEmail = `maintenance-other-${smokeRunId}@example.test`;
+
+assertSafeSmokeDatabase(databaseUrl);
 
 let capturedOutput = "";
 
@@ -221,8 +231,8 @@ async function runSmoke() {
     "Prices with more than two decimals must be rejected."
   );
 
-  const session = await login(`maintenance-${Date.now()}@example.test`);
-  const otherSession = await login(`maintenance-other-${Date.now()}@example.test`);
+  const session = await login(maintenanceEmail);
+  const otherSession = await login(maintenanceOtherEmail);
   const savedHouse = await createHouse(session, "Ringstedgade 130, 4700 Næstved");
   const otherHouse = await createHouse(otherSession, "Rådhuspladsen 1, 1550 København V");
   const houseId = savedHouse.house.id;
@@ -686,4 +696,8 @@ try {
   process.exitCode = 1;
 } finally {
   stopApi(child);
+  await cleanupSmokeUsers(databaseUrl, [
+    maintenanceEmail,
+    maintenanceOtherEmail
+  ]);
 }

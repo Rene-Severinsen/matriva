@@ -132,6 +132,23 @@ Dashboard definitions:
 - `not_now` is intentionally omitted because the dismissal mode is not stored
   reliably. There is no generic product event logging in this scope.
 
+The admin UI does not contain seed values, mock metrics, or fallback dashboard
+data. It renders only the validated response from `GET /v1/admin/dashboard` and
+shows an error state when that request fails.
+
+Smoke scripts that create users use unique `@example.test` addresses and clean
+those exact users in `finally`. A database guard limits these scripts to local
+`matriva_dev` or `matriva_test` databases. Existing historical fixtures can be
+previewed without deletion:
+
+```bash
+npm run preview:dev-fixture-cleanup
+```
+
+The preview script is dry-run by default. Write mode requires the explicit
+`MATRIVA_CONFIRM_DEV_FIXTURE_CLEANUP=true` environment variable and must only
+be used after reviewing the displayed counts.
+
 User, house, and recommendation list pages, admin writes, role management,
 audit logging, period-over-period comparisons, and deployment are not
 implemented yet.

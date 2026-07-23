@@ -3,16 +3,24 @@ import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import pg from "pg";
 
+import {
+  assertSafeSmokeDatabase,
+  cleanupSmokeUsers
+} from "./smoke-database.mjs";
+
 const host = "127.0.0.1";
 const port = "4102";
 const baseUrl = `http://${host}:${port}`;
 const databaseUrl = process.env.DATABASE_URL ?? "postgresql://matriva:matriva_dev_password@127.0.0.1:56432/matriva_dev";
 const email = `auth-smoke-${Date.now()}@example.test`;
+const unknownEmail = `unknown-${email}`;
 const selectedAddress = {
   source: "DAWA",
   sourceAddressId: `dawa-smoke-${Date.now()}`,
   label: "Testvej 1, 1000 København K"
 };
+
+assertSafeSmokeDatabase(databaseUrl);
 
 async function request(path, options = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
@@ -117,7 +125,7 @@ assert.notEqual(repeatTwo.body.devMagicLink, repeatOne.body.devMagicLink, "test-
 
 const second = await request("/v1/auth/magic-link/request", {
   method: "POST",
-  body: JSON.stringify({ email: `unknown-${email}` })
+  body: JSON.stringify({ email: unknownEmail })
 });
 assert.equal(second.response.status, 200);
 assert.equal(second.body.ok, true);
@@ -237,4 +245,5 @@ try {
   await runSmoke();
 } finally {
   stopApi(child);
+  await cleanupSmokeUsers(databaseUrl, [email, unknownEmail]);
 }

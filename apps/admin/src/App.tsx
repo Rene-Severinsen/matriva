@@ -7,6 +7,7 @@ import {
 import type { AdminBootstrapResponse, SessionTokens } from "@matriva/shared";
 
 import { DashboardPage } from "./pages/DashboardPage.js";
+import { Icon, type IconName } from "./components/Icon.js";
 
 const apiBaseUrl =
   import.meta.env.VITE_MATRIVA_API_BASE_URL?.trim() || "http://127.0.0.1:4000";
@@ -21,12 +22,22 @@ type AuthState =
 
 type ViewKey = "dashboard" | "users" | "houses" | "recommendations" | "settings";
 
-const navigation: Array<{ key: ViewKey; label: string; disabled?: boolean }> = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "users", label: "Brugere", disabled: true },
-  { key: "houses", label: "Boliger", disabled: true },
-  { key: "recommendations", label: "Anbefalinger", disabled: true },
-  { key: "settings", label: "Indstillinger", disabled: true }
+const navigation: Array<{
+  key: ViewKey;
+  label: string;
+  icon: IconName;
+  disabled?: boolean;
+}> = [
+  { key: "dashboard", label: "Dashboard", icon: "dashboard" },
+  { key: "users", label: "Brugere", icon: "users", disabled: true },
+  { key: "houses", label: "Boliger", icon: "houses", disabled: true },
+  {
+    key: "recommendations",
+    label: "Anbefalinger",
+    icon: "recommendations",
+    disabled: true
+  },
+  { key: "settings", label: "Indstillinger", icon: "settings", disabled: true }
 ];
 
 function magicLinkTokenFromLocation() {
@@ -289,23 +300,39 @@ function AdminShell({
               onClick={() => onNavigate(item.key)}
               type="button"
             >
-              <span>{item.label}</span>
+              <span className="nav-label">
+                <Icon name={item.icon} />
+                <span>{item.label}</span>
+              </span>
               {item.disabled ? <small>Senere</small> : null}
             </button>
           ))}
         </nav>
+        <div className="sidebar-account">
+          <div className="account-profile">
+            <span className="account-avatar" aria-hidden="true">
+              {(bootstrap.admin.displayName ?? bootstrap.admin.email)
+                .charAt(0)
+                .toLocaleUpperCase("da-DK")}
+            </span>
+            <div className="account-copy">
+              {bootstrap.admin.displayName ? (
+                <strong>{bootstrap.admin.displayName}</strong>
+              ) : null}
+              <span>{bootstrap.admin.email}</span>
+            </div>
+          </div>
+          <button className="logout-action" type="button" onClick={onLogout}>
+            <Icon name="logout" />
+            <span>Log ud</span>
+          </button>
+        </div>
       </aside>
       <section className="workspace">
         <header className="topbar">
           <div>
             <p className="eyebrow">Matriva administration</p>
             <h1>{activeLabel}</h1>
-          </div>
-          <div className="admin-user">
-            <span>{bootstrap.admin.email}</span>
-            <button type="button" onClick={onLogout}>
-              Log ud
-            </button>
           </div>
         </header>
         <main className="content-surface">

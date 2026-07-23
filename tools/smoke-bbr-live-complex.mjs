@@ -6,6 +6,11 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import pg from "pg";
 
+import {
+  assertSafeSmokeDatabase,
+  cleanupSmokeUsers
+} from "./smoke-database.mjs";
+
 const host = "127.0.0.1";
 const port = "4104";
 const baseUrl = `http://${host}:${port}`;
@@ -21,6 +26,8 @@ const address = {
   sourceAccessAddressId: "0a3f509b-eddb-32b8-e044-0003ba298018",
   label: "Rosenstien 10, 9300 Sæby"
 };
+
+assertSafeSmokeDatabase(databaseUrl);
 
 function loadLocalEnv() {
   const envPath = resolve(".env");
@@ -584,12 +591,10 @@ function verifyPublicData(publicData) {
 
 const child = startApi();
 const pool = new pg.Pool({ connectionString: databaseUrl });
-let userId;
 
 try {
   await waitForHealth(child);
   const session = await createSessionAndHouse();
-  userId = session.userId;
 
   const refreshed = await request(`/v1/houses/${session.houseId}/public-data/refresh`, {
     method: "POST",
@@ -648,10 +653,7 @@ try {
     })
   );
 } finally {
-  if (userId) {
-    await pool.query("delete from users where id = $1", [userId]);
-  }
-
   await pool.end();
   stopApi(child);
+  await cleanupSmokeUsers(databaseUrl, [email]);
 }

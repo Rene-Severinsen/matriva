@@ -1,6 +1,11 @@
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 
+import {
+  assertSafeSmokeDatabase,
+  cleanupSmokeUsers
+} from "./smoke-database.mjs";
+
 const host = "127.0.0.1";
 const port = "4101";
 const baseUrl = `http://${host}:${port}`;
@@ -12,6 +17,11 @@ const addressQuery = "Rådhuspladsen 1";
 const databaseUrl =
   process.env.DATABASE_URL ??
   "postgresql://matriva:matriva_dev_password@127.0.0.1:56432/matriva_dev";
+const smokeRunId = Date.now();
+const smokeEmails = [];
+let authSessionSequence = 0;
+
+assertSafeSmokeDatabase(databaseUrl);
 
 let capturedOutput = "";
 
@@ -506,7 +516,9 @@ function dateOnlyDaysFromNow(daysFromNow) {
 
 
 async function createAuthSession() {
-  const email = `routes-smoke-${Date.now()}@example.test`;
+  authSessionSequence += 1;
+  const email = `routes-smoke-${smokeRunId}-${authSessionSequence}@example.test`;
+  smokeEmails.push(email);
   const requested = await fetchJson("/v1/auth/magic-link/request", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -839,4 +851,5 @@ try {
   process.exitCode = 1;
 } finally {
   stopApi(child);
+  await cleanupSmokeUsers(databaseUrl, smokeEmails);
 }

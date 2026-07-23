@@ -3,6 +3,12 @@ import {
   adminBootstrapResponseSchema,
   adminDashboardPeriodKeySchema,
   adminDashboardResponseSchema,
+  adminHouseResponseSchema,
+  adminHousesResponseSchema,
+  adminRecommendationCatalogItemResponseSchema,
+  adminRecommendationCatalogResponseSchema,
+  adminUserResponseSchema,
+  adminUsersResponseSchema,
   appBootstrapResponseSchema,
   authSessionResponseSchema,
   currentUserResponseSchema,
@@ -32,6 +38,19 @@ import {
   type AdminBootstrapResponse,
   type AdminDashboardPeriodKey,
   type AdminDashboardResponse,
+  type AdminHousePublicDataStatusFilter,
+  type AdminHouseResponse,
+  type AdminHouseSort,
+  type AdminHousesResponse,
+  type AdminRecommendationActiveFilter,
+  type AdminRecommendationCatalogItemResponse,
+  type AdminRecommendationCatalogResponse,
+  type AdminRecommendationCatalogSort,
+  type AdminSortOrder,
+  type AdminUserResponse,
+  type AdminUserSort,
+  type AdminUserStatusFilter,
+  type AdminUsersResponse,
   type AppBootstrapResponse,
   type AuthSessionResponse,
   type ConsumeMagicLinkRequest,
@@ -88,6 +107,15 @@ export type MatrivaApiClientOptions = {
   getAccessToken?: () => string | null | undefined;
 };
 
+export type AdminListRequest<Sort extends string> = {
+  query?: string;
+  page?: number;
+  pageSize?: number;
+  sort?: Sort;
+  order?: AdminSortOrder;
+  signal?: AbortSignal;
+};
+
 export class MatrivaApiError extends Error {
   readonly status: number;
   readonly code: string | null;
@@ -115,6 +143,34 @@ export type MatrivaApiClient = {
     period?: AdminDashboardPeriodKey;
     signal?: AbortSignal;
   }) => Promise<AdminDashboardResponse>;
+  getAdminUsers: (
+    input?: AdminListRequest<AdminUserSort> & {
+      status?: AdminUserStatusFilter;
+    }
+  ) => Promise<AdminUsersResponse>;
+  getAdminUser: (
+    userId: string,
+    input?: { signal?: AbortSignal }
+  ) => Promise<AdminUserResponse>;
+  getAdminHouses: (
+    input?: AdminListRequest<AdminHouseSort> & {
+      publicDataStatus?: AdminHousePublicDataStatusFilter;
+    }
+  ) => Promise<AdminHousesResponse>;
+  getAdminHouse: (
+    houseId: string,
+    input?: { signal?: AbortSignal }
+  ) => Promise<AdminHouseResponse>;
+  getAdminRecommendationCatalog: (
+    input?: AdminListRequest<AdminRecommendationCatalogSort> & {
+      active?: AdminRecommendationActiveFilter;
+      category?: string;
+    }
+  ) => Promise<AdminRecommendationCatalogResponse>;
+  getAdminRecommendationCatalogItem: (
+    catalogKey: string,
+    input?: { signal?: AbortSignal }
+  ) => Promise<AdminRecommendationCatalogItemResponse>;
   updateProfile: (input: UpdateProfileRequest) => Promise<UpdateProfileResponse>;
   getAppBootstrap: () => Promise<AppBootstrapResponse>;
   searchAddresses: (query: string) => Promise<AddressSearchResponse>;
@@ -278,6 +334,26 @@ export function createMatrivaApiClient(
     return healthResponseSchema.parse(await response.json());
   }
 
+  function adminListSearchParams(input: Record<string, unknown> = {}) {
+    const params = new URLSearchParams();
+
+    for (const [key, value] of Object.entries(input)) {
+      if (
+        key === "signal" ||
+        value === undefined ||
+        value === null ||
+        value === ""
+      ) {
+        continue;
+      }
+
+      params.set(key, String(value));
+    }
+
+    const query = params.toString();
+    return query ? `?${query}` : "";
+  }
+
   return {
     baseUrl: normalizedBaseUrl,
     getHealth,
@@ -366,6 +442,94 @@ export function createMatrivaApiClient(
 
       return adminDashboardResponseSchema.parse(
         await parseApiResponse(response, "Could not load admin dashboard.")
+      );
+    },
+    async getAdminUsers(input = {}) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/admin/users${adminListSearchParams(input)}`,
+        {
+          headers: authHeaders(),
+          ...(input.signal ? { signal: input.signal } : {})
+        }
+      );
+
+      return adminUsersResponseSchema.parse(
+        await parseApiResponse(response, "Could not load admin users.")
+      );
+    },
+    async getAdminUser(userId, input = {}) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/admin/users/${encodeURIComponent(userId)}`,
+        {
+          headers: authHeaders(),
+          ...(input.signal ? { signal: input.signal } : {})
+        }
+      );
+
+      return adminUserResponseSchema.parse(
+        await parseApiResponse(response, "Could not load admin user.")
+      );
+    },
+    async getAdminHouses(input = {}) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/admin/houses${adminListSearchParams(input)}`,
+        {
+          headers: authHeaders(),
+          ...(input.signal ? { signal: input.signal } : {})
+        }
+      );
+
+      return adminHousesResponseSchema.parse(
+        await parseApiResponse(response, "Could not load admin houses.")
+      );
+    },
+    async getAdminHouse(houseId, input = {}) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/admin/houses/${encodeURIComponent(houseId)}`,
+        {
+          headers: authHeaders(),
+          ...(input.signal ? { signal: input.signal } : {})
+        }
+      );
+
+      return adminHouseResponseSchema.parse(
+        await parseApiResponse(response, "Could not load admin house.")
+      );
+    },
+    async getAdminRecommendationCatalog(input = {}) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/admin/recommendations/catalog${adminListSearchParams(
+          input
+        )}`,
+        {
+          headers: authHeaders(),
+          ...(input.signal ? { signal: input.signal } : {})
+        }
+      );
+
+      return adminRecommendationCatalogResponseSchema.parse(
+        await parseApiResponse(
+          response,
+          "Could not load admin recommendation catalog."
+        )
+      );
+    },
+    async getAdminRecommendationCatalogItem(catalogKey, input = {}) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/admin/recommendations/catalog/${encodeURIComponent(
+          catalogKey
+        )}`,
+        {
+          headers: authHeaders(),
+          ...(input.signal ? { signal: input.signal } : {})
+        }
+      );
+
+      return adminRecommendationCatalogItemResponseSchema.parse(
+        await parseApiResponse(
+          response,
+          "Could not load admin recommendation catalog item."
+        )
       );
     },
     async updateProfile(input) {

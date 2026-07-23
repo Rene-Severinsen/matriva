@@ -279,6 +279,411 @@ export type AdminDashboardResponse = z.infer<
   typeof adminDashboardResponseSchema
 >;
 
+export const adminListCountSchema = z.number().int().nonnegative();
+export const adminRatioSchema = z.number().min(0).max(1);
+
+export const adminPaginationSchema = z.object({
+  page: z.number().int().positive(),
+  pageSize: z.number().int().positive().max(100),
+  total: adminListCountSchema,
+  pageCount: adminListCountSchema
+});
+
+export type AdminPagination = z.infer<typeof adminPaginationSchema>;
+
+export const adminSortOrderSchema = z.enum(["asc", "desc"]);
+export type AdminSortOrder = z.infer<typeof adminSortOrderSchema>;
+
+export const adminUserSortSchema = z.enum([
+  "created_at",
+  "last_login_at",
+  "latest_session_activity",
+  "email",
+  "display_name",
+  "house_count",
+  "task_count",
+  "completion_count"
+]);
+export type AdminUserSort = z.infer<typeof adminUserSortSchema>;
+
+export const adminUserStatusFilterSchema = z.enum(["all", "active", "disabled"]);
+export type AdminUserStatusFilter = z.infer<
+  typeof adminUserStatusFilterSchema
+>;
+
+export const adminSavedHouseStatusSchema = z.enum(["saved"]);
+export const adminSavedHouseDataConfidenceSchema = z.enum(["not_verified"]);
+export const adminMaintenanceSeasonSchema = z.enum([
+  "spring",
+  "summer",
+  "autumn",
+  "winter",
+  "all_year"
+]);
+export const adminRecommendationPrioritySchema = z.enum([
+  "low",
+  "normal",
+  "high"
+]);
+export const adminRecommendationDisclaimerClassSchema = z.enum([
+  "general",
+  "safety",
+  "professional_review"
+]);
+export const adminRecommendationPeriodSchema = z.union([
+  z.object({ type: z.literal("all_year") }),
+  z.object({
+    type: z.literal("season"),
+    season: z.enum(["spring", "autumn"])
+  }),
+  z.object({
+    type: z.literal("month_range"),
+    startMonth: z.number().int().min(1).max(12),
+    endMonth: z.number().int().min(1).max(12)
+  })
+]);
+export const adminPublicDataWarningSchema = z.object({
+  code: z.string().min(1),
+  message: z.string().min(1),
+  path: z.string().min(1).optional()
+});
+
+export const adminUserListItemSchema = z.object({
+  id: userIdSchema,
+  displayName: z.string().min(1).nullable(),
+  email: z.string().email(),
+  status: userStatusSchema,
+  createdAt: z.string().datetime(),
+  lastLoginAt: z.string().datetime().nullable(),
+  latestSessionActivityAt: z.string().datetime().nullable(),
+  houseCount: adminListCountSchema,
+  taskCount: adminListCountSchema,
+  completionCount: adminListCountSchema,
+  roles: z.array(adminRoleSchema),
+  onboardingState: onboardingStateSchema
+});
+
+export type AdminUserListItem = z.infer<typeof adminUserListItemSchema>;
+
+export const adminUsersResponseSchema = z.object({
+  users: z.array(adminUserListItemSchema),
+  pagination: adminPaginationSchema,
+  generatedAt: z.string().datetime()
+});
+
+export type AdminUsersResponse = z.infer<typeof adminUsersResponseSchema>;
+
+export const adminUserDetailSchema = adminUserListItemSchema.extend({
+  emailVerifiedAt: z.string().datetime().nullable(),
+  updatedAt: z.string().datetime(),
+  houses: z.array(
+    z.object({
+      id: houseIdSchema,
+      addressLabel: z.string().min(1),
+      status: adminSavedHouseStatusSchema,
+      createdAt: z.string().datetime()
+    })
+  ),
+  taskSummary: z.object({
+    total: adminListCountSchema,
+    planned: adminListCountSchema,
+    due: adminListCountSchema,
+    overdue: adminListCountSchema,
+    done: adminListCountSchema
+  }),
+  completionSummary: z.object({
+    total: adminListCountSchema,
+    latestCompletedAt: z.string().datetime().nullable()
+  }),
+  recommendationSummary: z.object({
+    total: adminListCountSchema,
+    pending: adminListCountSchema,
+    accepted: adminListCountSchema,
+    dismissed: adminListCountSchema,
+    permanentHidden: adminListCountSchema
+  }),
+  latestActivityAt: z.string().datetime().nullable()
+});
+
+export const adminUserResponseSchema = z.object({
+  user: adminUserDetailSchema,
+  generatedAt: z.string().datetime()
+});
+
+export type AdminUserResponse = z.infer<typeof adminUserResponseSchema>;
+
+export const adminHousePublicDataStatusFilterSchema = z.enum([
+  "all",
+  "not_started",
+  "fetching",
+  "success",
+  "partial",
+  "not_found",
+  "ambiguous",
+  "temporarily_unavailable",
+  "failed",
+  "with_warnings"
+]);
+export type AdminHousePublicDataStatusFilter = z.infer<
+  typeof adminHousePublicDataStatusFilterSchema
+>;
+
+export const adminHouseSortSchema = z.enum([
+  "created_at",
+  "address",
+  "owner",
+  "public_data_status",
+  "warning_count",
+  "task_count",
+  "completion_count",
+  "active_recommendation_count",
+  "latest_activity_at"
+]);
+export type AdminHouseSort = z.infer<typeof adminHouseSortSchema>;
+
+export const adminPublicDataStatusSchema = z.enum([
+  "not_started",
+  "fetching",
+  "success",
+  "partial",
+  "not_found",
+  "ambiguous",
+  "temporarily_unavailable",
+  "failed"
+]);
+
+export const adminHouseOwnerSchema = z.object({
+  id: userIdSchema,
+  displayName: z.string().min(1).nullable(),
+  email: z.string().email()
+});
+
+export const adminHouseListItemSchema = z.object({
+  id: houseIdSchema,
+  addressLabel: z.string().min(1),
+  owner: adminHouseOwnerSchema,
+  status: adminSavedHouseStatusSchema,
+  dataConfidence: adminSavedHouseDataConfidenceSchema,
+  createdAt: z.string().datetime(),
+  publicDataStatus: adminPublicDataStatusSchema,
+  warningCount: adminListCountSchema,
+  taskCount: adminListCountSchema,
+  completionCount: adminListCountSchema,
+  activeRecommendationCount: adminListCountSchema,
+  latestActivityAt: z.string().datetime().nullable()
+});
+
+export type AdminHouseListItem = z.infer<typeof adminHouseListItemSchema>;
+
+export const adminHouseBbrSummarySchema = z.object({
+  contract: z.literal("house_public_data_summary.v1"),
+  houseId: houseIdSchema,
+  status: adminPublicDataStatusSchema,
+  sourceLabel: z.literal("Registreret i BBR"),
+  fetchedAt: z.string().datetime().nullable(),
+  primary: z.object({
+    bbrBuildingId: z.string().min(1).nullable(),
+    title: z.string().min(1).nullable(),
+    values: z.array(
+      z.object({
+        key: z.string().min(1),
+        label: z.string().min(1),
+        value: z.string().min(1),
+        unit: z.string().min(1).nullable()
+      })
+    )
+  }),
+  otherBuildings: z.array(
+    z.object({
+      bbrBuildingId: z.string().min(1),
+      title: z.string().min(1),
+      values: z.array(
+        z.object({
+          key: z.string().min(1),
+          label: z.string().min(1),
+          value: z.string().min(1),
+          unit: z.string().min(1).nullable()
+        })
+      )
+    })
+  ),
+  existingOtherBuildingCount: adminListCountSchema,
+  projectedBuildingCount: adminListCountSchema,
+  missingDataNotice: z.string().min(1).nullable(),
+  warnings: z.array(adminPublicDataWarningSchema)
+});
+
+export const adminHousesResponseSchema = z.object({
+  houses: z.array(adminHouseListItemSchema),
+  pagination: adminPaginationSchema,
+  generatedAt: z.string().datetime()
+});
+
+export type AdminHousesResponse = z.infer<typeof adminHousesResponseSchema>;
+
+export const adminHouseDetailSchema = adminHouseListItemSchema.extend({
+  updatedAt: z.string().datetime(),
+  sourceReferences: z.object({
+    dawaAddressId: z.string().min(1).nullable(),
+    sourceAccessAddressId: z.string().min(1).nullable()
+  }),
+  bbr: z.object({
+    source: z.object({
+      provider: z.string().min(1).nullable(),
+      register: z.string().min(1).nullable(),
+      fetchedAt: z.string().datetime().nullable(),
+      effectiveAt: z.string().datetime().nullable(),
+      mappingVersion: z.string().min(1).nullable(),
+      codebookVersion: z.string().min(1).nullable()
+    }),
+    summary: adminHouseBbrSummarySchema.nullable(),
+    warnings: z.array(adminPublicDataWarningSchema),
+    buildings: z.array(
+      z.object({
+        id: z.string().min(1),
+        bbrBuildingId: z.string().min(1),
+        buildingNumber: z.number().int().nullable(),
+        includedInProductView: z.boolean(),
+        lifecycleCode: z.string().min(1),
+        useCode: z.string().min(1).nullable(),
+        constructionYear: z.number().int().nullable(),
+        residentialAreaM2: z.number().int().nonnegative().nullable(),
+        totalBuildingAreaM2: z.number().int().nonnegative().nullable()
+      })
+    ),
+    unitCount: adminListCountSchema,
+    floorCount: adminListCountSchema,
+    parcelCount: adminListCountSchema
+  }),
+  taskSummary: z.object({
+    total: adminListCountSchema,
+    planned: adminListCountSchema,
+    due: adminListCountSchema,
+    overdue: adminListCountSchema,
+    done: adminListCountSchema
+  }),
+  completionSummary: z.object({
+    total: adminListCountSchema,
+    latestCompletedAt: z.string().datetime().nullable()
+  }),
+  recommendationSummary: z.object({
+    total: adminListCountSchema,
+    pending: adminListCountSchema,
+    accepted: adminListCountSchema,
+    dismissed: adminListCountSchema,
+    active: adminListCountSchema,
+    permanentHidden: adminListCountSchema
+  }),
+  assetCounts: z.object({
+    documents: adminListCountSchema,
+    improvements: adminListCountSchema,
+    media: adminListCountSchema
+  })
+});
+
+export const adminHouseResponseSchema = z.object({
+  house: adminHouseDetailSchema,
+  generatedAt: z.string().datetime()
+});
+
+export type AdminHouseResponse = z.infer<typeof adminHouseResponseSchema>;
+
+export const adminRecommendationCatalogSortSchema = z.enum([
+  "catalog_key",
+  "title",
+  "category",
+  "active",
+  "priority",
+  "instance_count",
+  "accepted_count",
+  "permanent_hide_count",
+  "acceptance_rate"
+]);
+export type AdminRecommendationCatalogSort = z.infer<
+  typeof adminRecommendationCatalogSortSchema
+>;
+
+export const adminRecommendationActiveFilterSchema = z.enum([
+  "all",
+  "active",
+  "inactive"
+]);
+export type AdminRecommendationActiveFilter = z.infer<
+  typeof adminRecommendationActiveFilterSchema
+>;
+
+export const adminRecommendationCatalogItemSchema = z.object({
+  catalogKey: z.string().min(1),
+  catalogVersion: z.string().min(1),
+  title: z.string().min(1),
+  category: z.string().min(1),
+  active: z.boolean(),
+  priority: adminRecommendationPrioritySchema,
+  recurrenceInterval: z.string().min(1),
+  season: adminMaintenanceSeasonSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  instanceCount: adminListCountSchema,
+  pendingCount: adminListCountSchema,
+  acceptedCount: adminListCountSchema,
+  dismissedCount: adminListCountSchema,
+  acceptedTaskCount: adminListCountSchema,
+  permanentHideCount: adminListCountSchema,
+  acceptanceRate: adminRatioSchema,
+  hideRate: adminRatioSchema
+});
+
+export type AdminRecommendationCatalogItem = z.infer<
+  typeof adminRecommendationCatalogItemSchema
+>;
+
+export const adminRecommendationCatalogResponseSchema = z.object({
+  items: z.array(adminRecommendationCatalogItemSchema),
+  filters: z.object({
+    categories: z.array(z.string().min(1))
+  }),
+  pagination: adminPaginationSchema,
+  generatedAt: z.string().datetime()
+});
+
+export type AdminRecommendationCatalogResponse = z.infer<
+  typeof adminRecommendationCatalogResponseSchema
+>;
+
+export const adminRecommendationCatalogDetailSchema =
+  adminRecommendationCatalogItemSchema.extend({
+    shortDescription: z.string().min(1),
+    componentKey: z.string().min(1),
+    recommendedPeriod: adminRecommendationPeriodSchema,
+    eligibilityRules: z.unknown(),
+    disclaimerClass: adminRecommendationDisclaimerClassSchema,
+    lineage: z.object({
+      catalogKey: z.string().min(1),
+      catalogVersion: z.string().min(1)
+    }),
+    statusDistribution: z.object({
+      pending: adminListCountSchema,
+      accepted: adminListCountSchema,
+      dismissed: adminListCountSchema
+    }),
+    distinctHouseCount: adminListCountSchema,
+    distinctUserCount: adminListCountSchema,
+    acceptedOverTime: z.array(adminDashboardSeriesPointSchema),
+    dataQuality: z.object({
+      acceptedOverTime: z.literal("estimated_from_updated_at"),
+      notNow: z.literal("not_available")
+    })
+  });
+
+export const adminRecommendationCatalogItemResponseSchema = z.object({
+  item: adminRecommendationCatalogDetailSchema,
+  generatedAt: z.string().datetime()
+});
+
+export type AdminRecommendationCatalogItemResponse = z.infer<
+  typeof adminRecommendationCatalogItemResponseSchema
+>;
+
 export const updateProfileRequestSchema = z.object({
   displayName: z.string().trim().min(1).max(120),
   preferredLocale: z.literal("da-DK").optional()

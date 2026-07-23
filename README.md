@@ -136,6 +136,57 @@ The admin UI does not contain seed values, mock metrics, or fallback dashboard
 data. It renders only the validated response from `GET /v1/admin/dashboard` and
 shows an error state when that request fails.
 
+Admin v1 also includes read-only sections for users, houses, and
+recommendations. These routes all require backend-verified `SUPER_ADMIN` through
+the same authorization boundary as the dashboard:
+
+```text
+GET /v1/admin/users
+GET /v1/admin/users/:userId
+GET /v1/admin/houses
+GET /v1/admin/houses/:houseId
+GET /v1/admin/recommendations/catalog
+GET /v1/admin/recommendations/catalog/:catalogKey
+```
+
+List routes support `query`, `page`, `pageSize`, `sort`, and `order` with
+allowlisted sort fields and a maximum `pageSize` of 100. User lists add
+`status=all|active|disabled`. House lists add `publicDataStatus`, including
+current BBR/public-data statuses and `with_warnings`. Recommendation catalog
+lists add `active=all|active|inactive` and `category`, where category maps to
+the catalog `component_key`.
+
+Admin user responses expose profile, onboarding state, roles, house count,
+non-deleted maintenance task count, completion count, latest login/session
+activity, and read-only summaries. They never include magic-link tokens, token
+hashes, refresh tokens, or raw auth session rows.
+
+Admin house responses expose the owner, formatted address, source references,
+current public-data status, warning count, normalized BBR summary fields,
+limited building/unit/floor/parcel counts, maintenance summaries, active
+recommendation counts, and document/improvement/media counts. Raw
+Datafordeler/BBR provider payloads are not returned by these admin routes.
+
+Recommendation catalog metrics are defined as follows:
+
+- `instanceCount`: materialized `maintenance_recommendations` rows for the same
+  `catalog_key` and `catalog_version`.
+- `pendingCount`, `acceptedCount`, and `dismissedCount`: status distribution for
+  those materialized rows.
+- `acceptedTaskCount`: instances with `accepted_task_id`.
+- `permanentHideCount`: active rows in `maintenance_recommendation_hides` for
+  the catalog key.
+- `acceptanceRate`: `acceptedCount / instanceCount`, or `0` when there are no
+  instances.
+- `hideRate`: `permanentHideCount / (instanceCount + permanentHideCount)`, or
+  `0` when both values are zero.
+
+Accepted-over-time in recommendation detail is estimated from
+`maintenance_recommendations.updated_at` for accepted rows. `not_now` is not
+shown as a precise metric because the dismissal mode is not stored reliably.
+All admin sections are read-only; ordinary owner-scoped mobile API routes are
+unchanged.
+
 Smoke scripts that create users use unique `@example.test` addresses and clean
 those exact users in `finally`. A database guard limits these scripts to local
 `matriva_dev` or `matriva_test` databases. Existing historical fixtures can be
@@ -149,9 +200,8 @@ The preview script is dry-run by default. Write mode requires the explicit
 `MATRIVA_CONFIRM_DEV_FIXTURE_CLEANUP=true` environment variable and must only
 be used after reviewing the displayed counts.
 
-User, house, and recommendation list pages, admin writes, role management,
-audit logging, period-over-period comparisons, and deployment are not
-implemented yet.
+Admin writes, role management, audit logging, period-over-period comparisons,
+exports, and deployment are not implemented yet.
 
 `apps/mobile/.env.example` documents the local default:
 

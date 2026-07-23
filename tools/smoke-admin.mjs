@@ -172,6 +172,192 @@ async function insertDashboardFixture(pool, userId) {
   );
 }
 
+async function insertAdminReadFixture(pool, userId, email) {
+  const houseId = fixtureId("house");
+  const taskId = fixtureId("task");
+  const acceptedTaskId = fixtureId("task");
+  const catalogItemId = fixtureId("mcat");
+  const catalogKey = `admin_read_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+  const catalogVersion = "2026.07.smoke";
+
+  await pool.query(
+    "update user_profiles set display_name = $2, updated_at = now() where user_id = $1",
+    [userId, "Admin read smoke"]
+  );
+  await pool.query(
+    "insert into houses (id, user_id, address_label) values ($1, $2, $3)",
+    [houseId, userId, "Admin Readvej 2, 2300 København S"]
+  );
+  await pool.query(
+    `
+      insert into house_public_data_snapshots (
+        id,
+        house_id,
+        provider,
+        register,
+        status,
+        mapping_version,
+        codebook_version,
+        raw_payload,
+        raw_payload_hash,
+        normalized_payload,
+        is_current
+      )
+      values (
+        $1,
+        $2,
+        'datafordeler',
+        'bbr',
+        'partial',
+        'smoke',
+        'smoke',
+        '{"secretCandidate":"must-not-leak"}'::jsonb,
+        'smoke-hash',
+        $3::jsonb,
+        true
+      )
+    `,
+    [
+      fixtureId("pubsnap"),
+      houseId,
+      JSON.stringify({
+        contract: "house_public_data.v1",
+        status: "partial",
+        selection: { primaryBuildingId: "bbr-smoke", primaryUnitId: null },
+        address: { label: "Admin Readvej 2, 2300 København S" },
+        warnings: [
+          { code: "partial_building_details", message: "Smoke warning" }
+        ]
+      })
+    ]
+  );
+  await pool.query(
+    `
+      insert into house_public_buildings (
+        id,
+        snapshot_id,
+        house_id,
+        bbr_building_id,
+        building_number,
+        is_address_building,
+        included_in_product_view,
+        lifecycle_code,
+        use_code,
+        construction_year,
+        residential_area_m2,
+        total_building_area_m2,
+        raw_normalized
+      )
+      select $1, id, $2, 'bbr-smoke', 1, true, true, '6', '120', 1978, 122, 140, '{}'::jsonb
+      from house_public_data_snapshots
+      where house_id = $2 and is_current
+    `,
+    [fixtureId("pubbld"), houseId]
+  );
+  await pool.query(
+    `
+      insert into maintenance_tasks (
+        id, house_id, user_id, title, source, status, timing_type
+      )
+      values
+        ($1, $3, $4, 'Admin read planned task', 'user_created', 'planned', 'none'),
+        ($2, $3, $4, 'Admin read accepted task', 'recommendation_accepted', 'planned', 'none')
+    `,
+    [taskId, acceptedTaskId, houseId, userId]
+  );
+  await pool.query(
+    `
+      insert into maintenance_completions (
+        id, task_id, house_id, user_id, title_snapshot, completed_date, source
+      )
+      values ($1, $2, $3, $4, 'Admin read planned task', current_date, 'user_created')
+    `,
+    [fixtureId("mcomp"), taskId, houseId, userId]
+  );
+  await pool.query(
+    `
+      insert into maintenance_catalog_items (
+        id,
+        catalog_key,
+        catalog_version,
+        title,
+        short_description,
+        component_key,
+        season,
+        recommended_period,
+        default_recurrence_interval,
+        priority,
+        eligibility_rules,
+        disclaimer_class,
+        is_active
+      )
+      values (
+        $1,
+        $2,
+        $3,
+        'Admin read smoke recommendation',
+        'Used by admin smoke tests.',
+        'roof',
+        'all_year',
+        '{"type":"all_year"}'::jsonb,
+        'yearly',
+        'normal',
+        '{"type":"universal_house"}'::jsonb,
+        'general',
+        true
+      )
+    `,
+    [catalogItemId, catalogKey, catalogVersion]
+  );
+  await pool.query(
+    `
+      insert into maintenance_recommendations (
+        id,
+        house_id,
+        user_id,
+        source_type,
+        status,
+        title,
+        description,
+        recommended_timing_label,
+        recommended_period,
+        priority,
+        disclaimer_class,
+        timing_type,
+        recurrence_interval,
+        recurrence_anchor,
+        component_key,
+        recommendation_key,
+        version_key,
+        catalog_item_id,
+        catalog_key,
+        catalog_version,
+        period_key,
+        accepted_task_id
+      )
+      values
+        ($1, $3, $4, 'matriva_catalog', 'accepted', 'Admin read accepted', 'Smoke accepted', 'Når det passer', '{"type":"all_year"}'::jsonb, 'normal', 'general', 'none', 'yearly', 'completed_date', 'roof', $5, $6 || ':accepted', $7, $5, $6, '2026', $8),
+        ($2, $3, $4, 'matriva_catalog', 'pending', 'Admin read pending', 'Smoke pending', 'Når det passer', '{"type":"all_year"}'::jsonb, 'normal', 'general', 'none', 'yearly', 'completed_date', 'roof', $5, $6 || ':pending', $7, $5, $6, '2027', null)
+    `,
+    [
+      fixtureId("mrec"),
+      fixtureId("mrec"),
+      houseId,
+      userId,
+      catalogKey,
+      catalogVersion,
+      catalogItemId,
+      acceptedTaskId
+    ]
+  );
+  await pool.query(
+    "insert into maintenance_recommendation_hides (id, house_id, catalog_key) values ($1, $2, $3)",
+    [fixtureId("mhide"), houseId, catalogKey]
+  );
+
+  return { catalogKey, email, houseId, userId };
+}
+
 function startApi() {
   return spawn("npm", ["run", "dev:api"], {
     cwd: process.cwd(),
@@ -269,8 +455,18 @@ async function provisionTemporarySuperAdmin(userId) {
 }
 
 async function runSmoke() {
-  const missing = await request("/v1/admin/bootstrap");
-  assert.equal(missing.response.status, 401, "admin route must require auth");
+  const adminRoutes = [
+    "/v1/admin/bootstrap",
+    "/v1/admin/dashboard",
+    "/v1/admin/users",
+    "/v1/admin/houses",
+    "/v1/admin/recommendations/catalog"
+  ];
+
+  for (const route of adminRoutes) {
+    const missing = await request(route);
+    assert.equal(missing.response.status, 401, `${route} must require auth`);
+  }
 
   const invalid = await request("/v1/admin/bootstrap", {
     headers: bearer("not-a-valid-access-token")
@@ -291,9 +487,12 @@ async function runSmoke() {
     headers: bearer(regularSession.tokens.accessToken)
   });
   assert.equal(forbiddenDashboard.response.status, 403);
-
-  const missingDashboard = await request("/v1/admin/dashboard");
-  assert.equal(missingDashboard.response.status, 401);
+  for (const route of adminRoutes.slice(2)) {
+    const forbiddenRoute = await request(route, {
+      headers: bearer(regularSession.tokens.accessToken)
+    });
+    assert.equal(forbiddenRoute.response.status, 403, `${route} must forbid regular users`);
+  }
 
   const adminSession = await login(temporarySuperAdminEmail);
   await provisionTemporarySuperAdmin(adminSession.user.id);
@@ -318,6 +517,7 @@ async function runSmoke() {
   assert.equal(secondBootstrap.response.status, 200);
 
   const pool = new pg.Pool({ connectionString: databaseUrl });
+  let adminReadFixture;
   try {
     const roleCount = await pool.query(
       `
@@ -448,7 +648,83 @@ async function runSmoke() {
         `dashboard must not leak ${forbiddenValue}`
       );
     }
+
+    adminReadFixture = await insertAdminReadFixture(
+      pool,
+      regularSession.user.id,
+      regularEmail
+    );
+
+    const users = await request(
+      `/v1/admin/users?query=${encodeURIComponent(regularEmail)}&status=active&sort=email&order=asc&page=1&pageSize=10`,
+      { headers: bearer(adminSession.tokens.accessToken) }
+    );
+    assert.equal(users.response.status, 200);
+    assert.ok(users.body.users.some((user) => user.id === regularSession.user.id));
+    assert.equal(users.body.users[0].houseCount >= 1, true);
+    assert.equal(JSON.stringify(users.body).includes("token_hash"), false);
+    const userDetail = await request(`/v1/admin/users/${regularSession.user.id}`, {
+      headers: bearer(adminSession.tokens.accessToken)
+    });
+    assert.equal(userDetail.response.status, 200);
+    assert.equal(userDetail.body.user.id, regularSession.user.id);
+    assert.equal(userDetail.body.user.recommendationSummary.permanentHidden >= 1, true);
+    const missingUser = await request("/v1/admin/users/usr_missing00000000", {
+      headers: bearer(adminSession.tokens.accessToken)
+    });
+    assert.equal(missingUser.response.status, 404);
+
+    const houses = await request(
+      `/v1/admin/houses?query=${encodeURIComponent("Admin Readvej")}&publicDataStatus=with_warnings&sort=address&order=asc&page=1&pageSize=10`,
+      { headers: bearer(adminSession.tokens.accessToken) }
+    );
+    assert.equal(houses.response.status, 200);
+    assert.ok(houses.body.houses.some((house) => house.id === adminReadFixture.houseId));
+    const houseDetail = await request(`/v1/admin/houses/${adminReadFixture.houseId}`, {
+      headers: bearer(adminSession.tokens.accessToken)
+    });
+    assert.equal(houseDetail.response.status, 200);
+    assert.equal(houseDetail.body.house.warningCount, 1);
+    assert.equal(JSON.stringify(houseDetail.body).includes("secretCandidate"), false);
+    const missingHouse = await request("/v1/admin/houses/house_missing000000", {
+      headers: bearer(adminSession.tokens.accessToken)
+    });
+    assert.equal(missingHouse.response.status, 404);
+
+    const catalog = await request(
+      `/v1/admin/recommendations/catalog?query=${adminReadFixture.catalogKey}&active=active&category=roof&page=1&pageSize=10`,
+      { headers: bearer(adminSession.tokens.accessToken) }
+    );
+    assert.equal(catalog.response.status, 200);
+    assert.equal(catalog.body.items[0].catalogKey, adminReadFixture.catalogKey);
+    assert.equal(catalog.body.items[0].acceptedCount, 1);
+    assert.equal(catalog.body.items[0].permanentHideCount, 1);
+    const catalogDetail = await request(
+      `/v1/admin/recommendations/catalog/${adminReadFixture.catalogKey}`,
+      { headers: bearer(adminSession.tokens.accessToken) }
+    );
+    assert.equal(catalogDetail.response.status, 200);
+    assert.equal(catalogDetail.body.item.statusDistribution.pending, 1);
+    assert.equal(catalogDetail.body.item.acceptedTaskCount, 1);
+    assert.equal(catalogDetail.body.item.dataQuality.notNow, "not_available");
+    assert.equal("notNowCount" in catalogDetail.body.item, false);
+    const missingCatalog = await request(
+      "/v1/admin/recommendations/catalog/not_a_real_catalog_key",
+      { headers: bearer(adminSession.tokens.accessToken) }
+    );
+    assert.equal(missingCatalog.response.status, 404);
   } finally {
+    if (adminReadFixture) {
+      await pool.query("delete from maintenance_recommendations where catalog_key = $1", [
+        adminReadFixture.catalogKey
+      ]);
+      await pool.query("delete from maintenance_recommendation_hides where catalog_key = $1", [
+        adminReadFixture.catalogKey
+      ]);
+      await pool.query("delete from maintenance_catalog_items where catalog_key = $1", [
+        adminReadFixture.catalogKey
+      ]);
+    }
     await pool.end();
   }
 

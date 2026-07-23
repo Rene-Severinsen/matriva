@@ -11,6 +11,12 @@ import {
   adminBootstrapResponseSchema,
   adminDashboardPeriodKeySchema,
   adminDashboardResponseSchema,
+  adminHouseResponseSchema,
+  adminHousesResponseSchema,
+  adminRecommendationCatalogItemResponseSchema,
+  adminRecommendationCatalogResponseSchema,
+  adminUserResponseSchema,
+  adminUsersResponseSchema,
   apiErrorSchema,
   appBootstrapResponseSchema,
   authSessionResponseSchema,
@@ -67,6 +73,12 @@ import {
 
 import { requireAdminUser, toAdminBootstrapResponse } from "./admin.ts";
 import { getAdminDashboard } from "./admin-dashboard.ts";
+import { getAdminHouse, listAdminHouses } from "./admin-houses.ts";
+import {
+  getAdminRecommendationCatalogItem,
+  listAdminRecommendationCatalog
+} from "./admin-recommendations.ts";
+import { getAdminUser, listAdminUsers } from "./admin-users.ts";
 import { sendMagicLinkEmail, createMagicLinkUrl } from "./auth/mailer.ts";
 import { getDatafordelerConfigStatus } from "./config/datafordeler.ts";
 import {
@@ -689,6 +701,119 @@ const server = createServer((request, response) => {
 
         const dashboard = await getAdminDashboard(parsedPeriod.data);
         writeJson(response, 200, adminDashboardResponseSchema.parse(dashboard));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    (request.url === "/v1/admin/users" ||
+      request.url?.startsWith("/v1/admin/users?"))
+  ) {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        const url = new URL(request.url ?? "/", `http://${host}:${port}`);
+        const users = await listAdminUsers(url.searchParams);
+        writeJson(response, 200, adminUsersResponseSchema.parse(users));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const adminUserMatch = /^\/v1\/admin\/users\/([^/?]+)$/.exec(
+    (request.url ?? "").split("?")[0] ?? ""
+  );
+  if (request.method === "GET" && adminUserMatch) {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        const user = await getAdminUser(decodeURIComponent(adminUserMatch[1]!));
+        writeJson(response, 200, adminUserResponseSchema.parse(user));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    (request.url === "/v1/admin/houses" ||
+      request.url?.startsWith("/v1/admin/houses?"))
+  ) {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        const url = new URL(request.url ?? "/", `http://${host}:${port}`);
+        const houses = await listAdminHouses(url.searchParams);
+        writeJson(response, 200, adminHousesResponseSchema.parse(houses));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const adminHouseMatch = /^\/v1\/admin\/houses\/([^/?]+)$/.exec(
+    (request.url ?? "").split("?")[0] ?? ""
+  );
+  if (request.method === "GET" && adminHouseMatch) {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        const house = await getAdminHouse(decodeURIComponent(adminHouseMatch[1]!));
+        writeJson(response, 200, adminHouseResponseSchema.parse(house));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    (request.url === "/v1/admin/recommendations/catalog" ||
+      request.url?.startsWith("/v1/admin/recommendations/catalog?"))
+  ) {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        const url = new URL(request.url ?? "/", `http://${host}:${port}`);
+        const catalog = await listAdminRecommendationCatalog(url.searchParams);
+        writeJson(
+          response,
+          200,
+          adminRecommendationCatalogResponseSchema.parse(catalog)
+        );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const adminRecommendationCatalogMatch =
+    /^\/v1\/admin\/recommendations\/catalog\/([^/?]+)$/.exec(
+      (request.url ?? "").split("?")[0] ?? ""
+    );
+  if (request.method === "GET" && adminRecommendationCatalogMatch) {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        const item = await getAdminRecommendationCatalogItem(
+          decodeURIComponent(adminRecommendationCatalogMatch[1]!)
+        );
+        writeJson(
+          response,
+          200,
+          adminRecommendationCatalogItemResponseSchema.parse(item)
+        );
       } catch (error) {
         writeUnknownApiError(response, error);
       }

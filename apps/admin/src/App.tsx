@@ -6,6 +6,7 @@ import {
 } from "@matriva/api-client";
 import type { AdminBootstrapResponse, SessionTokens } from "@matriva/shared";
 
+import { AdminDataPage } from "./pages/AdminDataPage.js";
 import { DashboardPage } from "./pages/DashboardPage.js";
 import { Icon, type IconName } from "./components/Icon.js";
 
@@ -21,6 +22,10 @@ type AuthState =
   | { status: "error"; message: string };
 
 type ViewKey = "dashboard" | "users" | "houses" | "recommendations" | "settings";
+type DetailRoute =
+  | { view: "users"; id: string }
+  | { view: "houses"; id: string }
+  | { view: "recommendations"; id: string };
 
 const navigation: Array<{
   key: ViewKey;
@@ -29,16 +34,65 @@ const navigation: Array<{
   disabled?: boolean;
 }> = [
   { key: "dashboard", label: "Dashboard", icon: "dashboard" },
-  { key: "users", label: "Brugere", icon: "users", disabled: true },
-  { key: "houses", label: "Boliger", icon: "houses", disabled: true },
+  { key: "users", label: "Brugere", icon: "users" },
+  { key: "houses", label: "Boliger", icon: "houses" },
   {
     key: "recommendations",
     label: "Anbefalinger",
-    icon: "recommendations",
-    disabled: true
+    icon: "recommendations"
   },
   { key: "settings", label: "Indstillinger", icon: "settings", disabled: true }
 ];
+
+const routePaths: Record<ViewKey, string> = {
+  dashboard: "/admin",
+  users: "/admin/users",
+  houses: "/admin/houses",
+  recommendations: "/admin/recommendations",
+  settings: "/admin/settings"
+};
+
+function routeFromLocation(): { view: ViewKey; detail: DetailRoute | null } {
+  const path = window.location.pathname.replace(/\/$/, "");
+  const parts = path.split("/").filter(Boolean);
+
+  if (parts[0] !== "admin") {
+    return { view: "dashboard", detail: null };
+  }
+
+  if (parts[1] === "users") {
+    return {
+      view: "users",
+      detail: parts[2]
+        ? { view: "users", id: decodeURIComponent(parts[2]) }
+        : null
+    };
+  }
+
+  if (parts[1] === "houses") {
+    return {
+      view: "houses",
+      detail: parts[2]
+        ? { view: "houses", id: decodeURIComponent(parts[2]) }
+        : null
+    };
+  }
+
+  if (parts[1] === "recommendations") {
+    return {
+      view: "recommendations",
+      detail: parts[2]
+        ? { view: "recommendations", id: decodeURIComponent(parts[2]) }
+        : null
+    };
+  }
+
+  if (parts[1] === "settings") {
+    return { view: "settings", detail: null };
+  }
+
+  return { view: "dashboard", detail: null };
+}
 
 function magicLinkTokenFromLocation() {
   const url = new URL(window.location.href);
@@ -76,7 +130,7 @@ export function App() {
   const [email, setEmail] = useState("");
   const [loginMessage, setLoginMessage] = useState<string | null>(null);
   const [isRequestingLink, setIsRequestingLink] = useState(false);
-  const [activeView, setActiveView] = useState<ViewKey>("dashboard");
+  const [route, setRoute] = useState(routeFromLocation);
   const [initialMagicLinkToken] = useState(magicLinkTokenFromLocation);
   const restorePromiseRef = useRef<Promise<SessionTokens | null> | null>(null);
 
@@ -158,6 +212,20 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const onPopState = () => setRoute(routeFromLocation());
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  function navigate(view: ViewKey, id?: string) {
+    const path = id
+      ? `${routePaths[view]}/${encodeURIComponent(id)}`
+      : routePaths[view];
+    window.history.pushState({}, "", path);
+    setRoute(routeFromLocation());
+  }
+
   async function requestMagicLink() {
     setIsRequestingLink(true);
     setLoginMessage(null);
@@ -226,12 +294,13 @@ export function App() {
   if (authState.status === "authenticated") {
     return (
       <AdminShell
-        activeView={activeView}
+        activeView={route.view}
         bootstrap={authState.bootstrap}
         client={client}
+        detail={route.detail}
         onAuthorizationError={handleDashboardAuthorizationError}
         onLogout={() => void logout()}
-        onNavigate={setActiveView}
+        onNavigate={navigate}
       />
     );
   }
@@ -273,6 +342,7 @@ function AdminShell({
   activeView,
   bootstrap,
   client,
+  detail,
   onAuthorizationError,
   onLogout,
   onNavigate
@@ -280,9 +350,10 @@ function AdminShell({
   activeView: ViewKey;
   bootstrap: AdminBootstrapResponse;
   client: MatrivaApiClient;
+  detail: DetailRoute | null;
   onAuthorizationError: (error: unknown) => Promise<boolean>;
   onLogout: () => void;
-  onNavigate: (view: ViewKey) => void;
+  onNavigate: (view: ViewKey, id?: string) => void;
 }) {
   const activeLabel =
     navigation.find((item) => item.key === activeView)?.label ?? "Dashboard";
@@ -340,6 +411,20 @@ function AdminShell({
             <DashboardPage
               client={client}
               onAuthorizationError={onAuthorizationError}
+            />
+          ) : activeView === "users" ||
+            activeView === "houses" ||
+            activeView === "recommendations" ? (
+            <AdminDataPage
+              client={client}
+              detail={
+                detail
+                  ? { section: detail.view, id: detail.id }
+                  : null
+              }
+              onAuthorizationError={onAuthorizationError}
+              onOpenDetail={(section, id) => onNavigate(section, id)}
+              section={activeView}
             />
           ) : (
             <FullPageState

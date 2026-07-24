@@ -17,12 +17,16 @@
       }
     },
     "extra": {
-      "apiBaseUrl": "http://localhost:4000"
+      "apiBaseUrl": "http://localhost:4000",
+      "eas": {
+        "projectId": "5aaec5f2-9f31-470c-9fc3-ae4ba5054f22"
+      }
     },
     "plugins": [
       "@react-native-community/datetimepicker",
       "expo-secure-store"
     ],
-    "scheme": "matriva"
+    "scheme": "matriva",
+    "owner": "joinitdk"
   }
 }

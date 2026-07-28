@@ -9,7 +9,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "postinstall": "cd ../.. && npm run build:packages"
   },
   "dependencies": {
     "@matriva/api-client": "0.1.0",

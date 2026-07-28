@@ -5,10 +5,12 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "dk.matriva.app"
+      "bundleIdentifier": "dk.matriva.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "dk.matriva.app",
@@ -24,7 +26,8 @@
     },
     "plugins": [
       "@react-native-community/datetimepicker",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-status-bar"
     ],
     "scheme": "matriva",
     "owner": "joinitdk"

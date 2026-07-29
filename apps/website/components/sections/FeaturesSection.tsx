@@ -1,37 +1,37 @@
 import {
   BellIcon,
-  DocumentIcon,
+  CalendarIcon,
   GridIcon,
+  ShieldIcon,
   ToolIcon,
-  UsersIcon,
 } from "@/components/ui/Icons";
 import { Container } from "@/components/ui/Container";
 
 const features = [
   {
     icon: GridIcon,
-    title: "Overblik",
-    copy: "Se status på dit hus og få et tydeligt overblik over alt det vigtige ét sted.",
-  },
-  {
-    icon: DocumentIcon,
-    title: "Dokumenter",
-    copy: "Gem alle dine dokumenter sikkert og find dem nemt, når du har brug for dem.",
+    title: "Boligens overblik",
+    copy: "Saml registrerede boligoplysninger og dine egne informationer i ét overskueligt udgangspunkt.",
   },
   {
     icon: ToolIcon,
-    title: "Vedligeholdelse",
-    copy: "Få styr på opgaver og serviceeftersyn – så intet bliver glemt.",
+    title: "Vedligeholdelsesopgaver",
+    copy: "Opret opgaver, sæt deadlines og følg status på boligens løbende vedligeholdelse.",
+  },
+  {
+    icon: ShieldIcon,
+    title: "Matriva-anbefalinger",
+    copy: "Få relevante forslag til vedligeholdelse med udgangspunkt i boligens registrerede oplysninger.",
+  },
+  {
+    icon: CalendarIcon,
+    title: "Historik og dokumentation",
+    copy: "Registrér udført arbejde, datoer og noter, så boligens vedligeholdelseshistorik bevares.",
   },
   {
     icon: BellIcon,
-    title: "Påmindelser",
-    copy: "Modtag beskeder, når det er tid til handling. Vi holder styr på deadlines.",
-  },
-  {
-    icon: UsersIcon,
-    title: "Deling",
-    copy: "Del dit hus med familien eller håndværkere og giv den rette adgang.",
+    title: "Dokumenter og påmindelser",
+    copy: "Saml boligpapirer, planlæg deadlines, og få påmindelser.",
   },
 ];
 

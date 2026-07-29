@@ -25,6 +25,7 @@
     "smoke:api:routes": "node tools/smoke-api-routes.mjs",
     "smoke:admin": "node tools/smoke-admin.mjs",
     "preview:dev-fixture-cleanup": "node tools/preview-dev-fixture-cleanup.mjs",
+    "screenshot:dev-fixture": "node tools/screenshot-dev-fixture.mjs",
     "smoke:maintenance": "node tools/smoke-maintenance.mjs",
     "smoke:storage": "node tools/smoke-storage.mjs",
     "smoke:bbr": "npm run build && node tools/smoke-bbr-public-data.mjs",

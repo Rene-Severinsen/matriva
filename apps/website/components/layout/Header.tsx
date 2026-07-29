@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Container";
@@ -8,23 +9,36 @@ import { HouseMark } from "@/components/ui/Icons";
 
 const links = [
   ["Funktioner", "#funktioner"],
-  ["Priser", "#priser"],
-  ["Om Matriva", "#om-matriva"],
-  ["Hjælp", "#hjaelp"],
+  ["Sådan virker det", "#saadan-virker-det"],
+  ["Produktet", "#produktet"],
+  ["Kontakt", "#kontakt"],
 ];
 
 export function Header() {
   const [open, setOpen] = useState(false);
 
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
+
   return (
     <header className="header">
       <Container className="header__inner">
-        <a href="#" className="brand" aria-label="Matriva forside">
+        <Link href="/" className="brand" aria-label="Matriva forside">
           <span className="brand__mark">
             <HouseMark width="36" height="36" />
           </span>
           <span>Matriva</span>
-        </a>
+        </Link>
 
         <nav className="header__nav" aria-label="Primær navigation">
           {links.map(([label, href]) => (
@@ -40,8 +54,9 @@ export function Header() {
           <button
             className="header__menu-button"
             type="button"
-            aria-label="Åbn menu"
+            aria-label={open ? "Luk menu" : "Åbn menu"}
             aria-expanded={open}
+            aria-controls="mobile-navigation"
             onClick={() => setOpen((value) => !value)}
           >
             <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
@@ -57,6 +72,7 @@ export function Header() {
         </div>
 
         <nav
+          id="mobile-navigation"
           className="mobile-menu"
           data-open={open}
           aria-label="Mobilnavigation"

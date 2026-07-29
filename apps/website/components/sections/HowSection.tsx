@@ -4,18 +4,18 @@ import { Container } from "@/components/ui/Container";
 const steps = [
   {
     icon: PlusHouseIcon,
-    title: "Tilføj dit hus",
-    copy: "Opret din bolig og få et udgangspunkt baseret på bygningens data.",
+    title: "Tilføj din bolig",
+    copy: "Opret boligen i Matriva og saml det grundlæggende udgangspunkt ét sted.",
   },
   {
     icon: DocumentIcon,
-    title: "Saml dine oplysninger",
-    copy: "Tilføj dokumenter og oplysninger om dit hus – vi samler det hele ét sted.",
+    title: "Få boligoplysninger og anbefalinger",
+    copy: "Se registrerede offentlige boligoplysninger, og få Matrivas forslag til relevante vedligeholdelsesopgaver.",
   },
   {
     icon: CheckIcon,
-    title: "Få overblik",
-    copy: "Få indsigt, påmindelser og anbefalinger, så du altid er ét skridt foran.",
+    title: "Planlæg og dokumentér",
+    copy: "Planlæg opgaver og deadlines, gem historik og noter. Dokumentér dine forbedringer af boligen.",
   },
 ];
 

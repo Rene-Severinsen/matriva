@@ -1,59 +1,68 @@
+import Image from "next/image";
+
 import { Container } from "@/components/ui/Container";
 
 const screens = [
-  ["Overblik", ["Boligens sundhed", "82", "Næste opgaver", "3 aktive"]],
-  [
-    "Dokumenter",
-    ["Ejerskifteforsikring", "PDF · 2025", "Tilstandsrapport", "PDF · 2025"],
-  ],
-  [
-    "Vedligeholdelse",
-    ["Rens tagrender", "Om 32 dage", "Udskift filter", "Om 59 dage"],
-  ],
-  [
-    "Deling & adgang",
-    ["Anna Severinsen", "Ejer", "Mads Severinsen", "Kan redigere"],
-  ],
-  ["Husets sundhed", ["Samlet score", "82", "Vedligehold", "God"]],
+  {
+    eyebrow: "Boligens overblik",
+    title: "Mit hus",
+    subtitle: "Registrerede boligoplysninger",
+    src: "/images/app/mit-hus.png",
+    alt: "Matriva-appens Mit hus-visning med adresse og registrerede boligoplysninger.",
+  },
+  {
+    eyebrow: "Planlæg arbejdet",
+    title: "Vedligeholdelse",
+    subtitle: "Opgaver og anbefalinger",
+    src: "/images/app/vedligeholdelse.png",
+    alt: "Matriva-appens vedligeholdelsesvisning med planlagte opgaver og en anbefaling.",
+  },
+  {
+    eyebrow: "Bevar overblikket",
+    title: "Historik",
+    subtitle: "Udført arbejde samlet ét sted",
+    src: "/images/app/historik.png",
+    alt: "Matriva-appens historikvisning med udførte vedligeholdelsesopgaver.",
+  },
 ];
 
 export function ScreensSection() {
   return (
-    <section className="screens-section">
+    <section className="screens-section" id="produktet">
       <Container>
-        <h2 className="screens-section__title">
-          Alt det vigtige – lige ved hånden
-        </h2>
+        <header className="screens-section__header">
+          <p className="screens-section__eyebrow">Produktet</p>
+          <h2 className="screens-section__title">
+            Fra boligoplysninger til dokumenteret vedligeholdelse
+          </h2>
+          <p className="section-copy">
+            Tre centrale visninger samler det, du ved om boligen, det du
+            planlægger, og det du allerede har fået gjort.
+          </p>
+        </header>
 
         <div className="screen-grid">
-          {screens.map(([title, values]) => (
-            <article className="app-screen" key={title as string}>
-              <div className="app-screen__top">
-                <span>9:41</span>
-                <span>● ●</span>
+          {screens.map(({ eyebrow, title, subtitle, src, alt }) => (
+            <article
+              className="product-preview"
+              key={title}
+              aria-label={`${title}: visning fra Matriva-appen`}
+            >
+              <div className="product-preview__copy">
+                <p>{eyebrow}</p>
+                <h3>{title}</h3>
+                <span>{subtitle}</span>
               </div>
-
-              <h3 className="app-screen__title">{title}</h3>
-
-              {(values as string[]).map((value, index) => (
-                <div className="app-screen__card" key={`${value}-${index}`}>
-                  <p className="app-screen__label">
-                    {index % 2 === 0 ? value : "Status"}
-                  </p>
-                  <p className="app-screen__value">
-                    {index % 2 === 1
-                      ? value
-                      : index === 0
-                        ? "Se detaljer"
-                        : value}
-                  </p>
-                  <div
-                    className={`app-screen__line ${
-                      index === 0 ? "app-screen__line--green" : ""
-                    }`}
-                  />
-                </div>
-              ))}
+              <div className="product-device">
+                <Image
+                  className="product-device__image"
+                  src={src}
+                  alt={alt}
+                  width={1260}
+                  height={2456}
+                  sizes="(max-width: 560px) calc(100vw - 3rem), (max-width: 1100px) 22rem, 30vw"
+                />
+              </div>
             </article>
           ))}
         </div>

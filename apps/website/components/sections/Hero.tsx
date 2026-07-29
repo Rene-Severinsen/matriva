@@ -9,12 +9,12 @@ export function Hero() {
       <Container>
         <div className="hero__grid">
           <div className="hero__content">
-            <p className="hero__eyebrow">Dit hus. Samlet ét sted.</p>
+            {/*<p className="hero__eyebrow">Dit hus. Samlet ét sted.</p>*/}
 
             <h1 className="hero__title">
-              Få styr på dit hus.
+              Dit hus -
               <br />
-              Uden at holde styr på det hele selv.
+              Samlet ét sted.
             </h1>
 
             <p className="hero__copy">

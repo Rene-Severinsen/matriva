@@ -14,12 +14,12 @@ export function CtaSection() {
           <div>
             <h2>Matriva er under udvikling</h2>
             <p>
-              Vi bygger Matriva til danske husejere, der vil have ét samlet
-              overblik over bolig, dokumenter og vedligeholdelse.
+              Vi bygger et samlet boligoverblik med vedligeholdelsesopgaver,
+              historik og dokumentation. Appen er endnu ikke lanceret.
             </p>
           </div>
 
-          <Button href="#funktioner">Se funktionerne</Button>
+          <Button href="mailto:hej@matriva.dk">Kontakt Matriva</Button>
         </div>
       </Container>
     </section>

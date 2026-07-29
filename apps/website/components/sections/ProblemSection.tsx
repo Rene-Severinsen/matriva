@@ -4,24 +4,24 @@ import { Container } from "@/components/ui/Container";
 const items = [
   {
     icon: FolderIcon,
-    title: "Dokumenter overalt",
-    copy: "Vigtige papirer ligger spredt i mapper, skyer og e-mails. Tidskrævende at finde, når du har brug for dem.",
+    title: "Oplysningerne ligger spredt",
+    copy: "Boligoplysninger, kvitteringer og dokumenter ender let i forskellige mapper, indbakker og systemer.",
   },
   {
     icon: CalendarIcon,
-    title: "Glemmer vedligeholdelse",
-    copy: "Travl hverdag gør det nemt at glemme små ting – som kan blive dyre, hvis de ikke bliver gjort i tide.",
+    title: "Hvad skal gøres hvornår?",
+    copy: "Det kan være svært at vurdere, hvilke vedligeholdelsesopgaver der er relevante, og hvornår de bør udføres.",
   },
   {
     icon: ShieldIcon,
-    title: "Overblik mangler",
-    copy: "Hvad er husets stand? Hvad skal laves hvornår? Det er svært at danne sig det fulde billede.",
+    title: "Historikken mangler",
+    copy: "Hvad blev lavet, hvornår blev det gjort, og hvilke opgaver skal følges op næste gang?",
   },
 ];
 
 export function ProblemSection() {
   return (
-    <section className="problem-section">
+    <section className="problem-section" id="udfordringer">
       <Container>
         <h2 className="problem-section__title">Kender du det?</h2>
 

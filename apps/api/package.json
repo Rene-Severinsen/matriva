@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node --experimental-strip-types src/server.ts",
     "start": "node dist/server.js",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node ../../tools/copy-api-migrations.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit"
   },

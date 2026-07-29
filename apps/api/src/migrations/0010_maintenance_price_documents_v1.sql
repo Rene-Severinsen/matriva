@@ -23,10 +23,24 @@ alter table maintenance_completions
   add column if not exists price_amount_minor bigint,
   add column if not exists price_currency text not null default 'DKK';
 
-update maintenance_completions
-set price_amount_minor = cost_amount_minor
-where price_amount_minor is null
-  and cost_amount_minor is not null;
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = current_schema()
+      and table_name = 'maintenance_completions'
+      and column_name = 'cost_amount_minor'
+  ) then
+    execute '
+      update maintenance_completions
+      set price_amount_minor = cost_amount_minor
+      where price_amount_minor is null
+        and cost_amount_minor is not null
+    ';
+  end if;
+end
+$$;
 
 alter table maintenance_completions
   drop constraint if exists maintenance_completions_cost_valid;

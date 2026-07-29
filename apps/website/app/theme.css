@@ -1,0 +1,29 @@
+:root {
+  --color-background: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-soft: #f7f9f8;
+  --color-surface-tint: #eef5f1;
+
+  --color-text: #111820;
+  --color-text-soft: #4f5961;
+  --color-text-muted: #727b81;
+
+  --color-brand: #28775d;
+  --color-brand-dark: #185c46;
+  --color-brand-soft: #e3f0e9;
+  --color-brand-contrast: #ffffff;
+
+  --color-border: #dfe5e2;
+  --color-shadow: rgba(17, 24, 32, 0.1);
+
+  --container-width: 1440px;
+  --container-padding: clamp(1.25rem, 4vw, 4.5rem);
+
+  --radius-small: 0.75rem;
+  --radius-medium: 1.25rem;
+  --radius-large: 2rem;
+  --radius-pill: 999px;
+
+  --shadow-soft: 0 1.5rem 4rem rgba(17, 24, 32, 0.08);
+  --shadow-card: 0 0.75rem 2.5rem rgba(17, 24, 32, 0.06);
+}

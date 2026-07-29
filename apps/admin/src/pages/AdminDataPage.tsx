@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import type { MatrivaApiClient } from "@matriva/api-client";
+import type { MatrivaAdminApiClient } from "@matriva/api-client";
 import type {
   AdminHouseResponse,
   AdminHousesResponse,
@@ -43,7 +43,7 @@ export function AdminDataPage({
   onOpenDetail,
   section
 }: {
-  client: MatrivaApiClient;
+  client: MatrivaAdminApiClient;
   detail: DetailKey;
   onAuthorizationError: (error: unknown) => Promise<boolean>;
   onOpenDetail: (section: SectionKey, id?: string) => void;
@@ -128,7 +128,7 @@ function UsersList({
   onAuthorizationError,
   onOpen
 }: {
-  client: MatrivaApiClient;
+  client: MatrivaAdminApiClient;
   onAuthorizationError: (error: unknown) => Promise<boolean>;
   onOpen: (id: string) => void;
 }) {
@@ -195,7 +195,7 @@ function HousesList({
   onAuthorizationError,
   onOpen
 }: {
-  client: MatrivaApiClient;
+  client: MatrivaAdminApiClient;
   onAuthorizationError: (error: unknown) => Promise<boolean>;
   onOpen: (id: string) => void;
 }) {
@@ -262,7 +262,7 @@ function RecommendationsList({
   onAuthorizationError,
   onOpen
 }: {
-  client: MatrivaApiClient;
+  client: MatrivaAdminApiClient;
   onAuthorizationError: (error: unknown) => Promise<boolean>;
   onOpen: (id: string) => void;
 }) {
@@ -330,7 +330,7 @@ function DetailPage({
   onAuthorizationError,
   onBack
 }: {
-  client: MatrivaApiClient;
+  client: MatrivaAdminApiClient;
   detail: NonNullable<DetailKey>;
   onAuthorizationError: (error: unknown) => Promise<boolean>;
   onBack: () => void;

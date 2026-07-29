@@ -11,6 +11,7 @@
     "dev:mobile": "npm run build:packages && npm run start -w @matriva/mobile",
     "dev:api": "npm run build -w @matriva/shared && DATABASE_URL=${DATABASE_URL:-postgresql://matriva:matriva_dev_password@127.0.0.1:56432/matriva_dev} npm run dev -w @matriva/api",
     "dev:admin": "npm run build:packages && npm run dev -w @matriva/admin",
+    "admin:hash-password": "node tools/admin-hash-password.mjs",
     "build": "npm run build:packages && npm run build -w @matriva/api && npm run build -w @matriva/admin",
     "build:admin": "npm run build:packages && npm run build -w @matriva/admin",
     "build:packages": "npm run build -w @matriva/shared && npm run build -w @matriva/api-client",

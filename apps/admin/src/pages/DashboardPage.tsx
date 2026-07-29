@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import type { MatrivaApiClient } from "@matriva/api-client";
+import type { MatrivaAdminApiClient } from "@matriva/api-client";
 import type {
   AdminDashboardPeriodKey,
   AdminDashboardResponse,
@@ -31,7 +31,7 @@ export function DashboardPage({
   client,
   onAuthorizationError
 }: {
-  client: MatrivaApiClient;
+  client: MatrivaAdminApiClient;
   onAuthorizationError: (error: unknown) => Promise<boolean>;
 }) {
   const [period, setPeriod] = useState<AdminDashboardPeriodKey>("30d");

@@ -15,6 +15,7 @@ import {
   adminHousesResponseSchema,
   adminRecommendationCatalogItemResponseSchema,
   adminRecommendationCatalogResponseSchema,
+  adminPasswordLoginRequestSchema,
   adminUserResponseSchema,
   adminUsersResponseSchema,
   apiErrorSchema,
@@ -79,6 +80,7 @@ import {
   listAdminRecommendationCatalog
 } from "./admin-recommendations.ts";
 import { getAdminUser, listAdminUsers } from "./admin-users.ts";
+import { loginAdminWithPassword } from "./auth/admin-password.ts";
 import { sendMagicLinkEmail, createMagicLinkUrl } from "./auth/mailer.ts";
 import { getDatafordelerConfigStatus } from "./config/datafordeler.ts";
 import {
@@ -655,6 +657,30 @@ const server = createServer((request, response) => {
     });
 
     writeJson(response, 200, body);
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/v1/admin/auth/login") {
+    void (async () => {
+      try {
+        const payload = await readJsonBody(request);
+        const parsedRequest = adminPasswordLoginRequestSchema.safeParse(payload);
+
+        if (!parsedRequest.success) {
+          writeApiError(response, 401, "admin_login_invalid", "E-mail eller password er forkert.");
+          return;
+        }
+
+        const ipHash = requestIpHash(request);
+        const session = await loginAdminWithPassword({
+          ...parsedRequest.data,
+          ...(ipHash ? { ipHash } : {})
+        });
+        writeJson(response, 200, authSessionResponseSchema.parse(session));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
     return;
   }
 

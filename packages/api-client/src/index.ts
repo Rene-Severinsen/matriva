@@ -7,6 +7,7 @@ import {
   adminHousesResponseSchema,
   adminRecommendationCatalogItemResponseSchema,
   adminRecommendationCatalogResponseSchema,
+  adminPasswordLoginRequestSchema,
   adminUserResponseSchema,
   adminUsersResponseSchema,
   appBootstrapResponseSchema,
@@ -46,6 +47,7 @@ import {
   type AdminRecommendationCatalogItemResponse,
   type AdminRecommendationCatalogResponse,
   type AdminRecommendationCatalogSort,
+  type AdminPasswordLoginRequest,
   type AdminSortOrder,
   type AdminUserResponse,
   type AdminUserSort,
@@ -128,11 +130,67 @@ export class MatrivaApiError extends Error {
   }
 }
 
+async function parseApiResponse(response: Response, fallbackMessage: string) {
+  if (response.ok) {
+    return response.json();
+  }
+
+  let message = fallbackMessage;
+  let code: string | null = null;
+
+  try {
+    const payload = await response.json();
+
+    if (
+      typeof payload === "object" &&
+      payload !== null &&
+      "message" in payload &&
+      typeof payload.message === "string"
+    ) {
+      message = payload.message;
+    }
+
+    if (
+      typeof payload === "object" &&
+      payload !== null &&
+      "code" in payload &&
+      typeof payload.code === "string"
+    ) {
+      code = payload.code;
+    }
+  } catch {
+    // Keep the route-specific fallback when the API response is not JSON.
+  }
+
+  throw new MatrivaApiError(response.status, code, message);
+}
+
+function adminListSearchParams(input: Record<string, unknown> = {}) {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(input)) {
+    if (
+      key === "signal" ||
+      value === undefined ||
+      value === null ||
+      value === ""
+    ) {
+      continue;
+    }
+
+    params.set(key, String(value));
+  }
+
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
 export type MatrivaApiClient = {
   readonly baseUrl: string;
   getHealth: () => Promise<HealthResponse>;
   health: () => Promise<HealthResponse>;
   getBootstrap: () => Promise<HomeBootstrapResponse>;
+  adminLogin: (input: AdminPasswordLoginRequest) => Promise<AuthSessionResponse>;
   requestMagicLink: (input: RequestMagicLinkRequest) => Promise<RequestMagicLinkResponse>;
   consumeMagicLink: (input: ConsumeMagicLinkRequest) => Promise<AuthSessionResponse>;
   refreshSession: (input: RefreshSessionRequest) => Promise<AuthSessionResponse>;
@@ -273,6 +331,188 @@ export type MatrivaApiClient = {
   removeHousePhoto: (houseId: HouseId) => Promise<HousePhotoResponse>;
 };
 
+export type MatrivaAdminApiClient = Pick<
+  MatrivaApiClient,
+  | "baseUrl"
+  | "adminLogin"
+  | "refreshSession"
+  | "logout"
+  | "getAdminBootstrap"
+  | "getAdminDashboard"
+  | "getAdminUsers"
+  | "getAdminUser"
+  | "getAdminHouses"
+  | "getAdminHouse"
+  | "getAdminRecommendationCatalog"
+  | "getAdminRecommendationCatalogItem"
+>;
+
+export function createMatrivaAdminApiClient(
+  options: MatrivaApiClientOptions
+): MatrivaAdminApiClient {
+  const normalizedBaseUrl = options.baseUrl.replace(/\/$/, "");
+  const fetcher = options.fetchImpl ?? fetch;
+
+  function authHeaders(extra?: HeadersInit): HeadersInit {
+    const token = options.getAccessToken?.();
+
+    return {
+      ...(extra ?? {}),
+      ...(token ? { authorization: `Bearer ${token}` } : {})
+    };
+  }
+
+  return {
+    baseUrl: normalizedBaseUrl,
+    async adminLogin(input) {
+      adminPasswordLoginRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/auth/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input)
+      });
+
+      return authSessionResponseSchema.parse(
+        await parseApiResponse(response, "Could not log in to admin.")
+      );
+    },
+    async refreshSession(input) {
+      refreshSessionRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/auth/refresh`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input)
+      });
+
+      return authSessionResponseSchema.parse(
+        await parseApiResponse(response, "Could not refresh session.")
+      );
+    },
+    async logout(input) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/auth/logout`, {
+        method: "POST",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify(input)
+      });
+
+      return logoutResponseSchema.parse(
+        await parseApiResponse(response, "Could not log out.")
+      );
+    },
+    async getAdminBootstrap() {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/bootstrap`, {
+        headers: authHeaders()
+      });
+
+      return adminBootstrapResponseSchema.parse(
+        await parseApiResponse(response, "Could not load admin session.")
+      );
+    },
+    async getAdminDashboard(input = {}) {
+      const period = adminDashboardPeriodKeySchema.parse(input.period ?? "30d");
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/admin/dashboard?period=${period}`,
+        {
+          headers: authHeaders(),
+          ...(input.signal ? { signal: input.signal } : {})
+        }
+      );
+
+      return adminDashboardResponseSchema.parse(
+        await parseApiResponse(response, "Could not load admin dashboard.")
+      );
+    },
+    async getAdminUsers(input = {}) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/admin/users${adminListSearchParams(input)}`,
+        {
+          headers: authHeaders(),
+          ...(input.signal ? { signal: input.signal } : {})
+        }
+      );
+
+      return adminUsersResponseSchema.parse(
+        await parseApiResponse(response, "Could not load admin users.")
+      );
+    },
+    async getAdminUser(userId, input = {}) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/admin/users/${encodeURIComponent(userId)}`,
+        {
+          headers: authHeaders(),
+          ...(input.signal ? { signal: input.signal } : {})
+        }
+      );
+
+      return adminUserResponseSchema.parse(
+        await parseApiResponse(response, "Could not load admin user.")
+      );
+    },
+    async getAdminHouses(input = {}) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/admin/houses${adminListSearchParams(input)}`,
+        {
+          headers: authHeaders(),
+          ...(input.signal ? { signal: input.signal } : {})
+        }
+      );
+
+      return adminHousesResponseSchema.parse(
+        await parseApiResponse(response, "Could not load admin houses.")
+      );
+    },
+    async getAdminHouse(houseId, input = {}) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/admin/houses/${encodeURIComponent(houseId)}`,
+        {
+          headers: authHeaders(),
+          ...(input.signal ? { signal: input.signal } : {})
+        }
+      );
+
+      return adminHouseResponseSchema.parse(
+        await parseApiResponse(response, "Could not load admin house.")
+      );
+    },
+    async getAdminRecommendationCatalog(input = {}) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/admin/recommendations/catalog${adminListSearchParams(
+          input
+        )}`,
+        {
+          headers: authHeaders(),
+          ...(input.signal ? { signal: input.signal } : {})
+        }
+      );
+
+      return adminRecommendationCatalogResponseSchema.parse(
+        await parseApiResponse(
+          response,
+          "Could not load admin recommendation catalog."
+        )
+      );
+    },
+    async getAdminRecommendationCatalogItem(catalogKey, input = {}) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/admin/recommendations/catalog/${encodeURIComponent(
+          catalogKey
+        )}`,
+        {
+          headers: authHeaders(),
+          ...(input.signal ? { signal: input.signal } : {})
+        }
+      );
+
+      return adminRecommendationCatalogItemResponseSchema.parse(
+        await parseApiResponse(
+          response,
+          "Could not load admin recommendation catalog item."
+        )
+      );
+    }
+  };
+}
+
 export function createMatrivaApiClient(
   options: MatrivaApiClientOptions
 ): MatrivaApiClient {
@@ -364,6 +604,18 @@ export function createMatrivaApiClient(
 
       return homeBootstrapResponseSchema.parse(
         await parseApiResponse(response, "Could not load home data.")
+      );
+    },
+    async adminLogin(input) {
+      adminPasswordLoginRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/auth/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input)
+      });
+
+      return authSessionResponseSchema.parse(
+        await parseApiResponse(response, "Could not log in to admin.")
       );
     },
     async requestMagicLink(input) {

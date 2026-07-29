@@ -850,7 +850,7 @@ export async function createMagicLinkToken(email: string, metadata: { ipHash?: s
   return { token, expiresAt, user };
 }
 
-async function createSessionForUser(userId: string): Promise<SessionTokens> {
+export async function createSessionForUser(userId: string): Promise<SessionTokens> {
   const accessToken = createToken();
   const refreshToken = createToken();
   const accessTokenExpiresAt = futureDate(accessTokenTtlMs);
@@ -945,6 +945,19 @@ export async function getUserById(userId: string) {
 
   if (!row || row.status !== "active") {
     throw new ApiError(401, "auth_required", "Authentication is required.");
+  }
+
+  return toCurrentUser(row);
+}
+
+export async function getUserByEmail(email: string) {
+  const result = await pool.query<UserRow>("select * from users where email = $1", [
+    normalizeEmail(email)
+  ]);
+  const row = result.rows[0];
+
+  if (!row || row.status !== "active") {
+    return null;
   }
 
   return toCurrentUser(row);

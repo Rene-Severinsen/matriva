@@ -161,6 +161,15 @@ export const consumeMagicLinkRequestSchema = z.object({
 
 export type ConsumeMagicLinkRequest = z.infer<typeof consumeMagicLinkRequestSchema>;
 
+export const adminPasswordLoginRequestSchema = z.object({
+  email: emailInputSchema,
+  password: z.string().min(1).max(1024)
+});
+
+export type AdminPasswordLoginRequest = z.infer<
+  typeof adminPasswordLoginRequestSchema
+>;
+
 export const authSessionResponseSchema = z.object({
   user: currentUserSchema,
   profile: userProfileSchema,

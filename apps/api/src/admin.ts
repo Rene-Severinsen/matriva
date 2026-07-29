@@ -13,7 +13,9 @@ import {
   pool
 } from "./db.ts";
 
-export const permanentSuperAdminEmail = normalizeEmail("rene@joinit.dk");
+export const permanentSuperAdminEmail = normalizeEmail(
+  process.env.MATRIVA_ADMIN_EMAIL ?? "rene@joinit.dk"
+);
 const superAdminProvisioner = "permanent_super_admin_email";
 
 type AdminRoleRow = {
@@ -45,7 +47,7 @@ export async function ensurePermanentSuperAdminRoleForUser(
   );
 }
 
-async function getAdminRolesForUser(userId: string) {
+export async function getAdminRolesForUser(userId: string) {
   const result = await pool.query<AdminRoleRow>(
     `
       select role

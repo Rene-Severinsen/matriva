@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
+import argon2 from "argon2";
 import pg from "pg";
 
 import {
@@ -17,7 +18,11 @@ const databaseUrl =
   "postgresql://matriva:matriva_dev_password@127.0.0.1:56432/matriva_dev";
 const regularEmail = `admin-smoke-${Date.now()}@example.test`;
 const temporarySuperAdminEmail = `admin-super-smoke-${Date.now()}@example.test`;
+const rateLimitedEmail = `admin-rate-limit-${Date.now()}@example.test`;
 const superAdminEmail = "rene@joinit.dk";
+const adminPassword = randomUUID();
+const wrongAdminPassword = randomUUID();
+const adminPasswordHash = await argon2.hash(adminPassword, { type: argon2.argon2id });
 const startupTimeoutMs = 20_000;
 const pollIntervalMs = 250;
 
@@ -364,7 +369,9 @@ function startApi() {
       DATABASE_URL: databaseUrl,
       HOST: host,
       PORT: port,
-      MATRIVA_AUTH_DISABLE_LIMITS: "true"
+      MATRIVA_AUTH_DISABLE_LIMITS: "false",
+      MATRIVA_ADMIN_EMAIL: temporarySuperAdminEmail,
+      MATRIVA_ADMIN_PASSWORD_HASH: adminPasswordHash
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -435,6 +442,13 @@ async function login(email) {
   return session.body;
 }
 
+async function adminPasswordLogin(email, password) {
+  return request("/v1/admin/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password })
+  });
+}
+
 async function provisionTemporarySuperAdmin(userId) {
   const pool = new pg.Pool({ connectionString: databaseUrl });
 
@@ -444,6 +458,19 @@ async function provisionTemporarySuperAdmin(userId) {
         insert into user_roles (user_id, role, provisioned_by)
         values ($1, 'SUPER_ADMIN', 'smoke_admin')
       `,
+      [userId]
+    );
+  } finally {
+    await pool.end();
+  }
+}
+
+async function removeTemporarySuperAdmin(userId) {
+  const pool = new pg.Pool({ connectionString: databaseUrl });
+
+  try {
+    await pool.query(
+      "delete from user_roles where user_id = $1 and role = 'SUPER_ADMIN'",
       [userId]
     );
   } finally {
@@ -491,8 +518,48 @@ async function runSmoke() {
     assert.equal(forbiddenRoute.response.status, 403, `${route} must forbid regular users`);
   }
 
-  const adminSession = await login(temporarySuperAdminEmail);
-  await provisionTemporarySuperAdmin(adminSession.user.id);
+  const invalidAdminPassword = await adminPasswordLogin(
+    temporarySuperAdminEmail,
+    wrongAdminPassword
+  );
+  assert.equal(invalidAdminPassword.response.status, 401);
+  assert.equal(invalidAdminPassword.body.message, "E-mail eller password er forkert.");
+
+  const unknownAdmin = await adminPasswordLogin(
+    `missing-${temporarySuperAdminEmail}`,
+    adminPassword
+  );
+  assert.equal(unknownAdmin.response.status, 401);
+  assert.equal(unknownAdmin.body.message, invalidAdminPassword.body.message);
+
+  const regularAdminAttempt = await adminPasswordLogin(regularEmail, adminPassword);
+  assert.equal(regularAdminAttempt.response.status, 401);
+  assert.equal(regularAdminAttempt.body.message, invalidAdminPassword.body.message);
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const limited = await adminPasswordLogin(rateLimitedEmail, wrongAdminPassword);
+    assert.equal(limited.response.status, 401);
+  }
+  const rateLimited = await adminPasswordLogin(rateLimitedEmail, wrongAdminPassword);
+  assert.equal(rateLimited.response.status, 429);
+  assert.equal(rateLimited.body.code, "admin_login_rate_limited");
+
+  const adminProvisioningSession = await login(temporarySuperAdminEmail);
+  await removeTemporarySuperAdmin(adminProvisioningSession.user.id);
+  const unprovisionedAdmin = await adminPasswordLogin(
+    temporarySuperAdminEmail,
+    adminPassword
+  );
+  assert.equal(unprovisionedAdmin.response.status, 401);
+  assert.equal(unprovisionedAdmin.body.message, invalidAdminPassword.body.message);
+
+  await provisionTemporarySuperAdmin(adminProvisioningSession.user.id);
+  const adminLogin = await adminPasswordLogin(temporarySuperAdminEmail, adminPassword);
+  assert.equal(adminLogin.response.status, 200);
+  assert.equal(adminLogin.body.user.email, temporarySuperAdminEmail);
+  assert.ok(adminLogin.body.tokens.accessToken);
+  assert.ok(adminLogin.body.tokens.refreshToken);
+  const adminSession = adminLogin.body;
   const bootstrap = await request("/v1/admin/bootstrap", {
     headers: bearer(adminSession.tokens.accessToken)
   });

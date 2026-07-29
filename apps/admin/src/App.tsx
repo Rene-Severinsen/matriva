@@ -1,17 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
-  createMatrivaApiClient,
+  createMatrivaAdminApiClient,
   MatrivaApiError,
-  type MatrivaApiClient
+  type MatrivaAdminApiClient
 } from "@matriva/api-client";
 import type { AdminBootstrapResponse, SessionTokens } from "@matriva/shared";
 
 import { AdminDataPage } from "./pages/AdminDataPage.js";
 import { DashboardPage } from "./pages/DashboardPage.js";
 import { Icon, type IconName } from "./components/Icon.js";
+import {
+  adminEnvironmentOptions,
+  allowsAdminEnvironmentSwitch,
+  persistAdminEnvironment,
+  resolveAdminEnvironment,
+  type AdminEnvironment,
+  type AdminEnvironmentKey
+} from "./adminEnvironment.js";
 
-const apiBaseUrl =
-  import.meta.env.VITE_MATRIVA_API_BASE_URL?.trim() || "http://127.0.0.1:4000";
 const refreshTokenStorageKey = "matriva.admin.refreshToken.v1";
 
 type AuthState =
@@ -94,30 +100,6 @@ function routeFromLocation(): { view: ViewKey; detail: DetailRoute | null } {
   return { view: "dashboard", detail: null };
 }
 
-function magicLinkTokenFromLocation() {
-  const url = new URL(window.location.href);
-  const token = url.searchParams.get("token");
-
-  if (token) {
-    url.searchParams.delete("token");
-    window.history.replaceState({}, "", url.toString());
-  }
-
-  return token;
-}
-
-function adminUrlForMagicLink(magicLink: string) {
-  const token = new URL(magicLink).searchParams.get("token");
-
-  if (!token) {
-    return magicLink;
-  }
-
-  const url = new URL(window.location.href);
-  url.searchParams.set("token", token);
-  return url.toString();
-}
-
 function userFacingError(error: unknown) {
   return error instanceof Error
     ? error.message
@@ -128,27 +110,57 @@ export function App() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [authState, setAuthState] = useState<AuthState>({ status: "restoring" });
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loginMessage, setLoginMessage] = useState<string | null>(null);
-  const [isRequestingLink, setIsRequestingLink] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [route, setRoute] = useState(routeFromLocation);
-  const [initialMagicLinkToken] = useState(magicLinkTokenFromLocation);
+  const [adminEnvironment, setAdminEnvironment] = useState(resolveAdminEnvironment);
   const restorePromiseRef = useRef<Promise<SessionTokens | null> | null>(null);
+  const canSwitchEnvironment = allowsAdminEnvironmentSwitch();
 
   const client = useMemo(
     () =>
-      createMatrivaApiClient({
-        baseUrl: apiBaseUrl,
+      createMatrivaAdminApiClient({
+        baseUrl: adminEnvironment.apiBaseUrl,
         getAccessToken: () => accessToken
       }),
-    [accessToken]
+    [accessToken, adminEnvironment.apiBaseUrl]
   );
+
+  function clearLocalSession(nextAuthState: AuthState = { status: "anonymous" }) {
+    restorePromiseRef.current = null;
+    sessionStorage.removeItem(refreshTokenStorageKey);
+    setAccessToken(null);
+    setAuthState(nextAuthState);
+  }
+
+  function changeAdminEnvironment(environmentKey: AdminEnvironmentKey) {
+    if (!canSwitchEnvironment || environmentKey === adminEnvironment.key) {
+      return;
+    }
+
+    const nextEnvironment =
+      adminEnvironmentOptions.find((option) => option.key === environmentKey) ??
+      adminEnvironmentOptions[0];
+
+    persistAdminEnvironment(nextEnvironment.key);
+    setAdminEnvironment(nextEnvironment);
+    setLoginMessage(null);
+    setPassword("");
+    clearLocalSession();
+
+    if (window.location.pathname !== "/admin") {
+      window.history.pushState({}, "", "/admin");
+      setRoute(routeFromLocation());
+    }
+  }
 
   async function loadAdminSession(tokens: SessionTokens) {
     setAccessToken(tokens.accessToken);
 
     try {
-      const sessionClient = createMatrivaApiClient({
-        baseUrl: apiBaseUrl,
+      const sessionClient = createMatrivaAdminApiClient({
+        baseUrl: adminEnvironment.apiBaseUrl,
         getAccessToken: () => tokens.accessToken
       });
       const bootstrap = await sessionClient.getAdminBootstrap();
@@ -170,19 +182,13 @@ export function App() {
     async function restore() {
       try {
         if (!restorePromiseRef.current) {
-          restorePromiseRef.current = initialMagicLinkToken
-            ? client
-                .consumeMagicLink({ token: initialMagicLinkToken })
-                .then((session) => session.tokens)
-            : (() => {
-                const refreshToken = sessionStorage.getItem(refreshTokenStorageKey);
+          const refreshToken = sessionStorage.getItem(refreshTokenStorageKey);
 
-                return refreshToken
-                  ? client
-                      .refreshSession({ refreshToken })
-                      .then((session) => session.tokens)
-                  : Promise.resolve(null);
-              })();
+          restorePromiseRef.current = refreshToken
+            ? client
+                .refreshSession({ refreshToken })
+                .then((session) => session.tokens)
+            : Promise.resolve(null);
         }
 
         const tokens = await restorePromiseRef.current;
@@ -226,29 +232,26 @@ export function App() {
     setRoute(routeFromLocation());
   }
 
-  async function requestMagicLink() {
-    setIsRequestingLink(true);
+  async function login(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsLoggingIn(true);
     setLoginMessage(null);
 
     try {
-      const response = await client.requestMagicLink({ email });
-      setLoginMessage(
-        response.devMagicLink
-          ? `Dev loginlink: ${adminUrlForMagicLink(response.devMagicLink)}`
-          : response.message
-      );
+      const session = await client.adminLogin({ email, password });
+      setPassword("");
+      await loadAdminSession(session.tokens);
     } catch (error) {
       setLoginMessage(userFacingError(error));
     } finally {
-      setIsRequestingLink(false);
+      setPassword("");
+      setIsLoggingIn(false);
     }
   }
 
   async function logout() {
     const tokens = authState.status === "authenticated" ? authState.tokens : null;
-    sessionStorage.removeItem(refreshTokenStorageKey);
-    setAccessToken(null);
-    setAuthState({ status: "anonymous" });
+    clearLocalSession();
 
     if (tokens) {
       try {
@@ -265,9 +268,7 @@ export function App() {
     }
 
     if (error.status === 403) {
-      sessionStorage.removeItem(refreshTokenStorageKey);
-      setAccessToken(null);
-      setAuthState({ status: "unauthorized", message: error.message });
+      clearLocalSession({ status: "unauthorized", message: error.message });
       return true;
     }
 
@@ -276,8 +277,8 @@ export function App() {
     }
 
     try {
-      const refreshed = await createMatrivaApiClient({
-        baseUrl: apiBaseUrl
+      const refreshed = await createMatrivaAdminApiClient({
+        baseUrl: adminEnvironment.apiBaseUrl
       }).refreshSession({ refreshToken: authState.tokens.refreshToken });
       await loadAdminSession(refreshed.tokens);
     } catch {
@@ -295,9 +296,12 @@ export function App() {
     return (
       <AdminShell
         activeView={route.view}
+        adminEnvironment={adminEnvironment}
         bootstrap={authState.bootstrap}
+        canSwitchEnvironment={canSwitchEnvironment}
         client={client}
         detail={route.detail}
+        onEnvironmentChange={changeAdminEnvironment}
         onAuthorizationError={handleDashboardAuthorizationError}
         onLogout={() => void logout()}
         onNavigate={navigate}
@@ -307,9 +311,17 @@ export function App() {
 
   return (
     <main className="login-page">
-      <section className="login-panel">
-        <p className="eyebrow">Matriva Admin</p>
-        <h1>Log ind med magic link</h1>
+      <form className="login-panel" onSubmit={(event) => void login(event)}>
+        <div className="login-heading">
+          <p className="eyebrow">Matriva Admin</p>
+          <EnvironmentBadge environment={adminEnvironment} />
+        </div>
+        <h1>Log ind</h1>
+        <EnvironmentControl
+          canSwitch={canSwitchEnvironment}
+          environment={adminEnvironment}
+          onChange={changeAdminEnvironment}
+        />
         <label>
           E-mail
           <input
@@ -321,36 +333,54 @@ export function App() {
             value={email}
           />
         </label>
+        <label>
+          Password
+          <input
+            autoComplete="current-password"
+            onChange={(event) => setPassword(event.target.value)}
+            type="password"
+            value={password}
+          />
+        </label>
         <button
           className="primary-action"
-          disabled={isRequestingLink || email.trim().length === 0}
-          onClick={() => void requestMagicLink()}
-          type="button"
+          disabled={
+            isLoggingIn ||
+            email.trim().length === 0 ||
+            password.length === 0
+          }
+          type="submit"
         >
-          {isRequestingLink ? "Sender..." : "Send loginlink"}
+          {isLoggingIn ? "Logger ind..." : "Log ind"}
         </button>
         {authState.status === "unauthorized" || authState.status === "error" ? (
           <p className="state-message error">{authState.message}</p>
         ) : null}
         {loginMessage ? <p className="state-message">{loginMessage}</p> : null}
-      </section>
+      </form>
     </main>
   );
 }
 
 function AdminShell({
   activeView,
+  adminEnvironment,
   bootstrap,
+  canSwitchEnvironment,
   client,
   detail,
+  onEnvironmentChange,
   onAuthorizationError,
   onLogout,
   onNavigate
 }: {
   activeView: ViewKey;
+  adminEnvironment: AdminEnvironment;
   bootstrap: AdminBootstrapResponse;
-  client: MatrivaApiClient;
+  canSwitchEnvironment: boolean;
+  client: MatrivaAdminApiClient;
   detail: DetailRoute | null;
+  onEnvironmentChange: (environmentKey: AdminEnvironmentKey) => void;
   onAuthorizationError: (error: unknown) => Promise<boolean>;
   onLogout: () => void;
   onNavigate: (view: ViewKey, id?: string) => void;
@@ -361,7 +391,10 @@ function AdminShell({
   return (
     <div className="admin-shell">
       <aside className="sidebar">
-        <div className="brand">Matriva Admin</div>
+        <div className="brand-row">
+          <div className="brand">Matriva Admin</div>
+          <EnvironmentBadge environment={adminEnvironment} />
+        </div>
         <nav aria-label="Admin navigation">
           {navigation.map((item) => (
             <button
@@ -380,6 +413,11 @@ function AdminShell({
           ))}
         </nav>
         <div className="sidebar-account">
+          <EnvironmentControl
+            canSwitch={canSwitchEnvironment}
+            environment={adminEnvironment}
+            onChange={onEnvironmentChange}
+          />
           <div className="account-profile">
             <span className="account-avatar" aria-hidden="true">
               {(bootstrap.admin.displayName ?? bootstrap.admin.email)
@@ -435,6 +473,49 @@ function AdminShell({
         </main>
       </section>
     </div>
+  );
+}
+
+function EnvironmentBadge({ environment }: { environment: AdminEnvironment }) {
+  return (
+    <span className={`environment-badge ${environment.key}`}>
+      {environment.badge}
+    </span>
+  );
+}
+
+function EnvironmentControl({
+  canSwitch,
+  environment,
+  onChange
+}: {
+  canSwitch: boolean;
+  environment: AdminEnvironment;
+  onChange: (environmentKey: AdminEnvironmentKey) => void;
+}) {
+  if (!canSwitch) {
+    return (
+      <div className="environment-control locked">
+        <span>Miljø</span>
+        <strong>{environment.label}</strong>
+      </div>
+    );
+  }
+
+  return (
+    <label className="environment-control">
+      Miljø
+      <select
+        onChange={(event) => onChange(event.target.value as AdminEnvironmentKey)}
+        value={environment.key}
+      >
+        {adminEnvironmentOptions.map((option) => (
+          <option key={option.key} value={option.key}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

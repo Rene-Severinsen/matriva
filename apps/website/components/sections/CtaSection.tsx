@@ -1,10 +1,10 @@
 import { Container } from "@/components/ui/Container";
+import { Button } from "@/components/ui/Button";
 import { HouseMark } from "@/components/ui/Icons";
-import { StoreBadge } from "@/components/ui/StoreBadge";
 
 export function CtaSection() {
   return (
-    <section className="cta-section" id="venteliste">
+    <section className="cta-section" id="status">
       <Container>
         <div className="cta-band">
           <div className="cta-band__mark">
@@ -12,14 +12,14 @@ export function CtaSection() {
           </div>
 
           <div>
-            <h2>Klar til at få styr på dit hjem?</h2>
-            <p>Download Matriva i dag – eller skriv dig på ventelisten.</p>
+            <h2>Matriva er under udvikling</h2>
+            <p>
+              Vi bygger Matriva til danske husejere, der vil have ét samlet
+              overblik over bolig, dokumenter og vedligeholdelse.
+            </p>
           </div>
 
-          <div className="cta-band__stores">
-            <StoreBadge store="apple" />
-            <StoreBadge store="google" />
-          </div>
+          <Button href="#funktioner">Se funktionerne</Button>
         </div>
       </Container>
     </section>

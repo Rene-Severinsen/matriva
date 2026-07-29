@@ -9,30 +9,31 @@ export function Hero() {
       <Container>
         <div className="hero__grid">
           <div className="hero__content">
-            <p className="hero__eyebrow">Dit hjem. Samlet ét sted.</p>
+            <p className="hero__eyebrow">Dit hus. Samlet ét sted.</p>
 
             <h1 className="hero__title">
-              Det hele.
+              Få styr på dit hus.
               <br />
-              Ét sted.
-              <br />
-              Dit hjem i overblik.
+              Uden at holde styr på det hele selv.
             </h1>
 
             <p className="hero__copy">
-              Matriva samler dine dokumenter, vedligeholdelse og vigtige
-              oplysninger om dit hus – så du sparer tid, undgår bekymringer og
-              træffer de rigtige beslutninger.
+              Matriva samler boligens oplysninger, dokumenter og
+              vedligeholdelse, så du ved, hvad der er gjort, hvad der mangler,
+              og hvad der bør ske næste gang.
             </p>
 
             <div className="hero__stores">
               <StoreBadge store="apple" />
               <StoreBadge store="google" />
             </div>
+            <p className="hero__release-note">
+              Matriva udvikles til iPhone og Android.
+            </p>
 
             <div className="hero__trust">
               <UsersIcon width="25" height="25" />
-              <span>Udviklet til boligejere. Til hverdagen.</span>
+              <span>Bygget til husejere – til den løbende drift af huset.</span>
             </div>
           </div>
 

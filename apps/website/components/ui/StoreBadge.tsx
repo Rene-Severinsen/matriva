@@ -6,10 +6,9 @@ export function StoreBadge({ store }: StoreBadgeProps) {
   const isApple = store === "apple";
 
   return (
-    <a
-      href="#venteliste"
-      className="store-badge"
-      aria-label={isApple ? "Hent i App Store" : "Hent i Google Play"}
+    <div
+      className="store-badge store-badge--pending"
+      aria-label={isApple ? "Kommer til App Store" : "Kommer til Google Play"}
     >
       {isApple ? (
         <svg
@@ -43,13 +42,12 @@ export function StoreBadge({ store }: StoreBadgeProps) {
       )}
 
       <span>
-        <span className="store-badge__small">
-          {isApple ? "Download on the" : "Get it on"}
-        </span>
+        <span className="store-badge__small">Kommer til</span>
         <span className="store-badge__large">
           {isApple ? "App Store" : "Google Play"}
         </span>
+        <span className="store-badge__status">Under udvikling</span>
       </span>
-    </a>
+    </div>
   );
 }

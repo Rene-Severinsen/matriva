@@ -1,9 +1,8 @@
-import { BellIcon, CheckIcon, ToolIcon } from "./Icons";
+import { CheckIcon, DocumentIcon, ToolIcon } from "./Icons";
 
 const tasks = [
-  ["Service varmepumpe", "14. maj 2026", "Om 12 dage"],
-  ["Rens tagrender", "13. juni 2026", "Om 32 dage"],
-  ["Udskift filter", "9. juli 2026", "Om 59 dage"],
+  ["Rens tagrender", "13. juni 2026", "Næste 30 dage"],
+  ["Service varmepumpe", "14. maj 2026", "Aktiv"],
 ];
 
 export function PhoneMockup() {
@@ -17,15 +16,34 @@ export function PhoneMockup() {
         </div>
 
         <div className="phone__body">
-          <p className="phone__top-label">Overblik</p>
-          <p className="phone__hello">Hej René</p>
+          <p className="phone__top-label">Matriva</p>
+          <p className="phone__hello">Overblik</p>
+          <p className="phone__subtitle">Det vigtigste om dit hus lige nu.</p>
           <p className="phone__address">Ringstedgade 130</p>
 
-          <div className="health-card">
-            <div className="health-card__score">82</div>
+          <div className="house-card">
+            <div className="house-card__mark">M</div>
             <div>
-              <p className="health-card__title">Boligens sundhed</p>
-              <p className="health-card__copy">Godt gået · 12 opgaver i gang</p>
+              <p className="house-card__label">Dit gemte hus</p>
+              <p className="house-card__title">Ringstedgade 130</p>
+              <p className="house-card__meta">Gemt hus · Registreret i BBR</p>
+            </div>
+          </div>
+
+          <div className="maintenance-card">
+            <div>
+              <p className="maintenance-card__title">Vedligehold</p>
+              <p className="maintenance-card__copy">2 aktive opgaver.</p>
+            </div>
+            <div className="maintenance-card__stats">
+              <span>
+                <strong>2</strong>
+                Aktive
+              </span>
+              <span>
+                <strong>0</strong>
+                Overskredet
+              </span>
             </div>
           </div>
 
@@ -36,10 +54,8 @@ export function PhoneMockup() {
               <div className="phone-task__icon">
                 {index === 0 ? (
                   <ToolIcon width="14" />
-                ) : index === 1 ? (
-                  <CheckIcon width="14" />
                 ) : (
-                  <BellIcon width="14" />
+                  <CheckIcon width="14" />
                 )}
               </div>
               <div>
@@ -50,9 +66,20 @@ export function PhoneMockup() {
             </div>
           ))}
 
+          <div className="document-row">
+            <div className="phone-task__icon">
+              <DocumentIcon width="14" />
+            </div>
+            <div>
+              <p className="phone-task__title">Dokumentarkiv</p>
+              <p className="phone-task__meta">Boligpapirer og kvitteringer</p>
+            </div>
+          </div>
+
           <div className="phone__nav">
-            <span>Overblik</span>
-            <span>Opgaver</span>
+            <span>Dashboard</span>
+            <span>Mit hus</span>
+            <span>Vedligehold</span>
             <span>Dokumenter</span>
             <span>Mere</span>
           </div>

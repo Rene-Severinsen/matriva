@@ -35,7 +35,7 @@ export function Header() {
         </nav>
 
         <div className="header__actions">
-          <Button href="#venteliste">Download app</Button>
+          <Button href="#saadan-virker-det">Se hvordan Matriva virker</Button>
 
           <button
             className="header__menu-button"
@@ -66,8 +66,8 @@ export function Header() {
               {label}
             </a>
           ))}
-          <Button href="#venteliste" onClick={() => setOpen(false)}>
-            Download app
+          <Button href="#saadan-virker-det" onClick={() => setOpen(false)}>
+            Se hvordan Matriva virker
           </Button>
         </nav>
       </Container>

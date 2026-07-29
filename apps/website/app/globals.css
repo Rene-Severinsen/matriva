@@ -202,14 +202,14 @@ main {
 
 .hero {
   position: relative;
-  min-height: 43rem;
+  min-height: 40rem;
   background: var(--color-background);
 }
 
 .hero__grid {
   display: grid;
-  min-height: 43rem;
-  grid-template-columns: minmax(25rem, 0.85fr) minmax(36rem, 1.35fr);
+  min-height: 40rem;
+  grid-template-columns: minmax(24rem, 0.9fr) minmax(34rem, 1.25fr);
   align-items: stretch;
 }
 
@@ -232,11 +232,11 @@ main {
 }
 
 .hero__title {
-  max-width: 39rem;
+  max-width: 41rem;
   margin: 0;
-  font-size: clamp(3.2rem, 6vw, 5.9rem);
+  font-size: clamp(2.9rem, 5vw, 5.15rem);
   font-weight: 900;
-  line-height: 0.91;
+  line-height: 0.96;
   letter-spacing: -0.065em;
 }
 
@@ -255,17 +255,29 @@ main {
   margin-top: 1.8rem;
 }
 
+.hero__release-note {
+  margin: 0.75rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 .store-badge {
   display: inline-flex;
   min-width: 10.4rem;
-  height: 3.4rem;
+  min-height: 3.6rem;
   align-items: center;
   gap: 0.65rem;
   padding: 0.45rem 0.8rem;
   border-radius: 0.55rem;
-  background: #050505;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: #202426;
   color: #ffffff;
   box-shadow: 0 0.35rem 1rem rgba(0, 0, 0, 0.13);
+}
+
+.store-badge--pending {
+  opacity: 0.82;
 }
 
 .store-badge__small {
@@ -283,6 +295,15 @@ main {
   line-height: 1;
 }
 
+.store-badge__status {
+  display: block;
+  margin-top: 0.22rem;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.56rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .hero__trust {
   display: flex;
   align-items: center;
@@ -295,33 +316,35 @@ main {
 
 .hero__visual {
   position: relative;
-  min-height: 43rem;
+  min-height: 40rem;
 }
 
 .hero__house {
   position: absolute;
-  inset: 0 calc(var(--container-padding) * -1) 0 -3rem;
+  inset: 2.5rem calc(var(--container-padding) * -1) 2rem -4rem;
   overflow: hidden;
+  border-radius: var(--radius-large) 0 0 var(--radius-large);
   background:
     linear-gradient(
       90deg,
       #ffffff 0%,
-      rgba(255, 255, 255, 0.78) 9%,
-      rgba(255, 255, 255, 0.08) 26%,
-      transparent 42%
+      rgba(255, 255, 255, 0.74) 12%,
+      rgba(255, 255, 255, 0.14) 30%,
+      transparent 48%
     ),
-    url("https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1800&q=90")
-      center / cover no-repeat;
+    url("/images/HeroImage.png") center right / cover no-repeat;
 }
 
 .hero__house::after {
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.08),
-    rgba(255, 255, 255, 0)
-  );
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0)),
+    linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.24),
+      rgba(255, 255, 255, 0) 34%
+    );
   content: "";
 }
 
@@ -329,8 +352,8 @@ main {
   position: absolute;
   z-index: 4;
   top: 50%;
-  left: 10%;
-  width: clamp(15.5rem, 22vw, 19.5rem);
+  left: clamp(0.75rem, 7vw, 6rem);
+  width: clamp(15.5rem, 21vw, 19rem);
   padding: 0.55rem;
   border: 0.22rem solid #1b1f20;
   border-radius: 2.8rem;
@@ -342,7 +365,7 @@ main {
 }
 
 .phone__screen {
-  min-height: 36rem;
+  min-height: 35.5rem;
   overflow: hidden;
   border-radius: 2.25rem;
   background: #f7f8f6;
@@ -385,12 +408,19 @@ main {
 }
 
 .phone__address {
-  margin: 0.15rem 0 1rem;
+  margin: 0.15rem 0 0.9rem;
   color: var(--color-text-muted);
   font-size: 0.68rem;
 }
 
-.health-card {
+.phone__subtitle {
+  margin: 0.2rem 0 0;
+  color: var(--color-text-soft);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.house-card {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 0.8rem;
@@ -402,31 +432,76 @@ main {
   box-shadow: 0 0.6rem 1.5rem rgba(17, 24, 32, 0.06);
 }
 
-.health-card__score {
+.house-card__mark {
   display: grid;
-  width: 3.4rem;
-  height: 3.4rem;
+  width: 2.8rem;
+  height: 2.8rem;
   place-items: center;
-  border: 0.25rem solid #68aa8e;
-  border-radius: 50%;
-  font-size: 1.2rem;
+  border-radius: 0.8rem;
+  background: var(--color-brand);
+  color: var(--color-brand-contrast);
+  font-size: 1rem;
   font-weight: 900;
 }
 
-.health-card__title {
+.house-card__label,
+.house-card__meta,
+.maintenance-card__copy {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.56rem;
+  font-weight: 700;
+}
+
+.house-card__title {
   margin: 0;
   font-size: 0.72rem;
   font-weight: 800;
 }
 
-.health-card__copy {
-  margin: 0.2rem 0 0;
+.house-card__meta {
+  margin-top: 0.18rem;
+}
+
+.maintenance-card {
+  margin-top: 0.65rem;
+  padding: 0.8rem;
+  border: 1px solid #e1e5e2;
+  border-radius: 0.85rem;
+  background: #ffffff;
+}
+
+.maintenance-card__title {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.maintenance-card__stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+}
+
+.maintenance-card__stats span {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.5rem;
+  border-radius: 0.55rem;
+  background: var(--color-surface-soft);
   color: var(--color-text-muted);
-  font-size: 0.6rem;
+  font-size: 0.48rem;
+  font-weight: 800;
+}
+
+.maintenance-card__stats strong {
+  color: var(--color-text);
+  font-size: 0.88rem;
 }
 
 .phone__section-title {
-  margin: 1rem 0 0.65rem;
+  margin: 0.85rem 0 0.45rem;
   font-size: 0.7rem;
   font-weight: 900;
 }
@@ -438,6 +513,14 @@ main {
   align-items: center;
   padding: 0.65rem 0;
   border-bottom: 1px solid #e4e7e4;
+}
+
+.document-row {
+  display: grid;
+  grid-template-columns: 1.7rem 1fr;
+  gap: 0.55rem;
+  align-items: center;
+  padding: 0.65rem 0;
 }
 
 .phone-task__icon {
@@ -471,12 +554,13 @@ main {
 
 .phone__nav {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  margin-top: 1rem;
+  grid-template-columns: repeat(5, 1fr);
+  margin-top: 0.5rem;
   padding-top: 0.7rem;
   border-top: 1px solid #e1e5e2;
   color: var(--color-text-muted);
-  font-size: 0.47rem;
+  font-size: 0.42rem;
+  font-weight: 800;
   text-align: center;
 }
 
@@ -849,16 +933,17 @@ main {
 
   .hero__title {
     max-width: 35rem;
-    font-size: clamp(3.3rem, 14vw, 5.2rem);
+    font-size: clamp(2.85rem, 11vw, 4.65rem);
   }
 
   .hero__visual {
-    min-height: 35rem;
+    min-height: 36rem;
   }
 
   .hero__house {
-    inset: 0 calc(var(--container-padding) * -1);
-    background-position: 62% center;
+    inset: 1rem calc(var(--container-padding) * -1) 0;
+    border-radius: var(--radius-large) var(--radius-large) 0 0;
+    background-position: 64% center;
   }
 
   .hero__house::before {
@@ -881,7 +966,7 @@ main {
   }
 
   .phone__screen {
-    min-height: 32rem;
+    min-height: 34rem;
   }
 
   .problem-grid {
@@ -923,8 +1008,9 @@ main {
     grid-template-columns: auto 1fr;
   }
 
-  .cta-band__stores {
-    grid-column: 1 / -1;
+  .cta-band .button {
+    grid-column: 2;
+    justify-self: start;
   }
 
   .footer__grid {
@@ -943,7 +1029,7 @@ main {
   }
 
   .hero__title {
-    font-size: clamp(3.1rem, 15vw, 4.2rem);
+    font-size: clamp(2.45rem, 12vw, 3.6rem);
   }
 
   .hero__copy {
@@ -966,15 +1052,15 @@ main {
   }
 
   .hero__visual {
-    min-height: 31rem;
+    min-height: 35rem;
   }
 
   .phone {
-    width: 14.6rem;
+    width: min(15.4rem, calc(100vw - 2.5rem));
   }
 
   .phone__screen {
-    min-height: 28rem;
+    min-height: 32.8rem;
   }
 
   .feature-grid,
@@ -1004,9 +1090,7 @@ main {
     margin-inline: auto;
   }
 
-  .cta-band__stores {
-    display: grid;
-    grid-template-columns: 1fr;
+  .cta-band .button {
     width: 100%;
   }
 

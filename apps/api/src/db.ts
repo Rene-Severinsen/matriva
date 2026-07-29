@@ -74,9 +74,16 @@ export function authLimitsDisabled() {
 }
 
 export function validateAuthRuntimeConfig() {
-  if (process.env.NODE_ENV === "production" && authLimitsDisabled()) {
+  const isProductionRuntime = process.env.NODE_ENV === "production";
+  const isQaEnvironment = process.env.MATRIVA_ENVIRONMENT === "qa";
+
+  if (
+    isProductionRuntime &&
+    !isQaEnvironment &&
+    authLimitsDisabled()
+  ) {
     throw new Error(
-      "MATRIVA_AUTH_DISABLE_LIMITS=true is only allowed outside production."
+      "MATRIVA_AUTH_DISABLE_LIMITS=true is only allowed outside production or in the QA environment."
     );
   }
 }

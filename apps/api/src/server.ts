@@ -858,7 +858,16 @@ const server = createServer((request, response) => {
           return;
         }
 
-        console.error(JSON.stringify({ event: "auth.magic_link.request_failed" }));
+        console.error(
+          JSON.stringify({
+            event: "auth.magic_link.request_failed",
+            errorName: error instanceof Error ? error.name : "UnknownError",
+            errorMessage:
+              error instanceof Error
+                ? error.message
+                : "Unknown magic-link delivery error"
+          })
+        );
         writeApiError(response, 503, "magic_link_email_unavailable", "Matriva kunne ikke sende loginlinket lige nu.");
       }
     })();

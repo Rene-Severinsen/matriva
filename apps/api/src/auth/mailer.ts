@@ -19,8 +19,6 @@ type SmtpConfig = {
   from: string;
 };
 
-const matrivaLoginEmail = "login@matriva.dk";
-
 function mailTransport() {
   return process.env.MATRIVA_MAIL_TRANSPORT ?? "console";
 }
@@ -40,9 +38,12 @@ function smtpConfig(): SmtpConfig {
   const password = requiredEnv("MATRIVA_SMTP_PASSWORD");
   const from = requiredEnv("MATRIVA_SMTP_FROM");
 
-  if (user !== matrivaLoginEmail || from !== matrivaLoginEmail) {
+  assertSafeAddress(user);
+  assertSafeAddress(from);
+
+  if (user !== from) {
     throw new Error(
-      "MATRIVA_SMTP_USER and MATRIVA_SMTP_FROM must both be login@matriva.dk."
+      "MATRIVA_SMTP_USER and MATRIVA_SMTP_FROM must use the same email address."
     );
   }
 

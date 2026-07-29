@@ -35,6 +35,7 @@ import {
   type HouseMedia,
   type HousePublicDataProfileFact,
   type HousePublicDataProfileV1,
+  type HousePublicDataWithProfileResponseV1,
   type HousePublicDataSummary,
   type HousePublicDataSummaryField,
   type HousePublicDataSummaryValue,
@@ -64,6 +65,7 @@ type AuthStatus = "restoring" | "anonymous" | "authenticated";
 type MoreView = "menu" | "profile";
 type HouseView = "overview" | "details" | "improvements" | "addImprovement";
 type UnauthenticatedStep = "welcome" | "create" | "login";
+type HouseOnboardingStep = "search" | "confirm" | "progress" | "publicDataIssue";
 type PublicDataRefreshMessage = {
   tone: "success" | "warning";
   text: string;
@@ -112,6 +114,30 @@ function userFacingError(error: unknown): string {
   }
 
   return error.message;
+}
+
+function publicDataIsUsableAfterOnboarding(
+  publicData: HousePublicDataWithProfileResponseV1
+) {
+  return (
+    publicData.status === "success" ||
+    publicData.status === "partial" ||
+    publicData.status === "ambiguous"
+  );
+}
+
+function publicDataIssueMessage(
+  status: HousePublicDataWithProfileResponseV1["status"]
+) {
+  if (status === "not_found") {
+    return "Boligen er gemt, men BBR fandt ikke oplysninger for adressen.";
+  }
+
+  if (status === "temporarily_unavailable") {
+    return "Boligen er gemt, men vi kunne ikke hente BBR-oplysningerne lige nu.";
+  }
+
+  return "Boligen er gemt, men BBR-oplysningerne kunne ikke hentes lige nu.";
 }
 
 function priceInputErrorMessage(code: "negative" | "invalid" | "too_many_decimals" | "too_large") {
@@ -543,7 +569,7 @@ function HouseStatusCard({
       <View style={styles.pillRow}>
         <Pill>Gemt hus</Pill>
         <Pill tone={hasPublicData ? "default" : "warning"}>
-          {hasPublicData ? publicDataSummary.sourceLabel : "Afventer BBR"}
+          {hasPublicData ? publicDataSummary.sourceLabel : "BBR-oplysninger mangler"}
         </Pill>
       </View>
     </Card>
@@ -1237,28 +1263,117 @@ function TaskRow({
 }
 
 function HouseOnboarding({
+  step,
   query,
   suggestions,
   selectedAddress,
   hasAddressSearched,
   isSearching,
   isSaving,
+  progressText,
+  publicDataIssueText,
   onQueryChange,
   onSearch,
   onSelect,
-  onSave
+  onSave,
+  onChooseAnotherAddress,
+  onRetryPublicData,
+  onContinueWithoutPublicData
 }: {
+  step: HouseOnboardingStep;
   query: string;
   suggestions: AddressSuggestion[];
   selectedAddress: AddressSuggestion | null;
   hasAddressSearched: boolean;
   isSearching: boolean;
   isSaving: boolean;
+  progressText: string | null;
+  publicDataIssueText: string | null;
   onQueryChange: (query: string) => void;
   onSearch: () => void;
   onSelect: (suggestion: AddressSuggestion) => void;
   onSave: () => void;
+  onChooseAnotherAddress: () => void;
+  onRetryPublicData: () => void;
+  onContinueWithoutPublicData: () => void;
 }) {
+  if (step === "progress") {
+    return (
+      <View style={styles.stack}>
+        <Card>
+          <View style={styles.loadingState}>
+            <ActivityIndicator color={theme.primary} />
+            <Text style={styles.emptyTitle}>
+              {progressText ?? "Vi henter boligoplysninger fra BBR"}
+            </Text>
+            <Text style={styles.bodyText}>
+              Bliv her et øjeblik, mens Matriva gemmer boligen og gør
+              boligoversigten klar.
+            </Text>
+          </View>
+        </Card>
+      </View>
+    );
+  }
+
+  if (step === "publicDataIssue") {
+    return (
+      <View style={styles.stack}>
+        <Card>
+          <Text style={styles.emptyTitle}>BBR-oplysninger mangler</Text>
+          <Text style={styles.bodyText}>
+            {publicDataIssueText ??
+              "Boligen er gemt, men vi kunne ikke hente BBR-oplysningerne lige nu."}
+          </Text>
+          <View style={styles.stack}>
+            <PrimaryButton
+              label="Prøv igen"
+              loading={isSaving}
+              onPress={onRetryPublicData}
+            />
+            <SecondaryButton
+              label="Fortsæt uden BBR-oplysninger"
+              disabled={isSaving}
+              onPress={onContinueWithoutPublicData}
+            />
+          </View>
+        </Card>
+      </View>
+    );
+  }
+
+  if (step === "confirm" && selectedAddress) {
+    return (
+      <View style={styles.stack}>
+        <Card>
+          <Text style={styles.emptyTitle}>Bekræft din bolig</Text>
+          <View style={styles.infoList}>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Adresse</Text>
+              <Text style={styles.infoValue}>{selectedAddress.label}</Text>
+            </View>
+          </View>
+          <Text style={styles.bodyText}>
+            Matriva henter offentlige boligoplysninger fra BBR, så dit overblik
+            kan starte med de oplysninger, der er registreret om boligen.
+          </Text>
+          <View style={styles.stack}>
+            <PrimaryButton
+              label="Gem bolig og hent BBR-oplysninger"
+              loading={isSaving}
+              onPress={onSave}
+            />
+            <SecondaryButton
+              label="Vælg en anden adresse"
+              disabled={isSaving}
+              onPress={onChooseAnotherAddress}
+            />
+          </View>
+        </Card>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.stack}>
       <Card>
@@ -1322,7 +1437,7 @@ function HouseOnboarding({
             );
           })}
           <PrimaryButton
-            label="Gem hus"
+            label="Fortsæt"
             loading={isSaving}
             disabled={!selectedAddress || isSearching}
             onPress={onSave}
@@ -1348,7 +1463,7 @@ function DashboardScreen({
   onCreateTask: () => void;
   onOpenTasks: () => void;
 }) {
-  if (!house) {
+  if (!house || onboarding.step === "progress" || onboarding.step === "publicDataIssue") {
     return (
       <View style={styles.stack}>
         <SectionHeader
@@ -3402,6 +3517,12 @@ export default function App() {
   const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<AddressSuggestion | null>(null);
   const [hasAddressSearched, setHasAddressSearched] = useState(false);
+  const [houseOnboardingStep, setHouseOnboardingStep] =
+    useState<HouseOnboardingStep>("search");
+  const [houseOnboardingProgressText, setHouseOnboardingProgressText] =
+    useState<string | null>(null);
+  const [houseOnboardingPublicDataIssueText, setHouseOnboardingPublicDataIssueText] =
+    useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [showDeadlinePicker, setShowDeadlinePicker] = useState(false);
@@ -3462,6 +3583,9 @@ export default function App() {
     setSuggestions([]);
     setSelectedAddress(null);
     setHasAddressSearched(false);
+    setHouseOnboardingStep("search");
+    setHouseOnboardingProgressText(null);
+    setHouseOnboardingPublicDataIssueText(null);
     setError(null);
     setShowTaskForm(false);
     setShowDeadlinePicker(false);
@@ -3721,6 +3845,8 @@ export default function App() {
     setLoadingAction("address");
     setError(null);
     setSelectedAddress(null);
+    setHouseOnboardingStep("search");
+    setHouseOnboardingPublicDataIssueText(null);
 
     try {
       const response = await apiClient.searchAddresses(trimmedQuery);
@@ -3733,6 +3859,24 @@ export default function App() {
     } finally {
       setLoadingAction(null);
     }
+  }
+
+  function continueAddressOnboarding() {
+    if (!selectedAddress) {
+      setError("Vælg en adresse, før du fortsætter.");
+      return;
+    }
+
+    setError(null);
+    setHouseOnboardingStep("confirm");
+  }
+
+  function chooseAnotherAddress() {
+    setError(null);
+    setSelectedAddress(null);
+    setHouseOnboardingStep("search");
+    setHouseOnboardingProgressText(null);
+    setHouseOnboardingPublicDataIssueText(null);
   }
 
   function openUnauthenticatedMode(mode: Exclude<UnauthenticatedStep, "welcome">) {
@@ -3823,6 +3967,10 @@ export default function App() {
 
     setLoadingAction("house");
     setError(null);
+    setHouseOnboardingStep("progress");
+    setHouseOnboardingProgressText("Vi gemmer din bolig");
+    setHouseOnboardingPublicDataIssueText(null);
+    let savedHouseId: HouseId | null = null;
 
     try {
       const selectedAddressPayload = selectedAddressInput(selectedAddress);
@@ -3831,18 +3979,113 @@ export default function App() {
         houseDraftId: draft.houseDraft.id,
         selectedAddress: draft.houseDraft.selectedAddress
       });
-      await loadApp();
+      savedHouseId = response.house.id;
       setSelectedHouseId(response.house.id);
+      setHouseOnboardingProgressText("Vi henter boligoplysninger fra BBR");
+      const publicData = await apiClient.refreshHousePublicData(response.house.id);
+      setPublicDataProfile(publicData.profile);
+
+      if (!publicDataIsUsableAfterOnboarding(publicData)) {
+        await loadApp({ showGlobalLoading: false });
+        setSelectedHouseId(response.house.id);
+        setHouseOnboardingPublicDataIssueText(publicDataIssueMessage(publicData.status));
+        setHouseOnboardingStep("publicDataIssue");
+        return;
+      }
+
+      setHouseOnboardingProgressText("Vi gør din boligoversigt klar");
+      await loadApp({ showGlobalLoading: false });
+      setSelectedHouseId(response.house.id);
+      setQuery("");
+      setSuggestions([]);
+      setSelectedAddress(null);
+      setHasAddressSearched(false);
+      setHouseOnboardingStep("search");
+      setHouseOnboardingProgressText(null);
+      setHouseOnboardingPublicDataIssueText(null);
+      setActiveTab("dashboard");
+    } catch (caughtError) {
+      const message = userFacingError(caughtError);
+      if (savedHouseId) {
+        await loadApp({ showGlobalLoading: false });
+        setSelectedHouseId(savedHouseId);
+        setHouseOnboardingPublicDataIssueText(
+          "Boligen er gemt, men vi kunne ikke hente BBR-oplysningerne lige nu."
+        );
+        setHouseOnboardingStep("publicDataIssue");
+      } else {
+        setHouseOnboardingStep("confirm");
+      }
+      setError(message);
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
+  async function retryOnboardingPublicData() {
+    const onboardingHouseId = selectedHouseId;
+
+    if (!onboardingHouseId) {
+      setError("Tilføj et hus, før du opdaterer BBR-oplysninger.");
+      return;
+    }
+
+    setLoadingAction("house");
+    setError(null);
+    setHouseOnboardingStep("progress");
+    setHouseOnboardingProgressText("Vi henter boligoplysninger fra BBR");
+
+    try {
+      const publicData = await apiClient.refreshHousePublicData(onboardingHouseId);
+      setPublicDataProfile(publicData.profile);
+
+      if (!publicDataIsUsableAfterOnboarding(publicData)) {
+        await loadApp({ showGlobalLoading: false });
+        setSelectedHouseId(onboardingHouseId);
+        setHouseOnboardingPublicDataIssueText(publicDataIssueMessage(publicData.status));
+        setHouseOnboardingStep("publicDataIssue");
+        return;
+      }
+
+      setHouseOnboardingProgressText("Vi gør din boligoversigt klar");
+      await loadApp({ showGlobalLoading: false });
+      setSelectedHouseId(onboardingHouseId);
+      setHouseOnboardingStep("search");
+      setHouseOnboardingProgressText(null);
+      setHouseOnboardingPublicDataIssueText(null);
       setQuery("");
       setSuggestions([]);
       setSelectedAddress(null);
       setHasAddressSearched(false);
       setActiveTab("dashboard");
     } catch (caughtError) {
-      setError(userFacingError(caughtError));
+      const message = userFacingError(caughtError);
+      setHouseOnboardingPublicDataIssueText(
+        "Boligen er gemt, men vi kunne ikke hente BBR-oplysningerne lige nu."
+      );
+      setHouseOnboardingStep("publicDataIssue");
+      setError(message);
     } finally {
       setLoadingAction(null);
     }
+  }
+
+  async function continueWithoutOnboardingPublicData() {
+    const onboardingHouseId = selectedHouseId;
+
+    if (onboardingHouseId) {
+      await loadApp({ showGlobalLoading: false });
+      setSelectedHouseId(onboardingHouseId);
+    }
+
+    setQuery("");
+    setSuggestions([]);
+    setSelectedAddress(null);
+    setHasAddressSearched(false);
+    setHouseOnboardingStep("search");
+    setHouseOnboardingProgressText(null);
+    setHouseOnboardingPublicDataIssueText(null);
+    setActiveTab("dashboard");
   }
 
   function resetTaskForm() {
@@ -4491,20 +4734,34 @@ export default function App() {
   }
 
   const onboardingProps: React.ComponentProps<typeof HouseOnboarding> = {
+    step: houseOnboardingStep,
     query,
     suggestions,
     selectedAddress,
     hasAddressSearched,
     isSearching: loadingAction === "address",
     isSaving: loadingAction === "house",
+    progressText: houseOnboardingProgressText,
+    publicDataIssueText: houseOnboardingPublicDataIssueText,
     onQueryChange: (nextQuery) => {
       setQuery(nextQuery);
       setError(null);
       setSelectedAddress(null);
+      setHouseOnboardingStep("search");
+      setHouseOnboardingPublicDataIssueText(null);
     },
     onSearch: () => void searchAddresses(),
-    onSelect: setSelectedAddress,
-    onSave: () => void saveHouse()
+    onSelect: (suggestion) => {
+      setSelectedAddress(suggestion);
+      setError(null);
+    },
+    onSave:
+      houseOnboardingStep === "confirm"
+        ? () => void saveHouse()
+        : () => continueAddressOnboarding(),
+    onChooseAnotherAddress: chooseAnotherAddress,
+    onRetryPublicData: () => void retryOnboardingPublicData(),
+    onContinueWithoutPublicData: () => void continueWithoutOnboardingPublicData()
   };
 
   function renderActiveScreen() {

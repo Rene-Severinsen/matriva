@@ -9,7 +9,10 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_MATRIVA_API_BASE_URL": "https://api-qa.matriva.dk"
+      }
     },
     "production": {
       "autoIncrement": true

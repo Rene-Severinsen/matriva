@@ -1,25 +1,36 @@
 :root {
   --color-background: #ffffff;
   --color-surface: #ffffff;
-  --color-surface-soft: #f7f9f8;
-  --color-surface-tint: #eef5f1;
+  --color-surface-soft: #f3f6f4;
+  --color-surface-tint: #e6f3ed;
+  --color-header-background: rgba(255, 255, 255, 0.96);
 
-  --color-text: #111820;
-  --color-text-soft: #4f5961;
-  --color-text-muted: #727b81;
+  --color-text: #10211c;
+  --color-text-soft: #3f554d;
+  --color-text-muted: #64736e;
 
-  --color-brand: #28775d;
-  --color-brand-dark: #185c46;
-  --color-brand-soft: #e3f0e9;
-  --color-brand-contrast: #ffffff;
+  --color-brand: #2ba37a;
+  --color-brand-dark: #0f5c49;
+  --color-brand-soft: var(--color-surface-tint);
+  --color-brand-contrast: #10211c;
+  --color-on-dark: #ffffff;
 
-  --color-border: #dfe5e2;
-  --color-card-border: #e4e9e6;
-  --color-focus-ring: #0f6f52;
-  --color-device-frame: #17201d;
-  --color-accent-subtle: #72a990;
-  --color-section-tint: #f2f7f4;
-  --color-shadow: rgba(17, 24, 32, 0.1);
+  --color-border: rgba(15, 92, 73, 0.18);
+  --color-border-subtle: rgba(15, 92, 73, 0.12);
+  --color-card-border: rgba(15, 92, 73, 0.14);
+  --color-card: #ffffff;
+  --color-focus-ring: #0f5c49;
+  --color-icon: #0f5c49;
+  --color-icon-background: var(--color-brand-soft);
+  --color-device-frame: #111516;
+
+  --color-button-primary: #2ba37a;
+  --color-button-primary-text: #10211c;
+  --color-button-primary-hover: #0f5c49;
+  --color-button-primary-hover-text: #ffffff;
+  --color-button-secondary: #ffffff;
+  --color-button-secondary-text: #0f5c49;
+  --color-button-secondary-hover: var(--color-brand-soft);
 
   --container-width: 1440px;
   --container-padding: clamp(1.25rem, 4vw, 4.5rem);
@@ -29,6 +40,8 @@
   --radius-large: 2rem;
   --radius-pill: 999px;
 
-  --shadow-soft: 0 1.5rem 4rem rgba(17, 24, 32, 0.08);
-  --shadow-card: 0 0.75rem 2.5rem rgba(17, 24, 32, 0.06);
+  --shadow-soft: 0 1.5rem 4rem rgba(15, 92, 73, 0.12);
+  --shadow-card: 0 0.75rem 2.5rem rgba(15, 92, 73, 0.08);
+  --shadow-device:
+    0 2rem 4rem rgba(15, 92, 73, 0.22), 0 0 0 0.12rem rgba(255, 255, 255, 0.55);
 }

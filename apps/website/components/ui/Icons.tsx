@@ -6,13 +6,7 @@ export function HouseMark(props: IconProps) {
   return (
     <svg viewBox="0 0 48 48" fill="none" aria-hidden="true" {...props}>
       <path
-        d="M8 20.5 24 7l16 13.5V41H29V28H19v13H8V20.5Z"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeLinejoin="round"
-      />
-      <path
-        d="m17 23 7 6 7-6"
+        d="M8 41V20.5L24 7l16 13.5V41h-9V25l-7 7-7-7v16H8Z"
         stroke="currentColor"
         strokeWidth="3"
         strokeLinecap="round"
@@ -193,7 +187,7 @@ export function PlusHouseIcon(props: IconProps) {
         cx="36"
         cy="36"
         r="9"
-        fill="#fff"
+        fill="var(--color-icon-background)"
         stroke="currentColor"
         strokeWidth="2.6"
       />

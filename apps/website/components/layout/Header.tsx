@@ -8,10 +8,11 @@ import { Container } from "@/components/ui/Container";
 import { HouseMark } from "@/components/ui/Icons";
 
 const links = [
-  ["Funktioner", "#funktioner"],
-  ["Sådan virker det", "#saadan-virker-det"],
-  ["Produktet", "#produktet"],
-  ["Kontakt", "#kontakt"],
+  ["Funktioner", "/#funktioner"],
+  ["Sådan virker det", "/#saadan-virker-det"],
+  ["Produktet", "/#produktet"],
+  ["Om Matriva", "/om-matriva"],
+  ["Kontakt", "/#kontakt"],
 ];
 
 export function Header() {
@@ -42,14 +43,14 @@ export function Header() {
 
         <nav className="header__nav" aria-label="Primær navigation">
           {links.map(([label, href]) => (
-            <a key={href} href={href}>
+            <Link key={href} href={href}>
               {label}
-            </a>
+            </Link>
           ))}
         </nav>
 
         <div className="header__actions">
-          <Button href="#saadan-virker-det">Se hvordan Matriva virker</Button>
+          <Button href="/#saadan-virker-det">Se hvordan Matriva virker</Button>
 
           <button
             className="header__menu-button"
@@ -78,11 +79,11 @@ export function Header() {
           aria-label="Mobilnavigation"
         >
           {links.map(([label, href]) => (
-            <a key={href} href={href} onClick={() => setOpen(false)}>
+            <Link key={href} href={href} onClick={() => setOpen(false)}>
               {label}
-            </a>
+            </Link>
           ))}
-          <Button href="#saadan-virker-det" onClick={() => setOpen(false)}>
+          <Button href="/#saadan-virker-det" onClick={() => setOpen(false)}>
             Se hvordan Matriva virker
           </Button>
         </nav>

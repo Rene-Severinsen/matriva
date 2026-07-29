@@ -28,10 +28,11 @@ export function Footer() {
 
           <div className="footer__column">
             <h2>Genveje</h2>
-            <a href="#funktioner">Funktioner</a>
-            <a href="#saadan-virker-det">Sådan virker det</a>
-            <a href="#produktet">Produktet</a>
-            <a href="#status">Status</a>
+            <Link href="/#funktioner">Funktioner</Link>
+            <Link href="/#saadan-virker-det">Sådan virker det</Link>
+            <Link href="/#produktet">Produktet</Link>
+            <Link href="/om-matriva">Om Matriva</Link>
+            <Link href="/#status">Status</Link>
           </div>
 
           <div className="footer__column">

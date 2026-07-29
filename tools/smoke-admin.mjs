@@ -282,7 +282,6 @@ async function insertAdminReadFixture(pool, userId, email) {
         catalog_version,
         title,
         short_description,
-        component_key,
         season,
         recommended_period,
         default_recurrence_interval,
@@ -297,7 +296,6 @@ async function insertAdminReadFixture(pool, userId, email) {
         $3,
         'Admin read smoke recommendation',
         'Used by admin smoke tests.',
-        'roof',
         'all_year',
         '{"type":"all_year"}'::jsonb,
         'yearly',
@@ -326,7 +324,6 @@ async function insertAdminReadFixture(pool, userId, email) {
         timing_type,
         recurrence_interval,
         recurrence_anchor,
-        component_key,
         recommendation_key,
         version_key,
         catalog_item_id,
@@ -336,8 +333,8 @@ async function insertAdminReadFixture(pool, userId, email) {
         accepted_task_id
       )
       values
-        ($1, $3, $4, 'matriva_catalog', 'accepted', 'Admin read accepted', 'Smoke accepted', 'Når det passer', '{"type":"all_year"}'::jsonb, 'normal', 'general', 'none', 'yearly', 'completed_date', 'roof', $5, $6 || ':accepted', $7, $5, $6, '2026', $8),
-        ($2, $3, $4, 'matriva_catalog', 'pending', 'Admin read pending', 'Smoke pending', 'Når det passer', '{"type":"all_year"}'::jsonb, 'normal', 'general', 'none', 'yearly', 'completed_date', 'roof', $5, $6 || ':pending', $7, $5, $6, '2027', null)
+        ($1, $3, $4, 'matriva_catalog', 'accepted', 'Admin read accepted', 'Smoke accepted', 'Når det passer', '{"type":"all_year"}'::jsonb, 'normal', 'general', 'none', 'yearly', 'completed_date', $5, $6 || ':accepted', $7, $5, $6, '2026', $8),
+        ($2, $3, $4, 'matriva_catalog', 'pending', 'Admin read pending', 'Smoke pending', 'Når det passer', '{"type":"all_year"}'::jsonb, 'normal', 'general', 'none', 'yearly', 'completed_date', $5, $6 || ':pending', $7, $5, $6, '2027', null)
     `,
     [
       fixtureId("mrec"),

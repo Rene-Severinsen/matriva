@@ -164,7 +164,6 @@ export type MatrivaApiClient = {
   getAdminRecommendationCatalog: (
     input?: AdminListRequest<AdminRecommendationCatalogSort> & {
       active?: AdminRecommendationActiveFilter;
-      category?: string;
     }
   ) => Promise<AdminRecommendationCatalogResponse>;
   getAdminRecommendationCatalogItem: (
@@ -773,10 +772,6 @@ export function createMatrivaApiClient(
 
       if (query?.year) {
         searchParams.set("year", `${query.year}`);
-      }
-
-      if (query?.componentKey) {
-        searchParams.set("componentKey", query.componentKey);
       }
 
       const queryString = searchParams.toString();

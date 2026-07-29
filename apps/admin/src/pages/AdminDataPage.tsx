@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { MatrivaApiClient } from "@matriva/api-client";
 import type {
@@ -268,20 +268,15 @@ function RecommendationsList({
 }) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState("all");
-  const [category, setCategory] = useState("all");
   const [sort, setSort] = useState("catalog_key");
   const [order, setOrder] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
   const { state, retry } = useListState<AdminRecommendationCatalogResponse>(
-    (signal) => client.getAdminRecommendationCatalog({ query, active: active as any, category, sort: sort as any, order, page, pageSize: 25, signal }),
+    (signal) => client.getAdminRecommendationCatalog({ query, active: active as any, sort: sort as any, order, page, pageSize: 25, signal }),
     onAuthorizationError,
     "Anbefalinger kunne ikke indlæses.",
-    [client, query, active, category, sort, order, page]
+    [client, query, active, sort, order, page]
   );
-  const categoryOptions = useMemo<Array<[string, string]>>(() => {
-    const categories = state.status === "ready" ? state.data.filters.categories : [];
-    return [["all", "Alle"] as [string, string], ...categories.map((value) => [value, value] as [string, string])];
-  }, [state]);
 
   return (
     <DataSection
@@ -290,8 +285,7 @@ function RecommendationsList({
         <>
           <SearchField value={query} onChange={(value) => { setQuery(value); setPage(1); }} />
           <FilterSelect label="Aktiv" value={active} onChange={(value) => { setActive(value); setPage(1); }} options={[["all", "Alle"], ["active", "Aktive"], ["inactive", "Inaktive"]]} />
-          <FilterSelect label="Kategori" value={category} onChange={(value) => { setCategory(value); setPage(1); }} options={categoryOptions} />
-          <SortSelect value={sort} onChange={setSort} options={[["catalog_key", "Key"], ["title", "Titel"], ["category", "Kategori"], ["instance_count", "Instances"], ["accepted_count", "Accepteret"], ["acceptance_rate", "Rate"]]} />
+          <SortSelect value={sort} onChange={setSort} options={[["catalog_key", "Key"], ["title", "Titel"], ["instance_count", "Instances"], ["accepted_count", "Accepteret"], ["acceptance_rate", "Rate"]]} />
           <OrderButton order={order} setOrder={setOrder} />
         </>
       }
@@ -304,13 +298,12 @@ function RecommendationsList({
             <div className="table-scroll">
               <table className="data-table recommendations-table">
                 <thead>
-                  <tr><th>Anbefaling</th><th>Kategori</th><th>Version</th><th>Aktiv</th><th>Priority</th><th>Instances</th><th>Accepteret</th><th>Skjult permanent</th><th>Acceptance rate</th></tr>
+                  <tr><th>Anbefaling</th><th>Version</th><th>Aktiv</th><th>Priority</th><th>Instances</th><th>Accepteret</th><th>Skjult permanent</th><th>Acceptance rate</th></tr>
                 </thead>
                 <tbody>
                   {data.items.map((item) => (
                     <tr key={`${item.catalogKey}:${item.catalogVersion}`} onClick={() => onOpen(item.catalogKey)}>
                       <td><strong>{item.title}</strong><span>{item.catalogKey}</span></td>
-                      <td>{item.category}</td>
                       <td>{item.catalogVersion}</td>
                       <td><StatusBadge label={item.active ? "active" : "inactive"} /></td>
                       <td>{item.priority}</td>
@@ -380,7 +373,7 @@ function DetailContent({ data }: { data: AdminUserResponse | AdminHouseResponse 
   }
   const item = data.item;
   return <DetailGrid title={item.title} subtitle={item.catalogKey} rows={[
-    ["Version", item.catalogVersion], ["Kategori", item.category], ["Aktiv", item.active ? "Ja" : "Nej"], ["Priority", item.priority], ["Recurrence", item.recurrenceInterval], ["Season", item.season], ["Instances", numberFormatter.format(item.instanceCount)], ["Pending", numberFormatter.format(item.statusDistribution.pending)], ["Accepted", numberFormatter.format(item.statusDistribution.accepted)], ["Dismissed", numberFormatter.format(item.statusDistribution.dismissed)], ["Accepted tasks", numberFormatter.format(item.acceptedTaskCount)], ["Permanent hides", numberFormatter.format(item.permanentHideCount)], ["Acceptance rate", percentFormatter.format(item.acceptanceRate)], ["Accepted over time", "Estimeret via updated_at"], ["not_now", "Ikke tilgængelig som præcis metric"]
+    ["Version", item.catalogVersion], ["Aktiv", item.active ? "Ja" : "Nej"], ["Priority", item.priority], ["Recurrence", item.recurrenceInterval], ["Season", item.season], ["Instances", numberFormatter.format(item.instanceCount)], ["Pending", numberFormatter.format(item.statusDistribution.pending)], ["Accepted", numberFormatter.format(item.statusDistribution.accepted)], ["Dismissed", numberFormatter.format(item.statusDistribution.dismissed)], ["Accepted tasks", numberFormatter.format(item.acceptedTaskCount)], ["Permanent hides", numberFormatter.format(item.permanentHideCount)], ["Acceptance rate", percentFormatter.format(item.acceptanceRate)], ["Accepted over time", "Estimeret via updated_at"], ["not_now", "Ikke tilgængelig som præcis metric"]
   ]} extra={[item.shortDescription]} />;
 }
 

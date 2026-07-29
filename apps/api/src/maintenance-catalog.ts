@@ -22,20 +22,6 @@ export type MaintenanceCatalogItem = {
   catalogVersion: string;
   title: string;
   shortDescription: string;
-  componentKey:
-    | "none"
-    | "roof"
-    | "facade"
-    | "windows"
-    | "doors"
-    | "foundation"
-    | "drainage"
-    | "heating"
-    | "plumbing"
-    | "electricity"
-    | "interior"
-    | "garden"
-    | "other";
   season: MaintenanceSeason;
   recommendedPeriod: MaintenanceCatalogPeriod;
   defaultRecurrenceInterval: MaintenanceRecurrenceInterval;
@@ -52,7 +38,6 @@ export const maintenanceCatalogItems: ReadonlyArray<MaintenanceCatalogItem> = [
     title: "Kontroller røgalarmer",
     shortDescription:
       "Kontrollér, at husets røgalarmer reagerer, og følg producentens anvisninger om test og batteriskift.",
-    componentKey: "electricity",
     season: "all_year",
     recommendedPeriod: { type: "all_year" },
     defaultRecurrenceInterval: "half_yearly",
@@ -67,7 +52,6 @@ export const maintenanceCatalogItems: ReadonlyArray<MaintenanceCatalogItem> = [
     title: "Kontroller synlige tegn på fugt",
     shortDescription:
       "Se efter misfarvninger, lugt eller andre synlige tegn på fugt i boligen. Undersøg årsagen nærmere eller kontakt en fagperson ved tvivl.",
-    componentKey: "interior",
     season: "all_year",
     recommendedPeriod: { type: "all_year" },
     defaultRecurrenceInterval: "yearly",
@@ -82,7 +66,6 @@ export const maintenanceCatalogItems: ReadonlyArray<MaintenanceCatalogItem> = [
     title: "Rens tagrender",
     shortDescription:
       "Fjern blade og snavs fra tagrender, så regnvand lettere kan ledes væk fra huset.",
-    componentKey: "drainage",
     season: "autumn",
     recommendedPeriod: { type: "month_range", startMonth: 9, endMonth: 11 },
     defaultRecurrenceInterval: "yearly",
@@ -97,7 +80,6 @@ export const maintenanceCatalogItems: ReadonlyArray<MaintenanceCatalogItem> = [
     title: "Kontroller nedløbsrør",
     shortDescription:
       "Kontrollér synlige samlinger og afløb ved nedløbsrør, og se efter blokeringer eller utætheder.",
-    componentKey: "drainage",
     season: "autumn",
     recommendedPeriod: { type: "month_range", startMonth: 9, endMonth: 11 },
     defaultRecurrenceInterval: "yearly",
@@ -112,7 +94,6 @@ export const maintenanceCatalogItems: ReadonlyArray<MaintenanceCatalogItem> = [
     title: "Kontroller tag og inddækninger",
     shortDescription:
       "Gennemgå taget fra et sikkert sted, og se efter synlige skader, løse dele eller problemer omkring inddækninger.",
-    componentKey: "roof",
     season: "spring",
     recommendedPeriod: { type: "month_range", startMonth: 3, endMonth: 5 },
     defaultRecurrenceInterval: "yearly",
@@ -127,7 +108,6 @@ export const maintenanceCatalogItems: ReadonlyArray<MaintenanceCatalogItem> = [
     title: "Efterse fuger omkring vinduer og døre",
     shortDescription:
       "Se efter revner, løse fuger eller åbninger omkring vinduer og døre, hvor vand eller træk kan trænge ind.",
-    componentKey: "windows",
     season: "spring",
     recommendedPeriod: { type: "month_range", startMonth: 3, endMonth: 5 },
     defaultRecurrenceInterval: "yearly",
@@ -142,7 +122,6 @@ export const maintenanceCatalogItems: ReadonlyArray<MaintenanceCatalogItem> = [
     title: "Kontroller facade for revner og skader",
     shortDescription:
       "Gennemgå facaden visuelt, og se efter nye revner, afskalninger eller andre synlige skader.",
-    componentKey: "facade",
     season: "spring",
     recommendedPeriod: { type: "month_range", startMonth: 3, endMonth: 5 },
     defaultRecurrenceInterval: "yearly",
@@ -157,7 +136,6 @@ export const maintenanceCatalogItems: ReadonlyArray<MaintenanceCatalogItem> = [
     title: "Kontroller synlige rør for lækager",
     shortDescription:
       "Se efter fugt, dryp eller misfarvninger ved synlige vandrør og samlinger.",
-    componentKey: "plumbing",
     season: "all_year",
     recommendedPeriod: { type: "all_year" },
     defaultRecurrenceInterval: "yearly",
@@ -172,7 +150,6 @@ export const maintenanceCatalogItems: ReadonlyArray<MaintenanceCatalogItem> = [
     title: "Klargør udendørs vandinstallationer til frost",
     shortDescription:
       "Gennemgå udendørs haner, slanger og vandinstallationer før frost, og følg installationens anvisninger for vinterlukning.",
-    componentKey: "plumbing",
     season: "autumn",
     recommendedPeriod: { type: "month_range", startMonth: 10, endMonth: 11 },
     defaultRecurrenceInterval: "yearly",
@@ -187,7 +164,6 @@ export const maintenanceCatalogItems: ReadonlyArray<MaintenanceCatalogItem> = [
     title: "Kontroller terræn og afvanding nær huset",
     shortDescription:
       "Se efter steder, hvor vand samler sig tæt på huset, eller hvor terræn og afvanding ikke leder vandet væk.",
-    componentKey: "drainage",
     season: "autumn",
     recommendedPeriod: { type: "month_range", startMonth: 9, endMonth: 11 },
     defaultRecurrenceInterval: "yearly",
@@ -202,7 +178,6 @@ export const maintenanceCatalogItems: ReadonlyArray<MaintenanceCatalogItem> = [
     title: "Rens udendørs afløbsriste",
     shortDescription:
       "Fjern blade og snavs fra synlige udendørs afløbsriste, så vandet lettere kan løbe væk.",
-    componentKey: "drainage",
     season: "autumn",
     recommendedPeriod: { type: "month_range", startMonth: 9, endMonth: 11 },
     defaultRecurrenceInterval: "yearly",
@@ -217,7 +192,6 @@ export const maintenanceCatalogItems: ReadonlyArray<MaintenanceCatalogItem> = [
     title: "Kontroller fuger i vådrum",
     shortDescription:
       "Se efter revner, løse fuger eller misfarvninger i synlige fuger omkring vådrummets overflader.",
-    componentKey: "interior",
     season: "all_year",
     recommendedPeriod: { type: "all_year" },
     defaultRecurrenceInterval: "yearly",

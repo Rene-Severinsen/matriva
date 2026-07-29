@@ -1266,8 +1266,7 @@ const server = createServer((request, response) => {
         const url = new URL(request.url ?? "/", `http://${host}:${port}`);
         const parsedQuery = maintenanceHistoryQuerySchema.safeParse({
           year: url.searchParams.get("year") ?? undefined,
-          type: url.searchParams.get("type") ?? undefined,
-          componentKey: url.searchParams.get("componentKey") ?? undefined
+          type: url.searchParams.get("type") ?? undefined
         });
 
         if (!parsedQuery.success) {

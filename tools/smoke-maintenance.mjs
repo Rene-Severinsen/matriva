@@ -251,12 +251,6 @@ async function runSmoke() {
     "Recommendations must include suggested dates and period keys."
   );
   assert(
-    recommendations.recommendations.every((item) =>
-      ["roof", "facade", "windows", "doors", "foundation", "drainage", "heating", "plumbing", "electricity", "interior", "garden", "other", "none"].includes(item.componentKey)
-    ),
-    "Recommendations must use approved maintenance component keys."
-  );
-  assert(
     recommendations.recommendations[0].provenance.originalTitle,
     "Recommendation provenance must be preserved."
   );
@@ -402,8 +396,7 @@ async function runSmoke() {
       timing: { type: "specific_deadline", dueDate: "2026-10-01" },
       priceAmountMinor: 125050,
       priceCurrency: "DKK",
-      recurrence: { interval: "yearly", anchor: "completed_date" },
-      componentKey: "roof"
+      recurrence: { interval: "yearly", anchor: "completed_date" }
     })
   });
   assert(task.task.priceAmountMinor === 125050, "Task price must persist on create.");

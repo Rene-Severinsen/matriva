@@ -139,7 +139,6 @@ type MaintenanceTaskRow = {
   completed_at: Date | null;
   recurrence_interval: MaintenanceTask["recurrence"] extends null | undefined ? string | null : string | null;
   recurrence_anchor: string | null;
-  component_key: string | null;
   archived_at: Date | null;
   recommendation_id: string | null;
   origin_catalog_key: string | null;
@@ -169,7 +168,6 @@ type MaintenanceRecommendationRow = {
   season: MaintenanceTaskTiming["season"] | null;
   recurrence_interval: string | null;
   recurrence_anchor: string | null;
-  component_key: string | null;
   provenance: MaintenanceRecommendation["provenance"];
   recommendation_key: string;
   accepted_task_id: string | null;
@@ -184,7 +182,6 @@ type MaintenanceCatalogItemRow = {
   catalog_version: string;
   title: string;
   short_description: string;
-  component_key: string;
   season: MaintenanceTaskTiming["season"];
   recommended_period: MaintenanceCatalogPeriod;
   default_recurrence_interval: string;
@@ -203,7 +200,6 @@ type MaintenanceCompletionRow = {
   completed_date: string;
   price_amount_minor: number | null;
   price_currency: "DKK";
-  component_key: string | null;
   source: MaintenanceTask["source"];
   recurrence_interval: string | null;
   recurrence_anchor: string | null;
@@ -373,7 +369,6 @@ function maintenanceTaskReturningColumns() {
     recommendation,
     recurrence_interval,
     recurrence_anchor,
-    component_key,
     archived_at,
     recommendation_id,
     origin_catalog_key,
@@ -408,7 +403,6 @@ function maintenanceRecommendationReturningColumns() {
     season,
     recurrence_interval,
     recurrence_anchor,
-    component_key,
     provenance,
     recommendation_key,
     accepted_task_id,
@@ -564,7 +558,6 @@ function toMaintenanceTask(row: MaintenanceTaskRow): MaintenanceTask {
           anchor: row.recurrence_anchor ?? "completed_date"
         }
       : null,
-    componentKey: row.component_key,
     archivedAt: isoDate(row.archived_at),
     originCatalogKey: row.origin_catalog_key,
     originCatalogVersion: row.origin_catalog_version,
@@ -615,7 +608,6 @@ function toMaintenanceRecommendation(
           anchor: row.recurrence_anchor ?? "completed_date"
         }
       : null,
-    componentKey: row.component_key,
     provenance: row.provenance,
     recommendationKey: row.recommendation_key,
     acceptedTaskId: row.accepted_task_id,
@@ -637,7 +629,6 @@ function toMaintenanceHistoryEntry(
     note: row.note,
     priceAmountMinor: nullableNumber(row.price_amount_minor),
     priceCurrency: row.price_currency,
-    componentKey: row.component_key,
     source: row.source,
     recurrence: row.recurrence_interval
       ? {
@@ -1169,10 +1160,9 @@ export async function createMaintenanceTaskForHouse(
         recommendation,
         recurrence_interval,
         recurrence_anchor,
-        component_key,
         completed_at
       )
-      values ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10, $11, $12, $13::jsonb, $14, $15, $16, $17)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10, $11, $12, $13::jsonb, $14, $15, $16)
       returning
         ${maintenanceTaskReturningColumns()}
     `,
@@ -1192,7 +1182,6 @@ export async function createMaintenanceTaskForHouse(
       null,
       input.recurrence?.interval ?? null,
       input.recurrence?.anchor ?? null,
-      input.componentKey ?? null,
       completedAt
     ]
   );
@@ -1320,9 +1309,8 @@ export async function updateMaintenanceTaskForHouse(
         season = case when $7 is null then season else $9 end,
         recurrence_interval = case when $10::boolean then $11 else recurrence_interval end,
         recurrence_anchor = case when $10::boolean then $12 else recurrence_anchor end,
-        component_key = case when $13::boolean then $14 else component_key end,
-        price_amount_minor = case when $15::boolean then $16 else price_amount_minor end,
-        price_currency = case when $15::boolean then coalesce($17, 'DKK') else price_currency end,
+        price_amount_minor = case when $13::boolean then $14 else price_amount_minor end,
+        price_currency = case when $13::boolean then coalesce($15, 'DKK') else price_currency end,
         updated_at = now()
       where id = $1 and house_id = $2 and deleted_at is null and archived_at is null
       returning
@@ -1341,8 +1329,6 @@ export async function updateMaintenanceTaskForHouse(
       Object.prototype.hasOwnProperty.call(input, "recurrence"),
       input.recurrence?.interval ?? null,
       input.recurrence?.anchor ?? null,
-      Object.prototype.hasOwnProperty.call(input, "componentKey"),
-      input.componentKey?.trim() || null,
       Object.prototype.hasOwnProperty.call(input, "priceAmountMinor"),
       input.priceAmountMinor ?? null,
       input.priceCurrency ?? "DKK"
@@ -1403,7 +1389,6 @@ async function syncMaintenanceCatalogItems() {
           catalog_version,
           title,
           short_description,
-          component_key,
           season,
           recommended_period,
           default_recurrence_interval,
@@ -1412,12 +1397,11 @@ async function syncMaintenanceCatalogItems() {
           disclaimer_class,
           is_active
         )
-        values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11::jsonb, $12, $13)
+        values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10::jsonb, $11, $12)
         on conflict (catalog_key, catalog_version) do update
         set
           title = excluded.title,
           short_description = excluded.short_description,
-          component_key = excluded.component_key,
           season = excluded.season,
           recommended_period = excluded.recommended_period,
           default_recurrence_interval = excluded.default_recurrence_interval,
@@ -1433,7 +1417,6 @@ async function syncMaintenanceCatalogItems() {
         item.catalogVersion,
         item.title,
         item.shortDescription,
-        item.componentKey,
         item.season,
         JSON.stringify(item.recommendedPeriod),
         item.defaultRecurrenceInterval,
@@ -1459,7 +1442,6 @@ async function ensureMaintenanceRecommendationInstancesForHouse(
         catalog_version,
         title,
         short_description,
-        component_key,
         season,
         recommended_period,
         default_recurrence_interval,
@@ -1533,7 +1515,6 @@ async function ensureMaintenanceRecommendationInstancesForHouse(
           season,
           recurrence_interval,
           recurrence_anchor,
-          component_key,
           provenance,
           eligibility_snapshot,
           recommendation_key,
@@ -1561,14 +1542,13 @@ async function ensureMaintenanceRecommendationInstancesForHouse(
           null,
           $13,
           'completed_date',
-          $14,
+          $14::jsonb,
           $15::jsonb,
-          $16::jsonb,
           $5,
+          $16,
           $17,
           $18,
-          $19,
-          $20
+          $19
         )
         on conflict (house_id, catalog_item_id, period_key)
         where catalog_item_id is not null and period_key is not null
@@ -1588,7 +1568,6 @@ async function ensureMaintenanceRecommendationInstancesForHouse(
         periodKey,
         suggestedDueDate,
         item.default_recurrence_interval,
-        item.component_key,
         JSON.stringify({
           extractionMethod: "matriva_catalog",
           originalTitle: item.title,
@@ -1704,7 +1683,6 @@ export async function acceptMaintenanceRecommendationForHouse(
     const originSnapshot = {
       title: recommendation.title,
       shortDescription: recommendation.description,
-      componentKey: recommendation.component_key ?? "other",
       season: recommendation.season ?? "all_year",
       recommendedPeriod: recommendation.recommended_period ?? { type: "all_year" },
       defaultRecurrence: recommendation.recurrence_interval
@@ -1736,13 +1714,12 @@ export async function acceptMaintenanceRecommendationForHouse(
           recommendation_id,
           recurrence_interval,
           recurrence_anchor,
-          component_key,
           origin_catalog_key,
           origin_catalog_version,
           origin_recommendation_instance_id,
           origin_snapshot
         )
-        values ($1, $2, $3, $4, $5, 'recommendation_accepted', 'planned', $6, $7::date, $8, $9::jsonb, $10, $11, $12, $13, $14, $15, $10, $16::jsonb)
+        values ($1, $2, $3, $4, $5, 'recommendation_accepted', 'planned', $6, $7::date, $8, $9::jsonb, $10, $11, $12, $13, $14, $10, $15::jsonb)
         returning
           ${maintenanceTaskReturningColumns()}
       `,
@@ -1761,14 +1738,12 @@ export async function acceptMaintenanceRecommendationForHouse(
           catalogKey: originSnapshot.catalogKey,
           catalogVersion: originSnapshot.catalogVersion,
           recommendationInstanceId: recommendation.id,
-          componentKey: recommendation.component_key ?? undefined,
           season: recommendation.season ?? undefined,
           reason: recommendation.description
         }),
         recommendation.id,
         recurrence?.interval ?? null,
         recurrence?.anchor ?? null,
-        recommendation.component_key,
         originSnapshot.catalogKey,
         originSnapshot.catalogVersion,
         JSON.stringify(originSnapshot)
@@ -1910,12 +1885,11 @@ export async function completeMaintenanceTaskForHouse(
           completed_date,
           price_amount_minor,
           price_currency,
-          component_key,
           source,
           recurrence_interval,
           recurrence_anchor
         )
-        values ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12, $13)
+        values ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12)
         returning
           id,
           task_id,
@@ -1925,7 +1899,6 @@ export async function completeMaintenanceTaskForHouse(
           to_char(completed_date, 'YYYY-MM-DD') as completed_date,
           price_amount_minor,
           price_currency,
-          component_key,
           source,
           recurrence_interval,
           recurrence_anchor,
@@ -1941,7 +1914,6 @@ export async function completeMaintenanceTaskForHouse(
         completedDate,
         task.price_amount_minor,
         task.price_currency,
-        task.component_key,
         task.source,
         task.recurrence_interval,
         task.recurrence_anchor
@@ -2010,13 +1982,12 @@ export async function completeMaintenanceTaskForHouse(
               recommendation_id,
               recurrence_interval,
               recurrence_anchor,
-              component_key,
               origin_catalog_key,
               origin_catalog_version,
               origin_recommendation_instance_id,
               origin_snapshot
             )
-            values ($1, $2, $3, $4, $5, $6, 'planned', $7, $8::date, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, $18, $19, $20::jsonb)
+            values ($1, $2, $3, $4, $5, $6, 'planned', $7, $8::date, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, $18, $19::jsonb)
           `,
           [
             createOpaqueId("task"),
@@ -2034,7 +2005,6 @@ export async function completeMaintenanceTaskForHouse(
             task.recommendation_id,
             task.recurrence_interval,
             task.recurrence_anchor ?? "completed_date",
-            task.component_key,
             task.origin_catalog_key,
             task.origin_catalog_version,
             task.origin_recommendation_instance_id,
@@ -2071,11 +2041,6 @@ export async function listMaintenanceHistoryForHouse(
     filters.push(`extract(year from c.completed_date) = $${values.length}`);
   }
 
-  if (query.componentKey) {
-    values.push(query.componentKey);
-    filters.push(`c.component_key = $${values.length}`);
-  }
-
   const result = await pool.query<MaintenanceCompletionRow>(
     `
       select
@@ -2087,7 +2052,6 @@ export async function listMaintenanceHistoryForHouse(
         to_char(c.completed_date, 'YYYY-MM-DD') as completed_date,
         c.price_amount_minor,
         c.price_currency,
-        c.component_key,
         c.source,
         c.recurrence_interval,
         c.recurrence_anchor,
@@ -2119,7 +2083,6 @@ export async function getMaintenanceHistoryEntryForHouse(
         to_char(c.completed_date, 'YYYY-MM-DD') as completed_date,
         c.price_amount_minor,
         c.price_currency,
-        c.component_key,
         c.source,
         c.recurrence_interval,
         c.recurrence_anchor,

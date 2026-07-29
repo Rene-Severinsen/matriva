@@ -10,7 +10,6 @@ import { ApiError, pool } from "./db.ts";
 const sortColumns = {
   catalog_key: "catalog_key",
   title: "title",
-  category: "category",
   active: "active",
   priority: "priority",
   instance_count: "instance_count",
@@ -33,7 +32,6 @@ function parseListQuery(params: URLSearchParams) {
   const sort = params.get("sort") ?? "catalog_key";
   const order = params.get("order") ?? "asc";
   const active = params.get("active") ?? "all";
-  const category = params.get("category")?.trim() ?? "";
   const query = params.get("query")?.trim() ?? "";
 
   if (!Number.isInteger(page) || page < 1) {
@@ -82,12 +80,11 @@ function parseListQuery(params: URLSearchParams) {
     sort: sort as keyof typeof sortColumns,
     order,
     active,
-    category,
     query
   };
 }
 
-function filters(query: string, active: string, category: string) {
+function filters(query: string, active: string) {
   const clauses: string[] = [];
   const values: unknown[] = [];
 
@@ -105,11 +102,6 @@ function filters(query: string, active: string, category: string) {
     clauses.push(`active = $${values.length}`);
   }
 
-  if (category.length > 0 && category !== "all") {
-    values.push(category);
-    clauses.push(`category = $${values.length}`);
-  }
-
   return {
     sql: clauses.length > 0 ? `where ${clauses.join(" and ")}` : "",
     values
@@ -125,7 +117,6 @@ function mapCatalogItem(row: Record<string, any>) {
     catalogKey: row.catalog_key,
     catalogVersion: row.catalog_version,
     title: row.title,
-    category: row.category,
     active: row.active,
     priority: row.priority,
     recurrenceInterval: row.recurrence_interval,
@@ -150,8 +141,6 @@ const catalogStatsSql = `
       mci.catalog_version,
       mci.title,
       mci.short_description,
-      mci.component_key as category,
-      mci.component_key,
       mci.season,
       mci.recommended_period,
       mci.default_recurrence_interval as recurrence_interval,
@@ -186,39 +175,31 @@ export async function listAdminRecommendationCatalog(
 ): Promise<AdminRecommendationCatalogResponse> {
   const parsed = parseListQuery(params);
   const offset = (parsed.page - 1) * parsed.pageSize;
-  const where = filters(parsed.query, parsed.active, parsed.category);
+  const where = filters(parsed.query, parsed.active);
   const values = [...where.values, parsed.pageSize, offset];
-  const [result, categories] = await Promise.all([
-    pool.query(
-      `
-        ${catalogStatsSql},
-        filtered as (
-          select
-            *,
-            case when instance_count = 0 then 0 else accepted_count::float / instance_count end as acceptance_rate,
-            count(*) over()::int as total_count
-          from catalog_rows
-          ${where.sql}
-        )
-        select *
-        from filtered
-        order by ${sortColumns[parsed.sort]} ${parsed.order}, catalog_key asc, catalog_version asc
-        limit $${values.length - 1}
-        offset $${values.length}
-      `,
-      values
-    ),
-    pool.query(
-      "select distinct component_key as category from maintenance_catalog_items order by component_key"
-    )
-  ]);
+  const result = await pool.query(
+    `
+      ${catalogStatsSql},
+      filtered as (
+        select
+          *,
+          case when instance_count = 0 then 0 else accepted_count::float / instance_count end as acceptance_rate,
+          count(*) over()::int as total_count
+        from catalog_rows
+        ${where.sql}
+      )
+      select *
+      from filtered
+      order by ${sortColumns[parsed.sort]} ${parsed.order}, catalog_key asc, catalog_version asc
+      limit $${values.length - 1}
+      offset $${values.length}
+    `,
+    values
+  );
   const total = count(result.rows[0]?.total_count);
 
   return adminRecommendationCatalogResponseSchema.parse({
     items: result.rows.map(mapCatalogItem),
-    filters: {
-      categories: categories.rows.map((row) => row.category)
-    },
     pagination: {
       page: parsed.page,
       pageSize: parsed.pageSize,
@@ -286,7 +267,6 @@ export async function getAdminRecommendationCatalogItem(
     item: {
       ...item,
       shortDescription: row.short_description,
-      componentKey: row.component_key,
       recommendedPeriod: row.recommended_period,
       eligibilityRules: row.eligibility_rules,
       disclaimerClass: row.disclaimer_class,

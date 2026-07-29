@@ -2043,32 +2043,6 @@ const maintenanceFilters: Array<{ key: MaintenanceFilter; label: string }> = [
   { key: "all", label: "Alle" }
 ];
 
-const maintenanceComponentOptions = [
-  { key: "", label: "Ingen" },
-  { key: "roof", label: "Tag" },
-  { key: "facade", label: "Facade" },
-  { key: "windows", label: "Vinduer" },
-  { key: "doors", label: "Døre" },
-  { key: "foundation", label: "Fundament" },
-  { key: "drainage", label: "Afvanding" },
-  { key: "heating", label: "Varme" },
-  { key: "plumbing", label: "Vand og rør" },
-  { key: "electricity", label: "El" },
-  { key: "interior", label: "Indvendigt" },
-  { key: "garden", label: "Have" },
-  { key: "other", label: "Andet" }
-] as const;
-
-function maintenanceComponentLabel(componentKey: string | null | undefined) {
-  if (!componentKey) {
-    return null;
-  }
-
-  return (
-    maintenanceComponentOptions.find((option) => option.key === componentKey)?.label ?? null
-  );
-}
-
 function taskMatchesFilter(task: MaintenanceTask, filter: MaintenanceFilter) {
   if (filter === "all") {
     return true;
@@ -2118,15 +2092,13 @@ function RecommendationCard({
   onAccept: (recommendation: MaintenanceRecommendation) => void;
   onDismiss: (recommendation: MaintenanceRecommendation) => void;
 }) {
-  const componentLabel = maintenanceComponentLabel(recommendation.componentKey);
   const timingText = recommendation.recommendedTimingLabel;
-  const meta = [timingText, componentLabel].filter(Boolean).join(" · ");
 
   return (
     <View style={styles.taskRow}>
       <View style={styles.taskRowBody}>
         <Text style={styles.taskRowTitle}>{recommendation.title}</Text>
-        <Text style={styles.taskTiming}>{meta}</Text>
+        <Text style={styles.taskTiming}>{timingText}</Text>
         <Text style={styles.compactBodyText}>{recommendation.description}</Text>
       </View>
       <View style={styles.recommendationActions}>
@@ -2146,13 +2118,11 @@ function RecommendationCard({
 }
 
 function MaintenanceHistoryRow({ entry }: { entry: MaintenanceHistoryEntry }) {
-  const componentLabel = maintenanceComponentLabel(entry.componentKey);
   const meta = [
     formatDisplayDate(entry.completedDate),
     entry.priceAmountMinor !== null
       ? formatDkkPrice(entry.priceAmountMinor, entry.priceCurrency)
-      : null,
-    componentLabel ? `Bygningsdel: ${componentLabel}` : null
+      : null
   ].filter(Boolean);
 
   return (
@@ -2222,11 +2192,9 @@ function MaintenanceScreen({
   recommendations,
   filter,
   historyYearFilter,
-  historyComponentFilter,
   view,
   onFilterChange,
   onHistoryYearFilterChange,
-  onHistoryComponentFilterChange,
   onOpenFullHistory,
   onOpenAllRecommendations,
   onBackToMaintenance,
@@ -2241,7 +2209,6 @@ function MaintenanceScreen({
   description,
   deadline,
   price,
-  componentKey,
   recurrenceInterval,
   formError,
   isSaving,
@@ -2252,7 +2219,6 @@ function MaintenanceScreen({
   onTitleChange,
   onDescriptionChange,
   onPriceChange,
-  onComponentKeyChange,
   onRecurrenceIntervalChange,
   onDeadlineSelect,
   onDeadlineClear,
@@ -2270,17 +2236,15 @@ function MaintenanceScreen({
   recommendations: MaintenanceRecommendation[];
   filter: MaintenanceFilter;
   historyYearFilter: number | null;
-  historyComponentFilter: string | null;
   view: MaintenanceView;
   onFilterChange: (filter: MaintenanceFilter) => void;
   onHistoryYearFilterChange: (year: number | null) => void;
-  onHistoryComponentFilterChange: (componentKey: string | null) => void;
   onOpenFullHistory: () => void;
   onOpenAllRecommendations: () => void;
   onBackToMaintenance: () => void;
   onOpenTaskDetail: (task: MaintenanceTask) => void;
   onOpenHistoryDetail: (entry: MaintenanceHistoryEntry) => void;
-  onUpdateTask: (task: MaintenanceTask, patch: { title?: string; description?: string | null; timing?: MaintenanceTask["timing"]; priceAmountMinor?: number | null; priceCurrency?: "DKK"; recurrence?: MaintenanceTask["recurrence"]; componentKey?: string | null }) => void;
+  onUpdateTask: (task: MaintenanceTask, patch: { title?: string; description?: string | null; timing?: MaintenanceTask["timing"]; priceAmountMinor?: number | null; priceCurrency?: "DKK"; recurrence?: MaintenanceTask["recurrence"] }) => void;
   onDeleteTask: (task: MaintenanceTask) => void;
   showForm: boolean;
   showDeadlinePicker: boolean;
@@ -2289,7 +2253,6 @@ function MaintenanceScreen({
   description: string;
   deadline: string;
   price: string;
-  componentKey: string;
   recurrenceInterval: MaintenanceRecurrenceInterval | "";
   formError: string | null;
   isSaving: boolean;
@@ -2300,7 +2263,6 @@ function MaintenanceScreen({
   onTitleChange: (title: string) => void;
   onDescriptionChange: (description: string) => void;
   onPriceChange: (price: string) => void;
-  onComponentKeyChange: (componentKey: string) => void;
   onRecurrenceIntervalChange: (interval: MaintenanceRecurrenceInterval | "") => void;
   onDeadlineSelect: (deadline: string) => void;
   onDeadlineClear: () => void;
@@ -2314,7 +2276,6 @@ function MaintenanceScreen({
   const [detailDescription, setDetailDescription] = useState("");
   const [detailDeadline, setDetailDeadline] = useState("");
   const [detailPrice, setDetailPrice] = useState("");
-  const [detailComponentKey, setDetailComponentKey] = useState("");
   const [detailRecurrenceInterval, setDetailRecurrenceInterval] = useState<
     MaintenanceRecurrenceInterval | ""
   >("");
@@ -2327,7 +2288,6 @@ function MaintenanceScreen({
       setDetailDescription("");
       setDetailDeadline("");
       setDetailPrice("");
-      setDetailComponentKey("");
       setDetailRecurrenceInterval("");
       setIsTaskEditing(false);
       setShowDetailDatePicker(false);
@@ -2340,7 +2300,6 @@ function MaintenanceScreen({
       selectedTask.timing.type === "specific_deadline" ? selectedTask.timing.dueDate ?? "" : ""
     );
     setDetailPrice(editablePriceValue(selectedTask.priceAmountMinor));
-    setDetailComponentKey(selectedTask.componentKey ?? "");
     setDetailRecurrenceInterval(selectedTask.recurrence?.interval ?? "");
     setIsTaskEditing(false);
     setShowDetailDatePicker(false);
@@ -2362,15 +2321,8 @@ function MaintenanceScreen({
   const years = Array.from(
     new Set(history.map((entry) => Number(entry.completedDate.slice(0, 4))))
   ).sort((a, b) => b - a);
-  const components = maintenanceComponentOptions.filter(
-    (option) => option.key && history.some((entry) => entry.componentKey === option.key)
-  );
   const filteredHistory = history.filter((entry) => {
     if (historyYearFilter && Number(entry.completedDate.slice(0, 4)) !== historyYearFilter) {
-      return false;
-    }
-
-    if (historyComponentFilter && entry.componentKey !== historyComponentFilter) {
       return false;
     }
 
@@ -2379,7 +2331,6 @@ function MaintenanceScreen({
 
   if (view === "taskDetail" && selectedTask) {
     const recurrenceText = recurrenceLabel(selectedTask.recurrence);
-    const componentLabel = maintenanceComponentLabel(selectedTask.componentKey);
     const sourceText = sourceLabel(selectedTask.source);
     const dateText =
       selectedTask.timing.type === "specific_deadline" && selectedTask.timing.dueDate
@@ -2422,30 +2373,6 @@ function MaintenanceScreen({
                 value={detailPrice}
               />
               <Text style={styles.metaText}>kr.</Text>
-            </View>
-            <Text style={styles.label}>Bygningsdel</Text>
-            <View style={styles.choiceWrap}>
-              {maintenanceComponentOptions.map((option) => {
-                const selected = detailComponentKey === option.key;
-
-                return (
-                  <Pressable
-                    accessibilityRole="button"
-                    key={option.key || "none"}
-                    onPress={() => setDetailComponentKey(option.key)}
-                    style={[styles.choiceChip, selected ? styles.choiceChipSelected : null]}
-                  >
-                    <Text
-                      style={[
-                        styles.choiceChipText,
-                        selected ? styles.choiceChipTextSelected : null
-                      ]}
-                    >
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
             </View>
             <Text style={styles.label}>Gentagelse</Text>
             <View style={styles.choiceWrap}>
@@ -2516,7 +2443,6 @@ function MaintenanceScreen({
                       : { type: "none" },
                     priceAmountMinor: parsedPrice.amountMinor,
                     priceCurrency: "DKK",
-                    componentKey: detailComponentKey || null,
                     recurrence: recurrenceForInterval(detailRecurrenceInterval)
                   });
                   setIsTaskEditing(false);
@@ -2534,7 +2460,6 @@ function MaintenanceScreen({
                       : ""
                   );
                   setDetailPrice(editablePriceValue(selectedTask.priceAmountMinor));
-                  setDetailComponentKey(selectedTask.componentKey ?? "");
                   setDetailRecurrenceInterval(selectedTask.recurrence?.interval ?? "");
                   setIsTaskEditing(false);
                 }}
@@ -2555,10 +2480,9 @@ function MaintenanceScreen({
               <Text style={styles.compactBodyText}>{selectedTask.description}</Text>
             ) : null}
             {priceText ? <Text style={styles.metaText}>Pris · {priceText}</Text> : null}
-            {recurrenceText || componentLabel ? (
+            {recurrenceText ? (
               <View style={styles.pillRow}>
-                {recurrenceText ? <Pill>{recurrenceText}</Pill> : null}
-                {componentLabel ? <Pill>{`Bygningsdel · ${componentLabel}`}</Pill> : null}
+                <Pill>{recurrenceText}</Pill>
               </View>
             ) : null}
           </View>
@@ -2633,9 +2557,6 @@ function MaintenanceScreen({
       historyDetail.note,
       historyDetail.priceAmountMinor !== null
         ? `Pris · ${formatDkkPrice(historyDetail.priceAmountMinor, historyDetail.priceCurrency)}`
-        : null,
-      maintenanceComponentLabel(historyDetail.componentKey)
-        ? `Bygningsdel · ${maintenanceComponentLabel(historyDetail.componentKey)}`
         : null
     ].filter(Boolean);
     const recurrenceText = recurrenceLabel(historyDetail.recurrence);
@@ -2701,31 +2622,6 @@ function MaintenanceScreen({
             ))}
           </View>
         </ScrollView>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
-          <View style={styles.filterChipRow}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => onHistoryComponentFilterChange(null)}
-              style={[styles.filterChip, historyComponentFilter === null ? styles.filterChipSelected : null]}
-            >
-              <Text style={[styles.filterChipText, historyComponentFilter === null ? styles.filterChipTextSelected : null]}>
-                Alle bygningsdele
-              </Text>
-            </Pressable>
-            {components.map((component) => (
-              <Pressable
-                accessibilityRole="button"
-                key={component.key}
-                onPress={() => onHistoryComponentFilterChange(component.key)}
-                style={[styles.filterChip, historyComponentFilter === component.key ? styles.filterChipSelected : null]}
-              >
-                <Text style={[styles.filterChipText, historyComponentFilter === component.key ? styles.filterChipTextSelected : null]}>
-                  {component.label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </ScrollView>
         <View style={styles.taskList}>
           {filteredHistory.length > 0 ? (
             filteredHistory.map((entry) => (
@@ -2740,7 +2636,7 @@ function MaintenanceScreen({
           ) : (
             <EmptyState
               title="Ingen historik matcher filteret"
-              body="Vælg et andet år, type eller bygningsdel."
+              body="Vælg et andet år."
             />
           )}
         </View>
@@ -2836,7 +2732,7 @@ function MaintenanceScreen({
             <View>
               <Text style={styles.cardTitle}>Ny vedligeholdelsesopgave</Text>
               <Text style={styles.compactBodyText}>
-                Tilføj titel, eventuel note, pris, bygningsdel, gentagelse og deadline.
+                Tilføj titel, eventuel note, pris, gentagelse og deadline.
               </Text>
             </View>
           </View>
@@ -2879,37 +2775,6 @@ function MaintenanceScreen({
                 value={price}
               />
               <Text style={styles.metaText}>kr.</Text>
-            </View>
-          </View>
-          <View style={styles.formSection}>
-            <Text style={styles.label}>Bygningsdel</Text>
-            <View style={styles.choiceWrap}>
-              {maintenanceComponentOptions.map((option) => {
-                const selected = componentKey === option.key;
-
-                return (
-                  <Pressable
-                    accessibilityRole="button"
-                    disabled={isSaving}
-                    key={option.key || "none"}
-                    onPress={() => onComponentKeyChange(option.key)}
-                    style={[
-                      styles.choiceChip,
-                      selected ? styles.choiceChipSelected : null,
-                      isSaving ? styles.disabled : null
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.choiceChipText,
-                        selected ? styles.choiceChipTextSelected : null
-                      ]}
-                    >
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
             </View>
           </View>
           <View style={styles.formSection}>
@@ -3509,8 +3374,6 @@ export default function App() {
   const [maintenanceFilter, setMaintenanceFilter] =
     useState<MaintenanceFilter>("current");
   const [historyYearFilter, setHistoryYearFilter] = useState<number | null>(null);
-  const [historyComponentFilter, setHistoryComponentFilter] =
-    useState<string | null>(null);
   const [improvements, setImprovements] = useState<HouseImprovement[]>([]);
   const [housePhoto, setHousePhoto] = useState<HouseMedia | null>(null);
   const [query, setQuery] = useState("");
@@ -3531,7 +3394,6 @@ export default function App() {
   const [taskDescription, setTaskDescription] = useState("");
   const [taskDeadline, setTaskDeadline] = useState("");
   const [taskPrice, setTaskPrice] = useState("");
-  const [taskComponentKey, setTaskComponentKey] = useState("");
   const [taskRecurrenceInterval, setTaskRecurrenceInterval] = useState<
     MaintenanceRecurrenceInterval | ""
   >("");
@@ -3594,7 +3456,6 @@ export default function App() {
     setTaskDescription("");
     setTaskDeadline("");
     setTaskPrice("");
-    setTaskComponentKey("");
     setTaskRecurrenceInterval("");
     setTaskFormError(null);
     setImprovementTitle("");
@@ -4093,7 +3954,6 @@ export default function App() {
     setTaskDescription("");
     setTaskDeadline("");
     setTaskPrice("");
-    setTaskComponentKey("");
     setTaskRecurrenceInterval("");
     setTaskFormError(null);
     setShowTaskForm(false);
@@ -4137,7 +3997,6 @@ export default function App() {
         : { type: "none" },
       priceAmountMinor: parsedPrice.amountMinor,
       priceCurrency: "DKK",
-      ...(taskComponentKey ? { componentKey: taskComponentKey } : {}),
       ...(taskRecurrenceInterval
         ? { recurrence: recurrenceForInterval(taskRecurrenceInterval) }
         : {})
@@ -4382,7 +4241,6 @@ export default function App() {
       priceAmountMinor?: number | null;
       priceCurrency?: "DKK";
       recurrence?: MaintenanceTask["recurrence"];
-      componentKey?: string | null;
     }
   ) {
     if (!selectedHouse) {
@@ -4867,11 +4725,9 @@ export default function App() {
           recommendations={maintenanceRecommendations}
           filter={maintenanceFilter}
           historyYearFilter={historyYearFilter}
-          historyComponentFilter={historyComponentFilter}
           view={maintenanceView}
           onFilterChange={setMaintenanceFilter}
           onHistoryYearFilterChange={setHistoryYearFilter}
-          onHistoryComponentFilterChange={setHistoryComponentFilter}
           onOpenFullHistory={() => setMaintenanceView("history")}
           onOpenAllRecommendations={() => setMaintenanceView("recommendations")}
           onBackToMaintenance={() => {
@@ -4893,7 +4749,6 @@ export default function App() {
           description={taskDescription}
           deadline={taskDeadline}
           price={taskPrice}
-          componentKey={taskComponentKey}
           recurrenceInterval={taskRecurrenceInterval}
           formError={taskFormError}
           isSaving={loadingAction === "task"}
@@ -4908,10 +4763,6 @@ export default function App() {
           onDescriptionChange={setTaskDescription}
           onPriceChange={(value) => {
             setTaskPrice(value);
-            setTaskFormError(null);
-          }}
-          onComponentKeyChange={(value) => {
-            setTaskComponentKey(value);
             setTaskFormError(null);
           }}
           onRecurrenceIntervalChange={(value) => {

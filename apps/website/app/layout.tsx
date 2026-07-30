@@ -11,9 +11,36 @@ const mulish = Mulish({
 });
 
 export const metadata: Metadata = {
-  title: "Matriva – Dit hjem i overblik",
+  title: {
+    default: "Matriva – Dit hus samlet ét sted",
+    template: "%s | Matriva",
+  },
   description:
-    "Saml dokumenter, vedligeholdelse og vigtige oplysninger om dit hjem ét sted.",
+    "Overblik over boligoplysninger, dokumenter, vedligeholdelse og historik.",
+  applicationName: "Matriva",
+  openGraph: {
+    type: "website",
+    locale: "da_DK",
+    siteName: "Matriva",
+    title: "Matriva – Dit hus samlet ét sted",
+    description:
+      "Overblik over boligoplysninger, dokumenter, vedligeholdelse og historik.",
+    images: [
+      {
+        url: "/social/matriva-social-share-1200x630.png",
+        width: 1200,
+        height: 630,
+        alt: "Matriva – Dit hus samlet ét sted",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Matriva – Dit hus samlet ét sted",
+    description:
+      "Overblik over boligoplysninger, dokumenter, vedligeholdelse og historik.",
+    images: ["/social/matriva-social-share-1200x675.png"],
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

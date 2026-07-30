@@ -1,6 +1,6 @@
 import { Container } from "@/components/ui/Container";
 import { Button } from "@/components/ui/Button";
-import { HouseMark } from "@/components/ui/Icons";
+import Image from "next/image";
 
 export function CtaSection() {
   return (
@@ -8,7 +8,13 @@ export function CtaSection() {
       <Container>
         <div className="cta-band">
           <div className="cta-band__mark">
-            <HouseMark width="46" height="46" />
+            <Image
+              src="/brand/matriva-app-icon.svg"
+              alt=""
+              width={72}
+              height={72}
+              aria-hidden="true"
+            />
           </div>
 
           <div>

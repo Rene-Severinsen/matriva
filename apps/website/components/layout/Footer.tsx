@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { Container } from "@/components/ui/Container";
-import { HouseMark } from "@/components/ui/Icons";
+import { BrandLogo } from "@/components/ui/BrandLogo";
 
 export function Footer() {
   return (
@@ -14,10 +14,7 @@ export function Footer() {
               className="brand"
               aria-label="Matriva – gå til forsiden"
             >
-              <span className="brand__mark">
-                <HouseMark width="34" height="34" />
-              </span>
-              <span>Matriva</span>
+              <BrandLogo />
             </Link>
 
             <p className="footer__copy">

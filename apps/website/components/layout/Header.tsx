@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Container";
-import { HouseMark } from "@/components/ui/Icons";
+import { BrandLogo } from "@/components/ui/BrandLogo";
 
 const links = [
   ["Funktioner", "/#funktioner"],
@@ -35,10 +35,7 @@ export function Header() {
     <header className="header">
       <Container className="header__inner">
         <Link href="/" className="brand" aria-label="Matriva forside">
-          <span className="brand__mark">
-            <HouseMark width="36" height="36" />
-          </span>
-          <span>Matriva</span>
+          <BrandLogo priority />
         </Link>
 
         <nav className="header__nav" aria-label="Primær navigation">

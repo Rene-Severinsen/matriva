@@ -11,6 +11,7 @@ const mulish = Mulish({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://matriva.dk"),
   title: {
     default: "Matriva – Dit hus samlet ét sted",
     template: "%s | Matriva",

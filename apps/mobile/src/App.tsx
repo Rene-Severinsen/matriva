@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  ImageBackground,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -86,6 +87,9 @@ const tabs: Tab[] = [
 ];
 
 const houseHeroPlaceholder = require("../assets/onboarding/house-hero-placeholder.png");
+const welcomeHeroImage = require("../assets/onboarding/welcome-hero.png");
+const matrivaSymbol = require("../assets/onboarding/matriva-symbol.png");
+const welcomeBottomFadeImage = require("../assets/onboarding/welcome-bottom-fade.png");
 
 function selectedAddressInput(
   suggestion: AddressSuggestion
@@ -2988,18 +2992,6 @@ function MaintenanceSection({
 }
 
 
-function HeroMedia({ height }: { height: number }) {
-  return (
-    <Image
-      accessibilityIgnoresInvertColors
-      accessibilityLabel="Illustration af et hus"
-      resizeMode="cover"
-      source={houseHeroPlaceholder}
-      style={[styles.heroImage, { height }]}
-    />
-  );
-}
-
 function WelcomeScreen({
   onCreateProfile,
   onLogin
@@ -3008,40 +3000,120 @@ function WelcomeScreen({
   onLogin: () => void;
 }) {
   const { height: windowHeight } = useWindowDimensions();
-  const heroHeight = Math.min(Math.max(windowHeight * 0.18, 120), 180);
+  const isCompact = windowHeight < 760;
+  const visualLift = Math.round(windowHeight * 0.1);
+  const welcomeBottomRef = useRef<View>(null);
+  const [fadeTop, setFadeTop] = useState<number | null>(null);
 
   return (
-    <View style={styles.welcomeStack}>
-      <HeroMedia height={heroHeight} />
-      <View style={styles.welcomeHeader}>
-        <Text style={styles.logoText}>DIT HUS. ÉT OVERBLIK.</Text>
-        <Text style={styles.welcomeTitle}>
-          Få styr på dit hus – før de små ting bliver dyre
-        </Text>
-        <Text style={styles.welcomeBody}>
-          Saml vedligehold, dokumenter og vigtig viden om dit hus ét sted.{" "}
-          Matriva hjælper dig med at huske, hvad der skal gøres – og hvornår.
-        </Text>
-      </View>
-      <View style={styles.welcomeActions}>
-        <PrimaryButton label="Opret din profil" onPress={onCreateProfile} />
-        <Text style={styles.helperText}>
-          Gratis at komme i gang. Det tager under ét minut.
-        </Text>
-        <Pressable
-          accessibilityRole="button"
-          onPress={onLogin}
-          style={({ pressed }) => [
-            styles.loginTextAction,
-            pressed ? styles.loginTextActionPressed : null
-          ]}
+    <ImageBackground
+      accessibilityIgnoresInvertColors
+      accessibilityLabel="Moderne dansk parcelhus i en grøn have"
+      imageStyle={styles.welcomeBackgroundImage}
+      resizeMode="cover"
+      source={welcomeHeroImage}
+      style={styles.welcomeBackground}
+    >
+      {fadeTop !== null ? (
+        <View
+          pointerEvents="none"
+          style={[styles.welcomeBottomFade, { top: fadeTop }]}
         >
-          <Text style={styles.loginText}>
-            Har du allerede en profil? <Text style={styles.loginTextEmphasis}>Log ind</Text>
-          </Text>
-        </Pressable>
-      </View>
-    </View>
+          <Image
+            accessibilityElementsHidden
+            resizeMode="stretch"
+            source={welcomeBottomFadeImage}
+            style={styles.welcomeBottomFadeImage}
+          />
+        </View>
+      ) : null}
+
+      <SafeAreaView style={styles.welcomeSafeArea}>
+        <ScrollView
+          bounces={false}
+          contentContainerStyle={[
+            styles.welcomeContent,
+            isCompact ? styles.welcomeContentCompact : null
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View
+            style={[
+              styles.welcomeBrand,
+              isCompact ? styles.welcomeBrandCompact : null,
+              { transform: [{ translateY: -visualLift }] }
+            ]}
+          >
+            <Image
+              accessibilityElementsHidden
+              resizeMode="contain"
+              source={matrivaSymbol}
+              style={styles.welcomeHouseMark}
+            />
+
+            <Text style={styles.welcomeWordmark}>MATRIVA</Text>
+            <Text style={styles.welcomeTagline}>Styr på dit hus. Ét sted.</Text>
+          </View>
+
+          <View
+            onLayout={() => {
+              welcomeBottomRef.current?.measureInWindow((_x, y) => {
+                const nextFadeTop = Math.round(y);
+                setFadeTop((currentFadeTop) =>
+                  currentFadeTop === nextFadeTop ? currentFadeTop : nextFadeTop
+                );
+              });
+            }}
+            ref={welcomeBottomRef}
+            style={styles.welcomeBottom}
+          >
+            <View style={styles.welcomeActions}>
+              <Pressable
+                accessibilityHint="Åbner login med din e-mailadresse"
+                accessibilityRole="button"
+                onPress={onLogin}
+                style={({ pressed }) => [
+                  styles.welcomePrimaryButton,
+                  pressed ? styles.welcomePrimaryButtonPressed : null
+                ]}
+              >
+                <View style={styles.welcomeButtonContent}>
+                  <View style={styles.welcomeLockIcon}>
+                    <View style={styles.welcomeLockShackle} />
+                    <View style={styles.welcomeLockBody} />
+                  </View>
+                  <Text style={styles.welcomePrimaryButtonText}>Log ind</Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                accessibilityHint="Opretter en ny Matriva-profil"
+                accessibilityRole="button"
+                onPress={onCreateProfile}
+                style={({ pressed }) => [
+                  styles.welcomeSecondaryButton,
+                  pressed ? styles.welcomeSecondaryButtonPressed : null
+                ]}
+              >
+                <View style={styles.welcomeButtonContent}>
+                  <View style={styles.welcomeUserIcon}>
+                    <View style={styles.welcomeUserHead} />
+                    <View style={styles.welcomeUserShoulders} />
+                  </View>
+                  <Text style={styles.welcomeSecondaryButtonText}>Opret konto</Text>
+                </View>
+              </Pressable>
+
+            </View>
+
+            <Text style={styles.welcomeLegal}>
+              Ved at fortsætte accepterer du Matri­vas brugsvilkår og
+              privatlivspolitik.
+            </Text>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
@@ -4841,6 +4913,21 @@ export default function App() {
     );
   }
 
+  if (
+    authStatus === "anonymous" &&
+    unauthenticatedStep === "welcome"
+  ) {
+    return (
+      <View style={styles.screen}>
+        <StatusBar style="dark" />
+        <WelcomeScreen
+          onCreateProfile={() => openUnauthenticatedMode("create")}
+          onLogin={() => openUnauthenticatedMode("login")}
+        />
+      </View>
+    );
+  }
+
   if (authStatus === "anonymous") {
     return (
       <SafeAreaView style={styles.screen}>
@@ -4849,35 +4936,32 @@ export default function App() {
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={styles.keyboardFrame}
         >
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            contentContainerStyle={styles.content}
+            keyboardShouldPersistTaps="handled"
+          >
             {error ? (
               <Card>
                 <Text style={styles.errorTitle}>Der opstod et problem</Text>
                 <Text style={styles.errorText}>{error}</Text>
               </Card>
             ) : null}
-            {unauthenticatedStep === "welcome" ? (
-              <WelcomeScreen
-                onCreateProfile={() => openUnauthenticatedMode("create")}
-                onLogin={() => openUnauthenticatedMode("login")}
-              />
-            ) : (
-              <LoginScreen
-                mode={unauthenticatedStep}
-                email={loginEmail}
-                message={loginMessage}
-                devMagicLink={devMagicLink}
-                isLoading={loadingAction === "auth"}
-                onBack={returnToWelcome}
-                onEmailChange={(value) => {
-                  setLoginEmail(value);
-                  setLoginMessage(null);
-                  setError(null);
-                }}
-                onRequestLink={() => void requestLoginLink()}
-                onOpenDevLink={(url) => void consumeMagicLinkUrl(url)}
-              />
-            )}
+
+            <LoginScreen
+              mode={unauthenticatedStep === "create" ? "create" : "login"}
+              email={loginEmail}
+              message={loginMessage}
+              devMagicLink={devMagicLink}
+              isLoading={loadingAction === "auth"}
+              onBack={returnToWelcome}
+              onEmailChange={(value) => {
+                setLoginEmail(value);
+                setLoginMessage(null);
+                setError(null);
+              }}
+              onRequestLink={() => void requestLoginLink()}
+              onOpenDevLink={(url) => void consumeMagicLinkUrl(url)}
+            />
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -5030,58 +5114,189 @@ const styles = StyleSheet.create({
   stack: {
     rowGap: 12
   },
-  welcomeStack: {
-    rowGap: 14
+  welcomeBackground: {
+    backgroundColor: "#F4F3EF",
+    flex: 1
   },
-  heroImage: {
-    borderRadius: 8,
+  welcomeBackgroundImage: {
+    backgroundColor: "#F4F3EF"
+  },
+  welcomeBottomFade: {
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0
+  },
+  welcomeBottomFadeImage: {
+    height: "100%",
     width: "100%"
   },
-  welcomeHeader: {
-    rowGap: 10
+  welcomeSafeArea: {
+    flex: 1
   },
-  logoText: {
-    color: theme.primary,
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 0
+  welcomeContent: {
+    flexGrow: 1,
+    justifyContent: "space-between",
+    paddingBottom: 22,
+    paddingHorizontal: 28,
+    paddingTop: 92
   },
-  welcomeTitle: {
-    color: theme.text,
-    fontSize: 32,
-    fontWeight: "800",
-    lineHeight: 38
+  welcomeContentCompact: {
+    paddingBottom: 14,
+    paddingHorizontal: 22,
+    paddingTop: 54
   },
-  welcomeBody: {
-    color: theme.muted,
-    fontSize: 16,
-    lineHeight: 23
+  welcomeBrand: {
+    alignItems: "center",
+    paddingTop: 34
+  },
+  welcomeBrandCompact: {
+    paddingTop: 10
+  },
+  welcomeHouseMark: {
+    height: 110,
+    marginBottom: 2,
+    width: 84
+  },
+  welcomeWordmark: {
+    color: "#123D32",
+    fontSize: 43,
+    fontWeight: "500",
+    letterSpacing: 10,
+    lineHeight: 54,
+    marginLeft: 10,
+    textAlign: "center"
+  },
+  welcomeTagline: {
+    color: "#4C5552",
+    fontSize: 19,
+    fontWeight: "500",
+    lineHeight: 26,
+    marginTop: 2,
+    textAlign: "center"
+  },
+  welcomeBottom: {
+    rowGap: 18
   },
   welcomeActions: {
     rowGap: 10
   },
-  helperText: {
-    color: theme.subtle,
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: "center"
-  },
-  loginTextAction: {
+  welcomePrimaryButton: {
     alignItems: "center",
-    paddingVertical: 8
+    backgroundColor: "#164C3C",
+    borderRadius: 15,
+    justifyContent: "center",
+    minHeight: 64,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    shadowColor: "#10251F",
+    shadowOffset: {
+      height: 5,
+      width: 0
+    },
+    shadowOpacity: 0.18,
+    shadowRadius: 14
+  },
+  welcomePrimaryButtonPressed: {
+    backgroundColor: "#0F3F31",
+    opacity: 0.92,
+    transform: [{ scale: 0.992 }]
+  },
+  welcomePrimaryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "800"
+  },
+  welcomeButtonContent: {
+    alignItems: "center",
+    columnGap: 22,
+    flexDirection: "row",
+    justifyContent: "center"
+  },
+  welcomeLockIcon: {
+    height: 32,
+    position: "relative",
+    width: 27
+  },
+  welcomeLockShackle: {
+    borderColor: "#FFFFFF",
+    borderRadius: 10,
+    borderWidth: 3,
+    height: 16,
+    left: 5,
+    position: "absolute",
+    top: 0,
+    width: 17
+  },
+  welcomeLockBody: {
+    backgroundColor: "transparent",
+    borderColor: "#FFFFFF",
+    borderRadius: 3,
+    borderWidth: 3,
+    bottom: 0,
+    height: 19,
+    position: "absolute",
+    width: 27
+  },
+  welcomeUserIcon: {
+    alignItems: "center",
+    height: 32,
+    justifyContent: "flex-end",
+    width: 27
+  },
+  welcomeUserHead: {
+    borderColor: "#164C3C",
+    borderRadius: 8,
+    borderWidth: 3,
+    height: 14,
+    position: "absolute",
+    top: 0,
+    width: 14
+  },
+  welcomeUserShoulders: {
+    borderColor: "#164C3C",
+    borderRadius: 13,
+    borderWidth: 3,
+    height: 15,
+    width: 27
+  },
+  welcomeSecondaryButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    borderColor: "rgba(18, 61, 50, 0.08)",
+    borderRadius: 15,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 64,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    shadowColor: "#10251F",
+    shadowOffset: {
+      height: 4,
+      width: 0
+    },
+    shadowOpacity: 0.14,
+    shadowRadius: 12
+  },
+  welcomeSecondaryButtonPressed: {
+    backgroundColor: "rgba(244, 248, 246, 0.98)",
+    opacity: 0.92,
+    transform: [{ scale: 0.992 }]
+  },
+  welcomeSecondaryButtonText: {
+    color: "#164C3C",
+    fontSize: 20,
+    fontWeight: "800"
+  },
+  welcomeLegal: {
+    color: "#66706D",
+    fontSize: 12,
+    lineHeight: 17,
+    paddingHorizontal: 12,
+    textAlign: "center"
   },
   loginTextActionPressed: {
     opacity: 0.65
-  },
-  loginText: {
-    color: theme.muted,
-    fontSize: 15,
-    lineHeight: 21,
-    textAlign: "center"
-  },
-  loginTextEmphasis: {
-    color: theme.primary,
-    fontWeight: "800"
   },
   emailHeader: {
     rowGap: 12

@@ -7,6 +7,8 @@ import {
   View
 } from "react-native";
 
+import { theme } from "../theme";
+
 type AddressSearchFormProps = {
   query: string;
   isBusy: boolean;
@@ -39,7 +41,7 @@ export function AddressSearchForm({
           }
         }}
         placeholder="Skriv vejnavn og nummer"
-        placeholderTextColor="#69746F"
+        placeholderTextColor={theme.muted}
         returnKeyType="search"
         style={styles.input}
         value={query}
@@ -78,7 +80,7 @@ export function PrimaryButton({
         disabled ? styles.buttonDisabled : null
       ]}
     >
-      {loading ? <ActivityIndicator color="#FFFFFF" /> : null}
+      {loading ? <ActivityIndicator color={theme.surface} /> : null}
       <Text style={styles.buttonText}>{label}</Text>
     </Pressable>
   );
@@ -89,16 +91,16 @@ const styles = StyleSheet.create({
     rowGap: 12
   },
   sectionTitle: {
-    color: "#17211D",
+    color: theme.text,
     fontSize: 20,
     fontWeight: "700"
   },
   input: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#B8C3BD",
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
-    color: "#17211D",
+    color: theme.text,
     fontSize: 16,
     minHeight: 50,
     paddingHorizontal: 14,
@@ -106,7 +108,7 @@ const styles = StyleSheet.create({
   },
   button: {
     alignItems: "center",
-    backgroundColor: "#245D52",
+    backgroundColor: theme.primary,
     borderRadius: 8,
     columnGap: 10,
     flexDirection: "row",
@@ -116,13 +118,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12
   },
   buttonPressed: {
-    backgroundColor: "#1D4B43"
+    backgroundColor: theme.primaryPressed
   },
   buttonDisabled: {
     opacity: 0.56
   },
   buttonText: {
-    color: "#FFFFFF",
+    color: theme.surface,
     fontSize: 16,
     fontWeight: "700"
   }

@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { type AddressSuggestion } from "@matriva/shared";
 
 import { InlineMessage } from "./InlineMessage";
+import { theme } from "../theme";
 
 type AddressSuggestionListProps = {
   hasSearched: boolean;
@@ -73,13 +74,13 @@ const styles = StyleSheet.create({
     rowGap: 12
   },
   sectionTitle: {
-    color: "#17211D",
+    color: theme.text,
     fontSize: 20,
     fontWeight: "700"
   },
   suggestionCard: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#D7D0C4",
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
     minHeight: 62,
@@ -87,20 +88,20 @@ const styles = StyleSheet.create({
     rowGap: 6
   },
   suggestionCardSelected: {
-    borderColor: "#245D52",
+    borderColor: theme.primary,
     borderWidth: 2
   },
   suggestionCardPressed: {
-    backgroundColor: "#EEF6F3"
+    backgroundColor: theme.primarySoft
   },
   suggestionLabel: {
-    color: "#17211D",
+    color: theme.text,
     fontSize: 16,
     fontWeight: "700",
     lineHeight: 22
   },
   meta: {
-    color: "#5B6862",
+    color: theme.muted,
     fontSize: 14,
     lineHeight: 21
   }

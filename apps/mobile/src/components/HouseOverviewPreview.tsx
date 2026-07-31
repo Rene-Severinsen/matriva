@@ -1,5 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 
+import { theme } from "../theme";
+
 import {
   type HouseDraftOverviewPreviewCard,
   type HouseDraftOverviewPreviewMaintenanceSeason,
@@ -141,44 +143,44 @@ const styles = StyleSheet.create({
     rowGap: 14
   },
   header: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#D7D0C4",
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
     padding: 16,
     rowGap: 6
   },
   eyebrow: {
-    color: "#69746F",
+    color: theme.muted,
     fontSize: 12,
     fontWeight: "700",
     textTransform: "uppercase"
   },
   title: {
-    color: "#17211D",
+    color: theme.text,
     fontSize: 28,
     fontWeight: "700"
   },
   subtitle: {
-    color: "#33423C",
+    color: theme.subtle,
     fontSize: 17,
     fontWeight: "700"
   },
   warning: {
-    backgroundColor: "#FFF8E8",
-    borderColor: "#D9B85F",
+    backgroundColor: theme.warningSoft,
+    borderColor: theme.warningBorder,
     borderRadius: 8,
     borderWidth: 1,
     padding: 14,
     rowGap: 6
   },
   warningTitle: {
-    color: "#5C4612",
+    color: theme.warningText,
     fontSize: 16,
     fontWeight: "700"
   },
   warningBody: {
-    color: "#5C4612",
+    color: theme.warningText,
     fontSize: 14,
     lineHeight: 21
   },
@@ -186,25 +188,25 @@ const styles = StyleSheet.create({
     rowGap: 10
   },
   sectionTitle: {
-    color: "#17211D",
+    color: theme.text,
     fontSize: 20,
     fontWeight: "700"
   },
   sectionIntro: {
-    color: "#5B6862",
+    color: theme.muted,
     fontSize: 14,
     lineHeight: 21
   },
   card: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#D7D0C4",
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
     padding: 14,
     rowGap: 8
   },
   cardMeta: {
-    color: "#69746F",
+    color: theme.muted,
     fontSize: 12,
     fontWeight: "700",
     textTransform: "uppercase"
@@ -213,23 +215,23 @@ const styles = StyleSheet.create({
     rowGap: 4
   },
   maintenanceMeta: {
-    color: "#69746F",
+    color: theme.muted,
     fontSize: 12,
     fontWeight: "700"
   },
   cardTitle: {
-    color: "#17211D",
+    color: theme.text,
     fontSize: 17,
     fontWeight: "700",
     lineHeight: 23
   },
   cardBody: {
-    color: "#33423C",
+    color: theme.subtle,
     fontSize: 15,
     lineHeight: 22
   },
   disabledCta: {
-    borderColor: "#D7D0C4",
+    borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
     paddingHorizontal: 10,
@@ -237,12 +239,12 @@ const styles = StyleSheet.create({
     rowGap: 3
   },
   disabledCtaLabel: {
-    color: "#69746F",
+    color: theme.muted,
     fontSize: 13,
     fontWeight: "700"
   },
   disabledCtaReason: {
-    color: "#69746F",
+    color: theme.muted,
     fontSize: 12,
     lineHeight: 17
   }

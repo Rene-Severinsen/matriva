@@ -15,7 +15,7 @@
     "android": {
       "package": "dk.matriva.app",
       "adaptiveIcon": {
-        "backgroundColor": "#F7F4EF"
+        "backgroundColor": "#F3F6F4"
       }
     },
     "extra": {

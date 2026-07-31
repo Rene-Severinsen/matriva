@@ -1,5 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 
+import { theme } from "../theme";
+
 import { type HomeCard } from "@matriva/shared";
 
 type HomeCardPreviewListProps = {
@@ -46,37 +48,37 @@ const styles = StyleSheet.create({
     rowGap: 10
   },
   sectionTitle: {
-    color: "#17211D",
+    color: theme.text,
     fontSize: 20,
     fontWeight: "700"
   },
   homeCard: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#D7D0C4",
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
     padding: 14,
     rowGap: 8
   },
   cardMeta: {
-    color: "#69746F",
+    color: theme.muted,
     fontSize: 12,
     fontWeight: "700",
     textTransform: "uppercase"
   },
   cardTitle: {
-    color: "#17211D",
+    color: theme.text,
     fontSize: 17,
     fontWeight: "700",
     lineHeight: 23
   },
   bodySmall: {
-    color: "#33423C",
+    color: theme.subtle,
     fontSize: 15,
     lineHeight: 22
   },
   meta: {
-    color: "#5B6862",
+    color: theme.muted,
     fontSize: 14,
     lineHeight: 21
   }

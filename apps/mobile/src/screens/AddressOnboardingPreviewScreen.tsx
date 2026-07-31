@@ -14,6 +14,7 @@ import { HouseDraftSummary } from "../components/HouseDraftSummary";
 import { HouseOverviewPreview } from "../components/HouseOverviewPreview";
 import { InlineMessage } from "../components/InlineMessage";
 import { useAddressOnboardingPreview } from "../hooks/useAddressOnboardingPreview";
+import { theme } from "../theme";
 
 export function AddressOnboardingPreviewScreen() {
   const onboarding = useAddressOnboardingPreview();
@@ -146,7 +147,7 @@ export function AddressOnboardingPreviewScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F8F6F1"
+    backgroundColor: theme.background
   },
   content: {
     paddingHorizontal: 20,
@@ -158,26 +159,26 @@ const styles = StyleSheet.create({
   },
   previewLabel: {
     alignSelf: "flex-start",
-    backgroundColor: "#E6F1ED",
+    backgroundColor: theme.primarySoft,
     borderRadius: 8,
-    color: "#245D52",
+    color: theme.primaryPressed,
     fontSize: 13,
     fontWeight: "700",
     paddingHorizontal: 10,
     paddingVertical: 5
   },
   title: {
-    color: "#17211D",
+    color: theme.text,
     fontSize: 34,
     fontWeight: "700"
   },
   body: {
-    color: "#33423C",
+    color: theme.subtle,
     fontSize: 16,
     lineHeight: 23
   },
   infoPanel: {
-    borderColor: "#D7D0C4",
+    borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
     padding: 14,
@@ -187,31 +188,31 @@ const styles = StyleSheet.create({
     rowGap: 12
   },
   enrichmentPanel: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#D7D0C4",
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
     padding: 14,
     rowGap: 6
   },
   sectionTitle: {
-    color: "#17211D",
+    color: theme.text,
     fontSize: 20,
     fontWeight: "700"
   },
   label: {
-    color: "#5B6862",
+    color: theme.muted,
     fontSize: 13,
     fontWeight: "700",
     textTransform: "uppercase"
   },
   meta: {
-    color: "#5B6862",
+    color: theme.muted,
     fontSize: 14,
     lineHeight: 21
   },
   mono: {
-    color: "#17211D",
+    color: theme.text,
     fontFamily: "Courier",
     fontSize: 14
   }

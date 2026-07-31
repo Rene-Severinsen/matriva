@@ -1,5 +1,7 @@
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
+import { theme } from "../theme";
+
 type InlineMessageProps = {
   title?: string;
   message: string;
@@ -20,7 +22,7 @@ export function InlineMessage({
       accessibilityRole={isError ? "alert" : undefined}
       style={[styles.panel, isError ? styles.errorPanel : null]}
     >
-      {loading ? <ActivityIndicator color="#245D52" /> : null}
+      {loading ? <ActivityIndicator color={theme.primary} /> : null}
       {title ? (
         <Text style={isError ? styles.errorTitle : styles.title}>{title}</Text>
       ) : null}
@@ -33,35 +35,35 @@ export function InlineMessage({
 
 const styles = StyleSheet.create({
   panel: {
-    borderColor: "#D7D0C4",
+    borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
     padding: 16,
     rowGap: 8
   },
   errorPanel: {
-    backgroundColor: "#FFF1EE",
-    borderColor: "#E3A093",
+    backgroundColor: theme.errorSoft,
+    borderColor: theme.errorBorder,
     padding: 14,
     rowGap: 6
   },
   title: {
-    color: "#17211D",
+    color: theme.text,
     fontSize: 17,
     fontWeight: "700"
   },
   message: {
-    color: "#5B6862",
+    color: theme.muted,
     fontSize: 14,
     lineHeight: 21
   },
   errorTitle: {
-    color: "#8E2F23",
+    color: theme.error,
     fontSize: 16,
     fontWeight: "700"
   },
   errorText: {
-    color: "#8E2F23",
+    color: theme.error,
     fontSize: 14,
     lineHeight: 21
   }

@@ -1,4 +1,6 @@
 import { StatusBar } from "expo-status-bar";
+
+import { theme } from "./theme";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -402,7 +404,7 @@ function PrimaryButton({
         disabled || loading ? styles.disabled : null
       ]}
     >
-      {loading ? <ActivityIndicator color="#FFFFFF" /> : null}
+      {loading ? <ActivityIndicator color={theme.surface} /> : null}
       <Text style={[styles.primaryButtonText, compact ? styles.compactFormButtonText : null]}>
         {label}
       </Text>
@@ -5079,21 +5081,6 @@ export default function App() {
   );
 }
 
-const theme = {
-  background: "#F7F9FC",
-  surface: "#FFFFFF",
-  text: "#172033",
-  muted: "#667085",
-  subtle: "#475467",
-  border: "#E4E9F2",
-  primary: "#2563EB",
-  primaryPressed: "#1D4ED8",
-  primarySoft: "#EAF1FF",
-  primaryFaint: "#F4F7FF",
-  warning: "#B45309",
-  warningSoft: "#FFF7ED"
-} as const;
-
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
@@ -5115,11 +5102,11 @@ const styles = StyleSheet.create({
     rowGap: 12
   },
   welcomeBackground: {
-    backgroundColor: "#F4F3EF",
+    backgroundColor: theme.primaryFaint,
     flex: 1
   },
   welcomeBackgroundImage: {
-    backgroundColor: "#F4F3EF"
+    backgroundColor: theme.primaryFaint
   },
   welcomeBottomFade: {
     bottom: 0,
@@ -5159,7 +5146,7 @@ const styles = StyleSheet.create({
     width: 84
   },
   welcomeWordmark: {
-    color: "#123D32",
+    color: theme.text,
     fontSize: 43,
     fontWeight: "500",
     letterSpacing: 10,
@@ -5168,7 +5155,7 @@ const styles = StyleSheet.create({
     textAlign: "center"
   },
   welcomeTagline: {
-    color: "#4C5552",
+    color: theme.muted,
     fontSize: 19,
     fontWeight: "500",
     lineHeight: 26,
@@ -5183,13 +5170,13 @@ const styles = StyleSheet.create({
   },
   welcomePrimaryButton: {
     alignItems: "center",
-    backgroundColor: "#164C3C",
+    backgroundColor: theme.primaryPressed,
     borderRadius: 15,
     justifyContent: "center",
     minHeight: 64,
     paddingHorizontal: 20,
     paddingVertical: 16,
-    shadowColor: "#10251F",
+    shadowColor: theme.text,
     shadowOffset: {
       height: 5,
       width: 0
@@ -5198,12 +5185,12 @@ const styles = StyleSheet.create({
     shadowRadius: 14
   },
   welcomePrimaryButtonPressed: {
-    backgroundColor: "#0F3F31",
+    backgroundColor: theme.primaryPressed,
     opacity: 0.92,
     transform: [{ scale: 0.992 }]
   },
   welcomePrimaryButtonText: {
-    color: "#FFFFFF",
+    color: theme.surface,
     fontSize: 20,
     fontWeight: "800"
   },
@@ -5219,7 +5206,7 @@ const styles = StyleSheet.create({
     width: 27
   },
   welcomeLockShackle: {
-    borderColor: "#FFFFFF",
+    borderColor: theme.surface,
     borderRadius: 10,
     borderWidth: 3,
     height: 16,
@@ -5230,7 +5217,7 @@ const styles = StyleSheet.create({
   },
   welcomeLockBody: {
     backgroundColor: "transparent",
-    borderColor: "#FFFFFF",
+    borderColor: theme.surface,
     borderRadius: 3,
     borderWidth: 3,
     bottom: 0,
@@ -5245,7 +5232,7 @@ const styles = StyleSheet.create({
     width: 27
   },
   welcomeUserHead: {
-    borderColor: "#164C3C",
+    borderColor: theme.primary,
     borderRadius: 8,
     borderWidth: 3,
     height: 14,
@@ -5254,7 +5241,7 @@ const styles = StyleSheet.create({
     width: 14
   },
   welcomeUserShoulders: {
-    borderColor: "#164C3C",
+    borderColor: theme.primary,
     borderRadius: 13,
     borderWidth: 3,
     height: 15,
@@ -5262,15 +5249,15 @@ const styles = StyleSheet.create({
   },
   welcomeSecondaryButton: {
     alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.94)",
-    borderColor: "rgba(18, 61, 50, 0.08)",
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
     borderRadius: 15,
     borderWidth: 1,
     justifyContent: "center",
     minHeight: 64,
     paddingHorizontal: 20,
     paddingVertical: 16,
-    shadowColor: "#10251F",
+    shadowColor: theme.text,
     shadowOffset: {
       height: 4,
       width: 0
@@ -5279,17 +5266,17 @@ const styles = StyleSheet.create({
     shadowRadius: 12
   },
   welcomeSecondaryButtonPressed: {
-    backgroundColor: "rgba(244, 248, 246, 0.98)",
+    backgroundColor: theme.primarySoft,
     opacity: 0.92,
     transform: [{ scale: 0.992 }]
   },
   welcomeSecondaryButtonText: {
-    color: "#164C3C",
+    color: theme.text,
     fontSize: 20,
     fontWeight: "800"
   },
   welcomeLegal: {
-    color: "#66706D",
+    color: theme.muted,
     fontSize: 12,
     lineHeight: 17,
     paddingHorizontal: 12,
@@ -5332,7 +5319,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 14,
     rowGap: 10,
-    shadowColor: "#101828",
+    shadowColor: theme.text,
     shadowOffset: { height: 3, width: 0 },
     shadowOpacity: 0.05,
     shadowRadius: 12
@@ -5383,7 +5370,7 @@ const styles = StyleSheet.create({
     rowGap: 8
   },
   input: {
-    backgroundColor: "#FBFCFE",
+    backgroundColor: theme.surface,
     borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
@@ -5407,7 +5394,7 @@ const styles = StyleSheet.create({
   },
   dateField: {
     alignItems: "center",
-    backgroundColor: "#FBFCFE",
+    backgroundColor: theme.surface,
     borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
@@ -5455,7 +5442,7 @@ const styles = StyleSheet.create({
     fontWeight: "800"
   },
   datePickerBackdrop: {
-    backgroundColor: "rgba(23, 32, 51, 0.34)",
+    backgroundColor: "rgba(15, 92, 73, 0.34)",
     flex: 1,
     justifyContent: "flex-end"
   },
@@ -5497,7 +5484,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.primaryPressed
   },
   primaryButtonText: {
-    color: "#FFFFFF",
+    color: theme.surface,
     fontSize: 15,
     fontWeight: "800"
   },
@@ -5511,7 +5498,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   secondaryButtonPressed: {
-    backgroundColor: "#DCE8FF"
+    backgroundColor: theme.primaryFaint
   },
   secondaryButtonText: {
     color: theme.primary,
@@ -5562,7 +5549,7 @@ const styles = StyleSheet.create({
   },
   taskRow: {
     alignItems: "flex-start",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: theme.primaryFaint,
     borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
@@ -5638,7 +5625,7 @@ const styles = StyleSheet.create({
     rowGap: 8
   },
   historyRow: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: theme.primaryFaint,
     borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
@@ -5688,7 +5675,7 @@ const styles = StyleSheet.create({
     color: theme.warning
   },
   successText: {
-    color: "#047857",
+    color: theme.success,
     fontSize: 13,
     fontWeight: "700",
     lineHeight: 18
@@ -5964,7 +5951,7 @@ const styles = StyleSheet.create({
     gap: 10
   },
   overviewFactCard: {
-    backgroundColor: "#FBFCFE",
+    backgroundColor: theme.surface,
     borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
@@ -6067,7 +6054,7 @@ const styles = StyleSheet.create({
     gap: 8
   },
   choiceChip: {
-    backgroundColor: "#FBFCFE",
+    backgroundColor: theme.surface,
     borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
@@ -6095,7 +6082,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     rowGap: 8,
-    shadowColor: "#101828",
+    shadowColor: theme.text,
     shadowOffset: { height: 3, width: 0 },
     shadowOpacity: 0.04,
     shadowRadius: 10
@@ -6127,10 +6114,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   compactDangerButton: {
-    backgroundColor: "#FEF2F2"
+    backgroundColor: theme.errorSoft
   },
   compactDangerButtonPressed: {
-    backgroundColor: "#FEE2E2"
+    backgroundColor: theme.errorBorder
   },
   compactActionText: {
     color: theme.primary,
@@ -6138,7 +6125,7 @@ const styles = StyleSheet.create({
     fontWeight: "800"
   },
   compactDangerText: {
-    color: "#B42318"
+    color: theme.error
   },
   formHeader: {
     rowGap: 4
@@ -6148,18 +6135,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingTop: 10,
-    shadowColor: "#101828",
+    shadowColor: theme.text,
     shadowOffset: { height: 3, width: 0 },
     shadowOpacity: 0.04,
     shadowRadius: 10
   },
   errorTitle: {
-    color: "#991B1B",
+    color: theme.error,
     fontSize: 16,
     fontWeight: "800"
   },
   errorText: {
-    color: "#991B1B",
+    color: theme.error,
     fontSize: 14,
     lineHeight: 20
   },

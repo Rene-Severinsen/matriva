@@ -1,5 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 
+import { theme } from "../theme";
+
 import { type HouseDraft } from "@matriva/shared";
 
 type HouseDraftSummaryProps = {
@@ -22,8 +24,8 @@ export function HouseDraftSummary({ houseDraft }: HouseDraftSummaryProps) {
 
 const styles = StyleSheet.create({
   summaryPanel: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#D7D0C4",
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
     padding: 14,
@@ -31,26 +33,26 @@ const styles = StyleSheet.create({
   },
   previewLabel: {
     alignSelf: "flex-start",
-    backgroundColor: "#E6F1ED",
+    backgroundColor: theme.primarySoft,
     borderRadius: 8,
-    color: "#245D52",
+    color: theme.primaryPressed,
     fontSize: 13,
     fontWeight: "700",
     paddingHorizontal: 10,
     paddingVertical: 5
   },
   sectionTitle: {
-    color: "#17211D",
+    color: theme.text,
     fontSize: 20,
     fontWeight: "700"
   },
   bodySmall: {
-    color: "#33423C",
+    color: theme.subtle,
     fontSize: 15,
     lineHeight: 22
   },
   meta: {
-    color: "#5B6862",
+    color: theme.muted,
     fontSize: 14,
     lineHeight: 21
   }

@@ -10,7 +10,8 @@
       "bundleIdentifier": "dk.matriva.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "icon": "./assets/icon.png"
     },
     "android": {
       "package": "dk.matriva.app",
@@ -30,6 +31,7 @@
       "expo-status-bar"
     ],
     "scheme": "matriva",
-    "owner": "joinitdk"
+    "owner": "joinitdk",
+    "icon": "./assets/icon.png"
   }
 }

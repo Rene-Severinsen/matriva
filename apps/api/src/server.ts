@@ -67,6 +67,8 @@ import {
   uploadHouseDocumentRequestSchema,
   updateProfileRequestSchema,
   updateProfileResponseSchema,
+  updateMaintenanceSettingsRequestSchema,
+  updateMaintenanceSettingsResponseSchema,
   updateMaintenanceTaskRequestSchema,
   updateMaintenanceTaskStatusRequestSchema,
   maintenanceHistoryQuerySchema
@@ -122,6 +124,7 @@ import {
   updateMaintenanceTaskForHouse,
   updateMaintenanceTaskStatus,
   updateProfile,
+  updateMaintenanceSettings,
   validateAuthRuntimeConfig
 } from "./db.ts";
 import {
@@ -985,6 +988,36 @@ const server = createServer((request, response) => {
 
         const profile = await updateProfile(userId, parsedRequest.data);
         writeJson(response, 200, updateProfileResponseSchema.parse({ profile }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "PUT" && request.url === "/v1/me/maintenance-settings") {
+    void (async () => {
+      try {
+        const userId = await requireUserId(request);
+        const payload = await readJsonBody(request);
+        const parsedRequest = updateMaintenanceSettingsRequestSchema.safeParse(payload);
+
+        if (!parsedRequest.success) {
+          writeApiError(
+            response,
+            400,
+            "maintenance_settings_request_invalid",
+            "Vedligeholdelsesindstillingerne er ugyldige."
+          );
+          return;
+        }
+
+        const profile = await updateMaintenanceSettings(userId, parsedRequest.data);
+        writeJson(
+          response,
+          200,
+          updateMaintenanceSettingsResponseSchema.parse({ profile })
+        );
       } catch (error) {
         writeUnknownApiError(response, error);
       }

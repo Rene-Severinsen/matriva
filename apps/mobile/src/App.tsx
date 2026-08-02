@@ -15,6 +15,7 @@ import {
   SafeAreaView,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   useWindowDimensions,
@@ -65,7 +66,7 @@ type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" |
 type MaintenanceFilter = "current" | "spring" | "summer" | "autumn" | "winter" | "all";
 type MaintenanceView = "main" | "history" | "historyDetail" | "taskDetail" | "recommendations";
 type AuthStatus = "restoring" | "anonymous" | "authenticated";
-type MoreView = "menu" | "profile";
+type MoreView = "menu" | "profile" | "settings";
 type HouseView = "overview" | "details" | "improvements" | "addImprovement";
 type UnauthenticatedStep = "welcome" | "create" | "login";
 type HouseOnboardingStep = "search" | "confirm" | "progress" | "publicDataIssue";
@@ -516,6 +517,66 @@ function DeadlineDatePicker({
               <SecondaryButton label="Luk" onPress={onClose} />
             </View>
           )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function CompletionNoteModal({
+  visible,
+  note,
+  doNotAskAgain,
+  isSaving,
+  error,
+  onNoteChange,
+  onDoNotAskAgainChange,
+  onCancel,
+  onSave
+}: {
+  visible: boolean;
+  note: string;
+  doNotAskAgain: boolean;
+  isSaving: boolean;
+  error: string | null;
+  onNoteChange: (value: string) => void;
+  onDoNotAskAgainChange: (value: boolean) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <Modal animationType="slide" transparent visible={visible} onRequestClose={onCancel}>
+      <View style={styles.datePickerBackdrop}>
+        <Pressable onPress={onCancel} style={styles.datePickerDismissArea} />
+        <View style={styles.nativeDatePickerPanel}>
+          <Text style={styles.cardTitle}>Opgaven er udført</Text>
+          <Text style={styles.compactBodyText}>Vil du tilføje en note om arbejdet?</Text>
+          <TextInput
+            accessibilityLabel="Note om arbejdet"
+            multiline
+            maxLength={1200}
+            onChangeText={onNoteChange}
+            placeholder="Fx hvad der blev gjort, observationer eller materialer"
+            placeholderTextColor={theme.muted}
+            style={[styles.input, styles.textArea]}
+            value={note}
+          />
+          <View style={styles.settingsRow}>
+            <View style={styles.settingsTextGroup}>
+              <Text style={styles.menuText}>Vis ikke dette spørgsmål fremover</Text>
+            </View>
+            <Switch
+              onValueChange={onDoNotAskAgainChange}
+              trackColor={{ false: theme.border, true: theme.primarySoft }}
+              thumbColor={doNotAskAgain ? theme.primary : theme.muted}
+              value={doNotAskAgain}
+            />
+          </View>
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          <View style={styles.buttonRow}>
+            <SecondaryButton disabled={isSaving} label="Annuller" onPress={onCancel} />
+            <PrimaryButton loading={isSaving} label="Gem som udført" onPress={onSave} />
+          </View>
         </View>
       </View>
     </Modal>
@@ -2128,14 +2189,14 @@ function MaintenanceHistoryRow({ entry }: { entry: MaintenanceHistoryEntry }) {
     formatDisplayDate(entry.completedDate),
     entry.priceAmountMinor !== null
       ? formatDkkPrice(entry.priceAmountMinor, entry.priceCurrency)
-      : null
+      : null,
+    entry.note ? "Note tilføjet" : null
   ].filter(Boolean);
 
   return (
     <View style={styles.historyRow}>
       <Text style={styles.taskRowTitle}>{entry.title}</Text>
       <Text style={styles.metaText}>{meta.join(" · ")}</Text>
-      {entry.note ? <Text style={styles.compactBodyText}>{entry.note}</Text> : null}
     </View>
   );
 }
@@ -2232,7 +2293,15 @@ function MaintenanceScreen({
   onAcceptRecommendation,
   onDismissRecommendation,
   onSave,
-  onboarding
+  onboarding,
+  completionNoteTask,
+  completionNote,
+  completionDoNotAskAgain,
+  completionModalError,
+  onCompletionNoteChange,
+  onCompletionDoNotAskAgainChange,
+  onCancelCompletion,
+  onSaveCompletion
 }: {
   house: SavedHouse | null;
   tasks: MaintenanceTask[];
@@ -2277,6 +2346,14 @@ function MaintenanceScreen({
   onDismissRecommendation: (recommendation: MaintenanceRecommendation) => void;
   onSave: () => void;
   onboarding: React.ComponentProps<typeof HouseOnboarding>;
+  completionNoteTask: MaintenanceTask | null;
+  completionNote: string;
+  completionDoNotAskAgain: boolean;
+  completionModalError: string | null;
+  onCompletionNoteChange: (value: string) => void;
+  onCompletionDoNotAskAgainChange: (value: boolean) => void;
+  onCancelCompletion: () => void;
+  onSaveCompletion: () => void;
 }) {
   const [detailTitle, setDetailTitle] = useState("");
   const [detailDescription, setDetailDescription] = useState("");
@@ -2696,6 +2773,17 @@ function MaintenanceScreen({
 
   return (
     <View style={styles.stack}>
+      <CompletionNoteModal
+        doNotAskAgain={completionDoNotAskAgain}
+        error={completionModalError}
+        isSaving={completingTaskId !== null && completionNoteTask !== null}
+        note={completionNote}
+        onCancel={onCancelCompletion}
+        onDoNotAskAgainChange={onCompletionDoNotAskAgainChange}
+        onNoteChange={onCompletionNoteChange}
+        onSave={onSaveCompletion}
+        visible={completionNoteTask !== null}
+      />
       <View style={styles.screenTitleRow}>
         <SectionHeader
           title="Vedligeholdelse"
@@ -3302,10 +3390,12 @@ function DocumentsScreen({
 function MoreScreen({
   isLoggingOut,
   onOpenProfile,
+  onOpenSettings,
   onLogout
 }: {
   isLoggingOut: boolean;
   onOpenProfile: () => void;
+  onOpenSettings: () => void;
   onLogout: () => void;
 }) {
   const rows = ["Profil", "Indstillinger", "Deling & adgang", "Hjælp", "Om Matriva"];
@@ -3316,21 +3406,23 @@ function MoreScreen({
       <Card>
         {rows.map((row, index) => {
           const isProfile = row === "Profil";
+          const isSettings = row === "Indstillinger";
+          const isEnabled = isProfile || isSettings;
 
           return (
             <Pressable
               accessibilityRole="button"
-              disabled={!isProfile}
+              disabled={!isEnabled}
               key={row}
-              onPress={isProfile ? onOpenProfile : undefined}
+              onPress={isProfile ? onOpenProfile : isSettings ? onOpenSettings : undefined}
               style={({ pressed }) => [
                 styles.menuRow,
                 index === rows.length - 1 ? styles.menuRowLast : null,
-                pressed && isProfile ? styles.secondaryButtonPressed : null
+                pressed && isEnabled ? styles.secondaryButtonPressed : null
               ]}
             >
               <Text style={styles.menuText}>{row}</Text>
-              <Text style={styles.menuMeta}>{isProfile ? "Åbn" : "Kommer senere"}</Text>
+              <Text style={styles.menuMeta}>{isEnabled ? "Åbn" : "Kommer senere"}</Text>
             </Pressable>
           );
         })}
@@ -3350,6 +3442,44 @@ function MoreScreen({
           <Text style={styles.menuText}>{isLoggingOut ? "Logger ud..." : "Log ud"}</Text>
           <Text style={styles.menuMeta}>Afslut session</Text>
         </Pressable>
+      </Card>
+    </View>
+  );
+}
+
+function SettingsScreen({
+  promptForCompletionNote,
+  isSaving,
+  onBack,
+  onChange
+}: {
+  promptForCompletionNote: boolean;
+  isSaving: boolean;
+  onBack: () => void;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <View style={styles.stack}>
+      <View style={styles.screenTitleRow}>
+        <SectionHeader title="Indstillinger" />
+        <SecondaryButton label="Tilbage" onPress={onBack} />
+      </View>
+      <Card>
+        <View style={styles.settingsRow}>
+          <View style={styles.settingsTextGroup}>
+            <Text style={styles.menuText}>Spørg efter note ved fuldførelse</Text>
+            <Text style={styles.compactBodyText}>
+              Vis mulighed for at skrive en note, når en opgave markeres som udført.
+            </Text>
+          </View>
+          <Switch
+            disabled={isSaving}
+            onValueChange={onChange}
+            trackColor={{ false: theme.border, true: theme.primarySoft }}
+            thumbColor={promptForCompletionNote ? theme.primary : theme.muted}
+            value={promptForCompletionNote}
+          />
+        </View>
       </Card>
     </View>
   );
@@ -3464,6 +3594,10 @@ export default function App() {
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [showDeadlinePicker, setShowDeadlinePicker] = useState(false);
   const [completingTaskId, setCompletingTaskId] = useState<TaskId | null>(null);
+  const [completionNoteTask, setCompletionNoteTask] = useState<MaintenanceTask | null>(null);
+  const [completionNote, setCompletionNote] = useState("");
+  const [completionDoNotAskAgain, setCompletionDoNotAskAgain] = useState(false);
+  const [completionModalError, setCompletionModalError] = useState<string | null>(null);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
   const [taskDeadline, setTaskDeadline] = useState("");
@@ -3877,6 +4011,24 @@ export default function App() {
     }
   }
 
+  async function updateCompletionNotePrompt(value: boolean) {
+    setLoadingAction("profile");
+    setError(null);
+
+    try {
+      const response = await apiClient.updateMaintenanceSettings({
+        promptForCompletionNote: value
+      });
+      setBootstrap((current) =>
+        current ? { ...current, profile: response.profile } : current
+      );
+    } catch (caughtError) {
+      setError(userFacingError(caughtError));
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
   async function logout() {
     setLoadingAction("logout");
     setError(null);
@@ -4264,10 +4416,10 @@ export default function App() {
     }
   }
 
-  async function completeTask(task: MaintenanceTask) {
+  async function completeTask(task: MaintenanceTask, note?: string): Promise<boolean> {
     if (!selectedHouse) {
       setError("Tilføj et hus, før du markerer opgaver som udført.");
-      return;
+      return false;
     }
 
     setCompletingTaskId(task.id);
@@ -4275,11 +4427,69 @@ export default function App() {
 
     try {
       await apiClient.completeMaintenanceTask(selectedHouse.id, task.id, {
-        completedDate: todayDateOnly()
+        completedDate: todayDateOnly(),
+        ...(note?.trim() ? { note: note.trim() } : {})
       });
       await loadMaintenanceV1(selectedHouse.id);
+      setCompletionNoteTask(null);
+      setCompletionNote("");
+      setCompletionDoNotAskAgain(false);
+      setCompletionModalError(null);
+      return true;
     } catch (caughtError) {
-      setError(userFacingError(caughtError));
+      const message = userFacingError(caughtError);
+      setError(message);
+      setCompletionModalError(message);
+      return false;
+    } finally {
+      setCompletingTaskId(null);
+    }
+  }
+
+  function openCompletionFlow(task: MaintenanceTask) {
+    if (!bootstrap?.profile.promptForCompletionNote) {
+      void completeTask(task);
+      return;
+    }
+
+    setCompletionNoteTask(task);
+    setCompletionNote("");
+    setCompletionDoNotAskAgain(false);
+    setCompletionModalError(null);
+  }
+
+  async function saveCompletionFromModal() {
+    if (!completionNoteTask) {
+      return;
+    }
+
+    const task = completionNoteTask;
+    setCompletingTaskId(task.id);
+    setCompletionModalError(null);
+
+    try {
+      const completed = await completeTask(task, completionNote);
+
+      if (!completed) {
+        return;
+      }
+
+      if (completionDoNotAskAgain) {
+        try {
+          const response = await apiClient.updateMaintenanceSettings({
+            promptForCompletionNote: false
+          });
+          setBootstrap((current) =>
+            current ? { ...current, profile: response.profile } : current
+          );
+        } catch (caughtError) {
+          setError(
+            `Opgaven blev gemt, men præferencen kunne ikke gemmes: ${userFacingError(caughtError)}`
+          );
+        }
+      }
+    } catch (caughtError) {
+      setCompletionModalError(userFacingError(caughtError));
     } finally {
       setCompletingTaskId(null);
     }
@@ -4292,7 +4502,7 @@ export default function App() {
     const dueYear = dueDate ? Number(dueDate.slice(0, 4)) : currentYear;
 
     if (!dueDate || dueYear === currentYear) {
-      void completeTask(task);
+      openCompletionFlow(task);
       return;
     }
 
@@ -4301,7 +4511,7 @@ export default function App() {
       `Opgaven har deadline ${formatDisplayDate(dueDate)}. Vil du markere den som udført i ${currentYear}?`,
       [
         { text: "Annuller", style: "cancel" },
-        { text: "Udfør alligevel", onPress: () => void completeTask(task) }
+        { text: "Udfør alligevel", onPress: () => openCompletionFlow(task) }
       ]
     );
   }
@@ -4857,6 +5067,20 @@ export default function App() {
           onAcceptRecommendation={(recommendation) => void acceptRecommendation(recommendation)}
           onDismissRecommendation={(recommendation) => void dismissRecommendation(recommendation)}
           onSave={() => void saveTask()}
+          completionNoteTask={completionNoteTask}
+          completionNote={completionNote}
+          completionDoNotAskAgain={completionDoNotAskAgain}
+          completionModalError={completionModalError}
+          onCompletionNoteChange={setCompletionNote}
+          onCompletionDoNotAskAgainChange={setCompletionDoNotAskAgain}
+          onCancelCompletion={() => {
+            if (completingTaskId === null) {
+              setCompletionNoteTask(null);
+              setCompletionNote("");
+              setCompletionModalError(null);
+            }
+          }}
+          onSaveCompletion={() => void saveCompletionFromModal()}
           onboarding={onboardingProps}
         />
       );
@@ -4891,10 +5115,22 @@ export default function App() {
       );
     }
 
+    if (moreView === "settings") {
+      return (
+        <SettingsScreen
+          isSaving={loadingAction === "profile"}
+          onBack={() => setMoreView("menu")}
+          onChange={(value) => void updateCompletionNotePrompt(value)}
+          promptForCompletionNote={bootstrap?.profile.promptForCompletionNote ?? true}
+        />
+      );
+    }
+
     return (
       <MoreScreen
         isLoggingOut={loadingAction === "logout"}
         onOpenProfile={() => setMoreView("profile")}
+        onOpenSettings={() => setMoreView("settings")}
         onLogout={() => void logout()}
       />
     );
@@ -5853,6 +6089,16 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     paddingTop: 6,
     rowGap: 8
+  },
+  settingsRow: {
+    alignItems: "center",
+    columnGap: 12,
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  settingsTextGroup: {
+    flex: 1,
+    rowGap: 4
   },
   profileSectionHeader: {
     alignItems: "center",

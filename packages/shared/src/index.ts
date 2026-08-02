@@ -104,7 +104,8 @@ export type AdminRole = z.infer<typeof adminRoleSchema>;
 
 export const userProfileSchema = z.object({
   displayName: z.string().min(1).nullable(),
-  preferredLocale: z.literal("da-DK")
+  preferredLocale: z.literal("da-DK"),
+  promptForCompletionNote: z.boolean()
 });
 
 export type UserProfile = z.infer<typeof userProfileSchema>;
@@ -700,6 +701,22 @@ export const updateProfileResponseSchema = z.object({
 });
 
 export type UpdateProfileResponse = z.infer<typeof updateProfileResponseSchema>;
+
+export const updateMaintenanceSettingsRequestSchema = z.object({
+  promptForCompletionNote: z.boolean()
+});
+
+export type UpdateMaintenanceSettingsRequest = z.infer<
+  typeof updateMaintenanceSettingsRequestSchema
+>;
+
+export const updateMaintenanceSettingsResponseSchema = z.object({
+  profile: userProfileSchema
+});
+
+export type UpdateMaintenanceSettingsResponse = z.infer<
+  typeof updateMaintenanceSettingsResponseSchema
+>;
 
 export const userSummarySchema = z.object({
   id: userIdSchema,

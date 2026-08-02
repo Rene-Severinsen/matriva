@@ -28,6 +28,7 @@ import {
   refreshSessionRequestSchema,
   requestMagicLinkResponseSchema,
   updateProfileResponseSchema,
+  updateMaintenanceSettingsResponseSchema,
   savedHouseResponseSchema,
   savedHousesResponseSchema,
   healthResponseSchema,
@@ -100,7 +101,9 @@ import {
   type UpdateMaintenanceTaskRequest,
   type UpdateMaintenanceTaskStatusRequest,
   type UpdateProfileRequest,
-  type UpdateProfileResponse
+  type UpdateProfileResponse,
+  type UpdateMaintenanceSettingsRequest,
+  type UpdateMaintenanceSettingsResponse
 } from "@matriva/shared";
 
 export type MatrivaApiClientOptions = {
@@ -229,6 +232,9 @@ export type MatrivaApiClient = {
     input?: { signal?: AbortSignal }
   ) => Promise<AdminRecommendationCatalogItemResponse>;
   updateProfile: (input: UpdateProfileRequest) => Promise<UpdateProfileResponse>;
+  updateMaintenanceSettings: (
+    input: UpdateMaintenanceSettingsRequest
+  ) => Promise<UpdateMaintenanceSettingsResponse>;
   getAppBootstrap: () => Promise<AppBootstrapResponse>;
   searchAddresses: (query: string) => Promise<AddressSearchResponse>;
   createHouseDraft: (input: SelectedAddressInput) => Promise<HouseDraftResponse>;
@@ -792,6 +798,17 @@ export function createMatrivaApiClient(
 
       return updateProfileResponseSchema.parse(
         await parseApiResponse(response, "Could not save profile.")
+      );
+    },
+    async updateMaintenanceSettings(input) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/me/maintenance-settings`, {
+        method: "PUT",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify(input)
+      });
+
+      return updateMaintenanceSettingsResponseSchema.parse(
+        await parseApiResponse(response, "Could not save maintenance settings.")
       );
     },
     async getAppBootstrap() {

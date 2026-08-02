@@ -44,6 +44,7 @@ import type {
   SelectedAddressInput,
   SessionTokens,
   UpdateMaintenanceTaskRequest,
+  UpdateMaintenanceSettingsRequest,
   UpdateProfileRequest,
   UserProfile
 } from "@matriva/shared";
@@ -107,6 +108,7 @@ type UserRow = {
 type UserProfileRow = {
   display_name: string | null;
   preferred_locale: "da-DK";
+  prompt_for_completion_note: boolean;
 };
 
 type HouseRow = {
@@ -510,7 +512,8 @@ function toCurrentUser(row: UserRow): CurrentUser {
 function toProfile(row: UserProfileRow | undefined): UserProfile {
   return userProfileSchema.parse({
     displayName: row?.display_name ?? null,
-    preferredLocale: row?.preferred_locale ?? "da-DK"
+    preferredLocale: row?.preferred_locale ?? "da-DK",
+    promptForCompletionNote: row?.prompt_for_completion_note ?? true
   });
 }
 
@@ -965,7 +968,7 @@ export async function getUserByEmail(email: string) {
 
 export async function getProfileForUser(userId: string) {
   const result = await pool.query<UserProfileRow>(
-    "select display_name, preferred_locale from user_profiles where user_id = $1",
+    "select display_name, preferred_locale, prompt_for_completion_note from user_profiles where user_id = $1",
     [userId]
   );
 
@@ -1090,9 +1093,26 @@ export async function updateProfile(userId: string, input: UpdateProfileRequest)
       update user_profiles
       set display_name = $2, preferred_locale = $3, updated_at = now()
       where user_id = $1
-      returning display_name, preferred_locale
+      returning display_name, preferred_locale, prompt_for_completion_note
     `,
     [userId, input.displayName.trim(), input.preferredLocale ?? "da-DK"]
+  );
+
+  return toProfile(result.rows[0]);
+}
+
+export async function updateMaintenanceSettings(
+  userId: string,
+  input: UpdateMaintenanceSettingsRequest
+) {
+  const result = await pool.query<UserProfileRow>(
+    `
+      update user_profiles
+      set prompt_for_completion_note = $2, updated_at = now()
+      where user_id = $1
+      returning display_name, preferred_locale, prompt_for_completion_note
+    `,
+    [userId, input.promptForCompletionNote]
   );
 
   return toProfile(result.rows[0]);
@@ -1933,11 +1953,13 @@ export async function completeMaintenanceTaskForHouse(
       ]
     );
 
-    await client.query(
+    const completedTaskResult = await client.query<MaintenanceTaskRow>(
       `
         update maintenance_tasks
         set status = 'done', completed_at = ($2::date)::timestamptz, updated_at = now()
         where id = $1
+        returning
+          ${maintenanceTaskReturningColumns()}
       `,
       [task.id, completedDate]
     );
@@ -2029,7 +2051,7 @@ export async function completeMaintenanceTaskForHouse(
 
     await client.query("commit");
     return {
-      task: await getMaintenanceTaskForHouse(userId, house.id, task.id),
+      task: toMaintenanceTask(completedTaskResult.rows[0] as MaintenanceTaskRow),
       historyEntry: toMaintenanceHistoryEntry(completionResult.rows[0] as MaintenanceCompletionRow)
     };
   } catch (error) {

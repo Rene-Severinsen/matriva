@@ -60,6 +60,11 @@ import {
 
 import { matrivaApiConfig } from "./config/api";
 import { clearStoredSession, readStoredSession, writeStoredSession } from "./auth/sessionStorage";
+import { SwipeActionRow } from "./components/SwipeActionRow";
+import {
+  markMaintenanceSwipeHintSeen,
+  readMaintenanceSwipeHintSeen
+} from "./storage/uiPreferencesStorage";
 
 type TabKey = "dashboard" | "house" | "maintenance" | "documents" | "more";
 type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" | "publicData" | "improvement" | "photo" | "recommendation" | "logout";
@@ -1283,12 +1288,20 @@ function TaskRow({
   task,
   completing,
   onComplete,
-  onOpen
+  onOpen,
+  onEdit,
+  onDelete,
+  openRowId,
+  onSwipeOpen
 }: {
   task: MaintenanceTask;
   completing: boolean;
   onComplete: (task: MaintenanceTask) => void;
   onOpen: (task: MaintenanceTask) => void;
+  onEdit: (task: MaintenanceTask) => void;
+  onDelete: (task: MaintenanceTask) => void;
+  openRowId: string | null;
+  onSwipeOpen: (rowId: string) => void;
 }) {
   const isOverdue = isTaskOverdueForDisplay(task);
   const displayStatus: MaintenanceTask["status"] = isOverdue ? "overdue" : task.status;
@@ -1297,35 +1310,67 @@ function TaskRow({
     task.priceAmountMinor !== null ? formatDkkPrice(task.priceAmountMinor, task.priceCurrency) : null;
 
   return (
-    <View style={styles.taskRow}>
-      <Pressable
-        accessibilityLabel={`Markér ${task.title} som udført`}
-        accessibilityRole="button"
-        disabled={completing}
-        onPress={() => onComplete(task)}
-        style={({ pressed }) => [
-          styles.completeControl,
-          pressed && !completing ? styles.completeControlPressed : null,
-          completing ? styles.disabled : null
-        ]}
-      >
-        {completing ? <ActivityIndicator color={theme.primary} size="small" /> : null}
-      </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => onOpen(task)}
-        style={styles.taskRowBody}
-      >
-        <Text style={styles.taskRowTitle}>{task.title}</Text>
-        <Text style={[styles.taskTiming, isOverdue ? styles.warningText : null]}>
-          {formatTiming(task)}
-        </Text>
-        {description ? <Text style={styles.compactBodyText}>{description}</Text> : null}
-        {priceText ? <Text style={styles.metaText}>Pris · {priceText}</Text> : null}
-        <Text style={styles.metaText}>{formatSource(task.source)}</Text>
-      </Pressable>
-      <Pill tone={isOverdue ? "warning" : "default"}>{formatStatus(displayStatus)}</Pill>
-    </View>
+    <SwipeActionRow
+      actionWidth={88}
+      openRowId={openRowId}
+      onOpened={onSwipeOpen}
+      onLongSwipeLeft={() => onDelete(task)}
+      onLongSwipeRight={() => onComplete(task)}
+      rowId={`task:${task.id}`}
+      swipeLeftActions={[
+        {
+          accessibilityLabel: `Rediger ${task.title}`,
+          icon: "✎",
+          label: "Rediger",
+          tone: "neutral",
+          onPress: () => onEdit(task)
+        },
+        {
+          accessibilityLabel: `Slet ${task.title}`,
+          icon: "×",
+          label: "Slet",
+          tone: "destructive",
+          onPress: () => onDelete(task)
+        }
+      ]}
+      swipeRightAction={{
+        accessibilityLabel: `Fuldfør ${task.title}`,
+        icon: "✓",
+        label: "Fuldfør",
+        onPress: () => onComplete(task)
+      }}
+      disabled={completing}
+    >
+      <View style={styles.taskRow}>
+        <Pressable
+          accessibilityLabel={`Markér ${task.title} som udført`}
+          accessibilityRole="button"
+          disabled={completing}
+          onPress={() => onComplete(task)}
+          style={({ pressed }) => [
+            styles.completeControl,
+            pressed && !completing ? styles.completeControlPressed : null,
+            completing ? styles.disabled : null
+          ]}
+        >
+          {completing ? <ActivityIndicator color={theme.primary} size="small" /> : null}
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => onOpen(task)}
+          style={styles.taskRowBody}
+        >
+          <Text style={styles.taskRowTitle}>{task.title}</Text>
+          <Text style={[styles.taskTiming, isOverdue ? styles.warningText : null]}>
+            {formatTiming(task)}
+          </Text>
+          {description ? <Text style={styles.compactBodyText}>{description}</Text> : null}
+          {priceText ? <Text style={styles.metaText}>Pris · {priceText}</Text> : null}
+          <Text style={styles.metaText}>{formatSource(task.source)}</Text>
+        </Pressable>
+        <Pill tone={isOverdue ? "warning" : "default"}>{formatStatus(displayStatus)}</Pill>
+      </View>
+    </SwipeActionRow>
   );
 }
 
@@ -2152,35 +2197,62 @@ function RecommendationCard({
   recommendation,
   isSaving,
   onAccept,
-  onDismiss
+  onDismiss,
+  openRowId,
+  onSwipeOpen
 }: {
   recommendation: MaintenanceRecommendation;
   isSaving: boolean;
   onAccept: (recommendation: MaintenanceRecommendation) => void;
   onDismiss: (recommendation: MaintenanceRecommendation) => void;
+  openRowId: string | null;
+  onSwipeOpen: (rowId: string) => void;
 }) {
   const timingText = recommendation.recommendedTimingLabel;
 
   return (
-    <View style={styles.taskRow}>
-      <View style={styles.taskRowBody}>
-        <Text style={styles.taskRowTitle}>{recommendation.title}</Text>
-        <Text style={styles.taskTiming}>{timingText}</Text>
-        <Text style={styles.compactBodyText}>{recommendation.description}</Text>
+    <SwipeActionRow
+      disabled={isSaving}
+      openRowId={openRowId}
+      onOpened={onSwipeOpen}
+      onLongSwipeLeft={() => onDismiss(recommendation)}
+      onLongSwipeRight={() => onAccept(recommendation)}
+      rowId={`recommendation:${recommendation.id}`}
+      swipeLeftActions={[
+        {
+          accessibilityLabel: `Afvis forslag: ${recommendation.title}`,
+          icon: "×",
+          label: "Afvis forslag",
+          tone: "destructive",
+          onPress: () => onDismiss(recommendation)
+        }
+      ]}
+      swipeRightAction={{
+        accessibilityLabel: `Tilføj ${recommendation.title}`,
+        label: "Tilføj",
+        onPress: () => onAccept(recommendation)
+      }}
+    >
+      <View style={styles.taskRow}>
+        <View style={styles.taskRowBody}>
+          <Text style={styles.taskRowTitle}>{recommendation.title}</Text>
+          <Text style={styles.taskTiming}>{timingText}</Text>
+          <Text style={styles.compactBodyText}>{recommendation.description}</Text>
+        </View>
+        <View style={styles.recommendationActions}>
+          <SecondaryButton
+            disabled={isSaving}
+            label="Afvis forslag"
+            onPress={() => onDismiss(recommendation)}
+          />
+          <PrimaryButton
+            loading={isSaving}
+            label="Tilføj"
+            onPress={() => onAccept(recommendation)}
+          />
+        </View>
       </View>
-      <View style={styles.recommendationActions}>
-        <SecondaryButton
-          disabled={isSaving}
-          label="Afvis forslag"
-          onPress={() => onDismiss(recommendation)}
-        />
-        <PrimaryButton
-          loading={isSaving}
-          label="Tilføj"
-          onPress={() => onAccept(recommendation)}
-        />
-      </View>
-    </View>
+    </SwipeActionRow>
   );
 }
 
@@ -2292,6 +2364,8 @@ function MaintenanceScreen({
   onCompleteTask,
   onAcceptRecommendation,
   onDismissRecommendation,
+  swipeHintSeen,
+  onDismissSwipeHint,
   onSave,
   onboarding,
   completionNoteTask,
@@ -2344,6 +2418,8 @@ function MaintenanceScreen({
   onCompleteTask: (task: MaintenanceTask) => void;
   onAcceptRecommendation: (recommendation: MaintenanceRecommendation) => void;
   onDismissRecommendation: (recommendation: MaintenanceRecommendation) => void;
+  swipeHintSeen: boolean | null;
+  onDismissSwipeHint: () => void;
   onSave: () => void;
   onboarding: React.ComponentProps<typeof HouseOnboarding>;
   completionNoteTask: MaintenanceTask | null;
@@ -2364,6 +2440,23 @@ function MaintenanceScreen({
   >("");
   const [isTaskEditing, setIsTaskEditing] = useState(false);
   const [showDetailDatePicker, setShowDetailDatePicker] = useState(false);
+  const [openSwipeRowId, setOpenSwipeRowId] = useState<string | null>(null);
+  const pendingEditTaskId = useRef<TaskId | null>(null);
+
+  useEffect(() => {
+    if (view !== "main" && view !== "recommendations") {
+      setOpenSwipeRowId(null);
+    }
+  }, [view]);
+
+  function handleSwipeOpened(rowId: string) {
+    setOpenSwipeRowId(rowId);
+  }
+
+  function openTaskForEditing(task: MaintenanceTask) {
+    pendingEditTaskId.current = task.id;
+    onOpenTaskDetail(task);
+  }
 
   useEffect(() => {
     if (!selectedTask) {
@@ -2384,7 +2477,8 @@ function MaintenanceScreen({
     );
     setDetailPrice(editablePriceValue(selectedTask.priceAmountMinor));
     setDetailRecurrenceInterval(selectedTask.recurrence?.interval ?? "");
-    setIsTaskEditing(false);
+    setIsTaskEditing(pendingEditTaskId.current === selectedTask.id);
+    pendingEditTaskId.current = null;
     setShowDetailDatePicker(false);
   }, [selectedTask?.id]);
 
@@ -2621,6 +2715,8 @@ function MaintenanceScreen({
                 key={recommendation.id}
                 onAccept={onAcceptRecommendation}
                 onDismiss={onDismissRecommendation}
+                onSwipeOpen={handleSwipeOpened}
+                openRowId={openSwipeRowId}
                 recommendation={recommendation}
               />
             ))}
@@ -2796,6 +2892,25 @@ function MaintenanceScreen({
         {!showForm ? <SecondaryButton label="Opret opgave" onPress={onShowForm} /> : null}
       </View>
 
+      {swipeHintSeen === false && (activeTasks.length > 0 || recommendations.length > 0) ? (
+        <View
+          accessibilityLabel="Swipe til højre for en positiv handling og til venstre for flere muligheder"
+          style={styles.swipeHint}
+        >
+          <Text style={styles.swipeHintText}>
+            Swipe til højre for en positiv handling og til venstre for flere muligheder.
+          </Text>
+          <Pressable
+            accessibilityLabel="Luk swipe-tip"
+            accessibilityRole="button"
+            onPress={onDismissSwipeHint}
+            style={({ pressed }) => [styles.swipeHintClose, pressed ? styles.swipeHintClosePressed : null]}
+          >
+            <Text style={styles.swipeHintCloseText}>Luk</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       <View style={styles.maintenanceFilterGrid}>
         {maintenanceFilters.map((item) => {
           const selected = item.key === filter;
@@ -2968,7 +3083,11 @@ function MaintenanceScreen({
             <MaintenanceSection
               completingTaskId={completingTaskId}
               onCompleteTask={onCompleteTask}
+              onDeleteTask={onDeleteTask}
+              onEditTask={openTaskForEditing}
               onOpenTask={onOpenTaskDetail}
+              onSwipeOpen={handleSwipeOpened}
+              openSwipeRowId={openSwipeRowId}
               tasks={overdueTasks}
               title="Overskredne"
             />
@@ -2977,7 +3096,11 @@ function MaintenanceScreen({
             <MaintenanceSection
               completingTaskId={completingTaskId}
               onCompleteTask={onCompleteTask}
+              onDeleteTask={onDeleteTask}
+              onEditTask={openTaskForEditing}
               onOpenTask={onOpenTaskDetail}
+              onSwipeOpen={handleSwipeOpened}
+              openSwipeRowId={openSwipeRowId}
               tasks={soonTasks}
               title="Snart"
             />
@@ -2986,7 +3109,11 @@ function MaintenanceScreen({
             <MaintenanceSection
               completingTaskId={completingTaskId}
               onCompleteTask={onCompleteTask}
+              onDeleteTask={onDeleteTask}
+              onEditTask={openTaskForEditing}
               onOpenTask={onOpenTaskDetail}
+              onSwipeOpen={handleSwipeOpened}
+              openSwipeRowId={openSwipeRowId}
               tasks={seasonalTasks}
               title="Denne sæson"
             />
@@ -2995,7 +3122,11 @@ function MaintenanceScreen({
             <MaintenanceSection
               completingTaskId={completingTaskId}
               onCompleteTask={onCompleteTask}
+              onDeleteTask={onDeleteTask}
+              onEditTask={openTaskForEditing}
               onOpenTask={onOpenTaskDetail}
+              onSwipeOpen={handleSwipeOpened}
+              openSwipeRowId={openSwipeRowId}
               tasks={laterTasks}
               title="Senere"
             />
@@ -3013,6 +3144,8 @@ function MaintenanceScreen({
                   key={recommendation.id}
                   onAccept={onAcceptRecommendation}
                   onDismiss={onDismissRecommendation}
+                  onSwipeOpen={handleSwipeOpened}
+                  openRowId={openSwipeRowId}
                   recommendation={recommendation}
                 />
               ))}
@@ -3057,13 +3190,21 @@ function MaintenanceSection({
   tasks,
   completingTaskId,
   onCompleteTask,
-  onOpenTask
+  onOpenTask,
+  onEditTask,
+  onDeleteTask,
+  openSwipeRowId,
+  onSwipeOpen
 }: {
   title: string;
   tasks: MaintenanceTask[];
   completingTaskId: TaskId | null;
   onCompleteTask: (task: MaintenanceTask) => void;
   onOpenTask: (task: MaintenanceTask) => void;
+  onEditTask: (task: MaintenanceTask) => void;
+  onDeleteTask: (task: MaintenanceTask) => void;
+  openSwipeRowId: string | null;
+  onSwipeOpen: (rowId: string) => void;
 }) {
   return (
     <View style={styles.taskList}>
@@ -3073,7 +3214,11 @@ function MaintenanceSection({
           completing={completingTaskId === task.id}
           key={task.id}
           onComplete={onCompleteTask}
+          onDelete={onDeleteTask}
+          onEdit={onEditTask}
           onOpen={onOpenTask}
+          onSwipeOpen={onSwipeOpen}
+          openRowId={openSwipeRowId}
           task={task}
         />
       ))}
@@ -3570,6 +3715,7 @@ export default function App() {
   const [maintenanceRecommendations, setMaintenanceRecommendations] = useState<
     MaintenanceRecommendation[]
   >([]);
+  const [maintenanceSwipeHintSeen, setMaintenanceSwipeHintSeen] = useState<boolean | null>(null);
   const [houseDocuments, setHouseDocuments] = useState<HouseDocument[]>([]);
   const [maintenanceView, setMaintenanceView] = useState<MaintenanceView>("main");
   const [selectedHistoryDetail, setSelectedHistoryDetail] =
@@ -3619,6 +3765,25 @@ export default function App() {
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [publicDataRefreshMessage, setPublicDataRefreshMessage] =
     useState<PublicDataRefreshMessage | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void readMaintenanceSwipeHintSeen().then((seen) => {
+      if (isMounted) {
+        setMaintenanceSwipeHintSeen(seen);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  function dismissMaintenanceSwipeHint() {
+    setMaintenanceSwipeHintSeen(true);
+    void markMaintenanceSwipeHintSeen();
+  }
 
   const selectedHouse = houses.find((house) => house.id === selectedHouseId) ?? houses[0] ?? null;
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
@@ -5066,6 +5231,8 @@ export default function App() {
           onCompleteTask={confirmCompleteTask}
           onAcceptRecommendation={(recommendation) => void acceptRecommendation(recommendation)}
           onDismissRecommendation={(recommendation) => void dismissRecommendation(recommendation)}
+          swipeHintSeen={maintenanceSwipeHintSeen}
+          onDismissSwipeHint={dismissMaintenanceSwipeHint}
           onSave={() => void saveTask()}
           completionNoteTask={completionNoteTask}
           completionNote={completionNote}
@@ -5812,6 +5979,36 @@ const styles = StyleSheet.create({
   taskRowBody: {
     flex: 1,
     rowGap: 3
+  },
+  swipeHint: {
+    alignItems: "center",
+    backgroundColor: theme.primarySoft,
+    borderColor: theme.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    columnGap: 10,
+    flexDirection: "row",
+    paddingHorizontal: 12,
+    paddingVertical: 10
+  },
+  swipeHintText: {
+    color: theme.text,
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18
+  },
+  swipeHintClose: {
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 6
+  },
+  swipeHintClosePressed: {
+    backgroundColor: theme.surface
+  },
+  swipeHintCloseText: {
+    color: theme.primary,
+    fontSize: 13,
+    fontWeight: "800"
   },
   filterScroll: {
     marginHorizontal: -2

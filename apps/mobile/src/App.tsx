@@ -7629,7 +7629,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.surface,
     borderTopColor: theme.border,
     borderTopWidth: 1,
-    bottom: 0,
+    bottom: Platform.OS === "ios" ? -34 : 0,
     flexDirection: "row",
     left: 0,
     paddingBottom: 12,

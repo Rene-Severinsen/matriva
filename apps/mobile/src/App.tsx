@@ -2334,7 +2334,13 @@ function RecommendationCard({
   );
 }
 
-function MaintenanceHistoryRow({ entry }: { entry: MaintenanceHistoryEntry }) {
+function MaintenanceHistoryRow({
+  entry,
+  onPress
+}: {
+  entry: MaintenanceHistoryEntry;
+  onPress?: () => void;
+}) {
   const meta = [
     formatDisplayDate(entry.completedDate),
     entry.priceAmountMinor !== null
@@ -2343,11 +2349,23 @@ function MaintenanceHistoryRow({ entry }: { entry: MaintenanceHistoryEntry }) {
     entry.note ? "Note tilføjet" : null
   ].filter(Boolean);
 
-  return (
+  const content = (
     <View style={styles.historyRow}>
       <Text style={styles.taskRowTitle}>{entry.title}</Text>
       <Text style={styles.metaText}>{meta.join(" · ")}</Text>
     </View>
+  );
+
+  return onPress ? (
+    <Pressable
+      accessibilityLabel={`Åbn historik: ${entry.title}`}
+      accessibilityRole="button"
+      onPress={onPress}
+    >
+      {content}
+    </Pressable>
+  ) : (
+    content
   );
 }
 
@@ -3279,7 +3297,11 @@ function MaintenanceScreen({
         <Text style={styles.sectionEyebrow}>Historik</Text>
         {latestHistory.length > 0 ? (
           latestHistory.map((entry) => (
-            <MaintenanceHistoryRow entry={entry} key={entry.id} />
+            <MaintenanceHistoryRow
+              entry={entry}
+              key={entry.id}
+              onPress={() => onOpenHistoryDetail(entry)}
+            />
           ))
         ) : (
           <EmptyState

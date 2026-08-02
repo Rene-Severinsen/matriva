@@ -20,6 +20,7 @@ import {
   logoutResponseSchema,
   maintenanceHistoryResponseSchema,
   maintenanceHistoryDetailResponseSchema,
+  reverseMaintenanceCompletionResponseSchema,
   maintenanceRecommendationsResponseSchema,
   maintenanceTaskResponseSchema,
   maintenanceTasksResponseSchema,
@@ -81,6 +82,8 @@ import {
   type MaintenanceHistoryResponse,
   type MaintenanceHistoryDetailResponse,
   type MaintenanceHistoryQuery,
+  type ReverseMaintenanceCompletionRequest,
+  type ReverseMaintenanceCompletionResponse,
   type MaintenanceCompletionId,
   type MaintenanceRecommendationId,
   type DismissMaintenanceRecommendationRequest,
@@ -298,6 +301,11 @@ export type MatrivaApiClient = {
     houseId: HouseId,
     completionId: MaintenanceCompletionId
   ) => Promise<MaintenanceHistoryDetailResponse>;
+  reverseMaintenanceCompletion: (
+    houseId: HouseId,
+    completionId: MaintenanceCompletionId,
+    input: ReverseMaintenanceCompletionRequest
+  ) => Promise<ReverseMaintenanceCompletionResponse>;
   listHouseDocuments: (
     houseId: HouseId
   ) => Promise<HouseDocumentsResponse>;
@@ -1061,6 +1069,26 @@ export function createMatrivaApiClient(
 
       return maintenanceHistoryDetailResponseSchema.parse(
         await parseApiResponse(response, "Could not load maintenance history detail.")
+      );
+    },
+    async reverseMaintenanceCompletion(
+      houseId,
+      completionId,
+      input: ReverseMaintenanceCompletionRequest
+    ): Promise<ReverseMaintenanceCompletionResponse> {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-history/${completionId}/reverse`,
+        {
+          method: "POST",
+          headers: authHeaders({
+            "content-type": "application/json"
+          }),
+          body: JSON.stringify(input)
+        }
+      );
+
+      return reverseMaintenanceCompletionResponseSchema.parse(
+        await parseApiResponse(response, "Could not restore maintenance completion.")
       );
     },
     async listHouseDocuments(houseId) {

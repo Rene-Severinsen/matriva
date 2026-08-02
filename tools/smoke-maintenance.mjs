@@ -675,6 +675,79 @@ async function runSmoke() {
   );
   assert(detail.historyEntry.priceAmountMinor === 123400, "History detail must show snapshot price.");
   assert(!("attachments" in detail.historyEntry), "Maintenance history detail must not include attachments.");
+
+  const changedSuccessorReversal = await fetchJsonWithStatus(
+    `/v1/houses/${houseId}/maintenance-history/${historyEntry.id}/reverse`,
+    {
+      method: "POST",
+      headers: authHeaders(session, { "content-type": "application/json" }),
+      body: JSON.stringify({ noteHandling: "keep_as_draft" })
+    }
+  );
+  assert(
+    changedSuccessorReversal.status === 409 &&
+    changedSuccessorReversal.body?.code === "generated_task_changed",
+    "Reversal must reject an edited recurring successor."
+  );
+
+  const restoredCandidate = await fetchJson(
+    `/v1/houses/${houseId}/maintenance-tasks`,
+    {
+      method: "POST",
+      headers: authHeaders(session, { "content-type": "application/json" }),
+      body: JSON.stringify({
+        title: "Smoke reversible maintenance",
+        description: "Restore this task",
+        timing: { type: "none" }
+      })
+    }
+  );
+  await fetchJson(
+    `/v1/houses/${houseId}/maintenance-tasks/${restoredCandidate.task.id}/complete`,
+    {
+      method: "POST",
+      headers: authHeaders(session, { "content-type": "application/json" }),
+      body: JSON.stringify({ completedDate: "2026-07-18", note: "Keep this note" })
+    }
+  );
+  const reversibleHistory = await fetchJson(
+    `/v1/houses/${houseId}/maintenance-history`,
+    { headers: authHeaders(session) }
+  );
+  const reversibleEntry = reversibleHistory.history.find(
+    (entry) => entry.taskId === restoredCandidate.task.id
+  );
+  assert(reversibleEntry, "Non-recurring completion must appear before reversal.");
+
+  const reversed = await fetchJson(
+    `/v1/houses/${houseId}/maintenance-history/${reversibleEntry.id}/reverse`,
+    {
+      method: "POST",
+      headers: authHeaders(session, { "content-type": "application/json" }),
+      body: JSON.stringify({ noteHandling: "keep_as_draft" })
+    }
+  );
+  assert(reversed.restoredTask.status === "planned", "Reversal must restore an active task.");
+  assert(reversed.restoredNoteDraft === "Keep this note", "Reversal must restore the note as a draft.");
+
+  const hiddenHistory = await fetchJson(
+    `/v1/houses/${houseId}/maintenance-history`,
+    { headers: authHeaders(session) }
+  );
+  assert(
+    !hiddenHistory.history.some((entry) => entry.id === reversibleEntry.id),
+    "Reversed completion must leave ordinary history."
+  );
+
+  const completedAgain = await fetchJson(
+    `/v1/houses/${houseId}/maintenance-tasks/${restoredCandidate.task.id}/complete`,
+    {
+      method: "POST",
+      headers: authHeaders(session, { "content-type": "application/json" }),
+      body: JSON.stringify({ completedDate: "2026-07-19", note: "New completion" })
+    }
+  );
+  assert(completedAgain.task.status === "done", "A restored task must be completable again.");
 }
 
 const storageDir = await mkdtemp(join(tmpdir(), "matriva-maintenance-storage-"));

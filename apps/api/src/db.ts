@@ -142,11 +142,15 @@ type MaintenanceTaskRow = {
   recurrence_interval: MaintenanceTask["recurrence"] extends null | undefined ? string | null : string | null;
   recurrence_anchor: string | null;
   archived_at: Date | null;
+  deleted_at: Date | null;
   recommendation_id: string | null;
   origin_catalog_key: string | null;
   origin_catalog_version: string | null;
   origin_recommendation_instance_id: string | null;
   origin_snapshot: unknown;
+  generated_from_completion_id: string | null;
+  restored_note_draft: string | null;
+  generated_state_fingerprint: string | null;
 };
 
 type MaintenanceRecommendationRow = {
@@ -197,6 +201,7 @@ type MaintenanceCompletionRow = {
   id: string;
   task_id: string;
   house_id: string;
+  user_id: string;
   title_snapshot: string;
   note: string | null;
   completed_date: string;
@@ -206,6 +211,8 @@ type MaintenanceCompletionRow = {
   recurrence_interval: string | null;
   recurrence_anchor: string | null;
   created_at: Date;
+  reversed_at: Date | null;
+  reversed_by_user_id: string | null;
 };
 
 type HouseDocumentRow = {
@@ -372,11 +379,15 @@ function maintenanceTaskReturningColumns() {
     recurrence_interval,
     recurrence_anchor,
     archived_at,
+    deleted_at,
     recommendation_id,
     origin_catalog_key,
     origin_catalog_version,
     origin_recommendation_instance_id,
     origin_snapshot,
+    generated_from_completion_id,
+    restored_note_draft,
+    generated_state_fingerprint,
     created_at,
     updated_at,
     completed_at
@@ -416,6 +427,56 @@ function maintenanceRecommendationReturningColumns() {
 
 function currentDateOnly() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function canonicalizeFingerprintValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(canonicalizeFingerprintValue);
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalizeFingerprintValue(item)])
+    );
+  }
+
+  return value ?? null;
+}
+
+function maintenanceGeneratedTaskFingerprint(task: {
+  title: string;
+  description: string | null;
+  source: string;
+  status: string;
+  timing_type: string;
+  due_date: string | null;
+  season: string | null | undefined;
+  price_amount_minor: number | null;
+  price_currency: string;
+  recommendation: unknown;
+  recommendation_id: string | null;
+  recurrence_interval: string | null;
+  recurrence_anchor: string | null;
+}) {
+  const canonical = canonicalizeFingerprintValue({
+    title: task.title,
+    description: task.description,
+    source: task.source,
+    status: task.status,
+    timingType: task.timing_type,
+    dueDate: task.due_date,
+    season: task.season,
+    priceAmountMinor: task.price_amount_minor,
+    priceCurrency: task.price_currency,
+    recommendation: task.recommendation,
+    recommendationId: task.recommendation_id,
+    recurrenceInterval: task.recurrence_interval,
+    recurrenceAnchor: task.recurrence_anchor
+  });
+
+  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 
 function dateOnlyFromParts(year: number, month: number, day: number) {
@@ -562,6 +623,7 @@ function toMaintenanceTask(row: MaintenanceTaskRow): MaintenanceTask {
         }
       : null,
     archivedAt: isoDate(row.archived_at),
+    restoredNoteDraft: row.restored_note_draft,
     originCatalogKey: row.origin_catalog_key,
     originCatalogVersion: row.origin_catalog_version,
     originRecommendationInstanceId: row.origin_recommendation_instance_id,
@@ -1896,7 +1958,7 @@ export async function completeMaintenanceTaskForHouse(
     }
 
     const existingCompletion = await client.query<{ id: string }>(
-      "select id from maintenance_completions where task_id = $1",
+      "select id from maintenance_completions where task_id = $1 and reversed_at is null",
       [task.id]
     );
 
@@ -1956,7 +2018,7 @@ export async function completeMaintenanceTaskForHouse(
     const completedTaskResult = await client.query<MaintenanceTaskRow>(
       `
         update maintenance_tasks
-        set status = 'done', completed_at = ($2::date)::timestamptz, updated_at = now()
+        set status = 'done', completed_at = ($2::date)::timestamptz, restored_note_draft = null, updated_at = now()
         where id = $1
         returning
           ${maintenanceTaskReturningColumns()}
@@ -2020,9 +2082,11 @@ export async function completeMaintenanceTaskForHouse(
               origin_catalog_key,
               origin_catalog_version,
               origin_recommendation_instance_id,
-              origin_snapshot
+              origin_snapshot,
+              generated_from_completion_id,
+              generated_state_fingerprint
             )
-            values ($1, $2, $3, $4, $5, $6, 'planned', $7, $8::date, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, $18, $19::jsonb)
+            values ($1, $2, $3, $4, $5, $6, 'planned', $7, $8::date, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, $18, $19::jsonb, $20, $21)
           `,
           [
             createOpaqueId("task"),
@@ -2043,7 +2107,23 @@ export async function completeMaintenanceTaskForHouse(
             task.origin_catalog_key,
             task.origin_catalog_version,
             task.origin_recommendation_instance_id,
-            task.origin_snapshot ? JSON.stringify(task.origin_snapshot) : null
+            task.origin_snapshot ? JSON.stringify(task.origin_snapshot) : null,
+            (completionResult.rows[0] as MaintenanceCompletionRow).id,
+            maintenanceGeneratedTaskFingerprint({
+              title: task.title,
+              description: task.description,
+              source: task.source,
+              status: "planned",
+              timing_type: task.timing_type,
+              due_date: task.timing_type === "specific_deadline" ? nextDate : null,
+              season: task.season ?? null,
+              price_amount_minor: task.price_amount_minor,
+              price_currency: task.price_currency,
+              recommendation: task.recommendation,
+              recommendation_id: task.recommendation_id,
+              recurrence_interval: task.recurrence_interval,
+              recurrence_anchor: task.recurrence_anchor ?? "completed_date"
+            })
           ]
         );
       }
@@ -2068,7 +2148,7 @@ export async function listMaintenanceHistoryForHouse(
   query: MaintenanceHistoryQuery = {}
 ) {
   const house = await getSavedHouse(userId, houseId);
-  const filters: string[] = ["c.house_id = $1", "c.user_id = $2"];
+  const filters: string[] = ["c.house_id = $1", "c.user_id = $2", "c.reversed_at is null"];
   const values: unknown[] = [house.id, userId];
 
   if (query.year) {
@@ -2101,6 +2181,163 @@ export async function listMaintenanceHistoryForHouse(
   return result.rows.map(toMaintenanceHistoryEntry);
 }
 
+export async function reverseMaintenanceCompletionForHouse(
+  userId: string,
+  houseId: string,
+  completionId: string,
+  noteHandling: "keep_as_draft" | "discard"
+) {
+  const house = await getSavedHouse(userId, houseId);
+  const client = await pool.connect();
+
+  try {
+    await client.query("begin");
+
+    const completionResult = await client.query<MaintenanceCompletionRow>(
+      `
+        select
+          id,
+          task_id,
+          house_id,
+          user_id,
+          title_snapshot,
+          note,
+          to_char(completed_date, 'YYYY-MM-DD') as completed_date,
+          price_amount_minor,
+          price_currency,
+          source,
+          recurrence_interval,
+          recurrence_anchor,
+          created_at,
+          reversed_at,
+          reversed_by_user_id
+        from maintenance_completions
+        where id = $1 and house_id = $2 and user_id = $3
+        for update
+      `,
+      [completionId, house.id, userId]
+    );
+    const completion = completionResult.rows[0];
+
+    if (!completion) {
+      throw new ApiError(404, "completion_not_found", "Historikposten blev ikke fundet.");
+    }
+    if (completion.reversed_at) {
+      throw new ApiError(409, "completion_already_reversed", "Historikposten er allerede lagt tilbage.");
+    }
+
+    const taskResult = await client.query<MaintenanceTaskRow>(
+      `
+        select ${maintenanceTaskReturningColumns()}
+        from maintenance_tasks
+        where id = $1 and house_id = $2
+        for update
+      `,
+      [completion.task_id, house.id]
+    );
+    const task = taskResult.rows[0];
+
+    if (!task || task.deleted_at || task.archived_at || task.status !== "done") {
+      throw new ApiError(409, "original_task_not_reversible", "Den oprindelige opgave kan ikke lægges tilbage.");
+    }
+
+    const restoredNoteDraft = completion.note?.trim()
+      ? completion.note.trim().slice(0, 1200)
+      : null;
+    const draft = noteHandling === "keep_as_draft" ? restoredNoteDraft : null;
+    let removedGeneratedTaskId: string | null = null;
+
+    if (completion.recurrence_interval) {
+      const successorResult = await client.query<MaintenanceTaskRow>(
+        `
+          select ${maintenanceTaskReturningColumns()}
+          from maintenance_tasks
+          where generated_from_completion_id = $1
+          for update
+        `,
+        [completion.id]
+      );
+
+      if (successorResult.rowCount !== 1) {
+        throw new ApiError(
+          409,
+          "recurrence_lineage_missing",
+          successorResult.rowCount === 0
+            ? "Denne gentagelse blev oprettet før sporingen af næste opgave blev indført og kan derfor ikke lægges tilbage automatisk."
+            : "Den automatisk oprettede næste opgave kan ikke identificeres entydigt."
+        );
+      }
+
+      const successor = successorResult.rows[0] as MaintenanceTaskRow;
+      if (successor.deleted_at || successor.archived_at || successor.status === "done" || successor.status === "dismissed") {
+        throw new ApiError(409, successor.status === "done" ? "generated_task_completed" : "generated_task_missing", "Den næste opgave er ikke længere aktiv.");
+      }
+      if (!successor.generated_state_fingerprint) {
+        throw new ApiError(409, "recurrence_lineage_missing", "Den næste opgaves integritetsdata mangler.");
+      }
+
+      const successorCompletion = await client.query<{ id: string }>(
+        "select id from maintenance_completions where task_id = $1",
+        [successor.id]
+      );
+      if (successorCompletion.rows[0]) {
+        throw new ApiError(409, "generated_task_completed", "Den næste opgave er allerede fuldført.");
+      }
+
+      const successorChild = await client.query<{ id: string }>(
+        "select id from maintenance_tasks where generated_from_completion_id = $1 limit 1",
+        [successor.id]
+      );
+      if (successorChild.rows[0]) {
+        throw new ApiError(409, "generated_task_has_successor", "Den næste opgave har allerede genereret en efterfølger.");
+      }
+
+      const currentFingerprint = maintenanceGeneratedTaskFingerprint(successor);
+      if (currentFingerprint !== successor.generated_state_fingerprint) {
+        throw new ApiError(409, "generated_task_changed", "Den næste opgave er blevet ændret og kan ikke fjernes automatisk.");
+      }
+
+      await client.query(
+        "update maintenance_tasks set archived_at = now(), updated_at = now() where id = $1",
+        [successor.id]
+      );
+      removedGeneratedTaskId = successor.id;
+    }
+
+    const restoredTaskResult = await client.query<MaintenanceTaskRow>(
+      `
+        update maintenance_tasks
+        set status = 'planned', completed_at = null, restored_note_draft = $2, updated_at = now()
+        where id = $1
+        returning ${maintenanceTaskReturningColumns()}
+      `,
+      [task.id, draft]
+    );
+
+    await client.query(
+      `
+        update maintenance_completions
+        set reversed_at = now(), reversed_by_user_id = $2
+        where id = $1
+      `,
+      [completion.id, userId]
+    );
+
+    await client.query("commit");
+    return {
+      restoredTask: toMaintenanceTask(restoredTaskResult.rows[0] as MaintenanceTaskRow),
+      reversedCompletionId: completion.id,
+      removedGeneratedTaskId,
+      restoredNoteDraft: draft
+    };
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function getMaintenanceHistoryEntryForHouse(
   userId: string,
   houseId: string,
@@ -2123,7 +2360,7 @@ export async function getMaintenanceHistoryEntryForHouse(
         c.recurrence_anchor,
         c.created_at
       from maintenance_completions c
-      where c.id = $1 and c.house_id = $2 and c.user_id = $3
+      where c.id = $1 and c.house_id = $2 and c.user_id = $3 and c.reversed_at is null
     `,
     [completionId, house.id, userId]
   );

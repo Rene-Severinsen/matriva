@@ -1219,6 +1219,7 @@ export const maintenanceTaskSchema = z
     originRecommendationInstanceId: maintenanceRecommendationIdSchema.nullable().optional(),
     originSnapshot: maintenanceRecommendationOriginSnapshotSchema.nullable().optional(),
     archivedAt: z.string().datetime().nullable().optional(),
+    restoredNoteDraft: z.string().max(1200).nullable().optional(),
     createdAt: z.string().datetime().optional(),
     updatedAt: z.string().datetime().optional(),
     completedAt: z.string().datetime().optional()
@@ -1732,6 +1733,25 @@ export const maintenanceHistoryDetailResponseSchema = z.object({
 
 export type MaintenanceHistoryDetailResponse = z.infer<
   typeof maintenanceHistoryDetailResponseSchema
+>;
+
+export const reverseMaintenanceCompletionRequestSchema = z.object({
+  noteHandling: z.enum(["keep_as_draft", "discard"])
+});
+
+export type ReverseMaintenanceCompletionRequest = z.infer<
+  typeof reverseMaintenanceCompletionRequestSchema
+>;
+
+export const reverseMaintenanceCompletionResponseSchema = z.object({
+  restoredTask: maintenanceTaskSchema,
+  reversedCompletionId: maintenanceCompletionIdSchema,
+  removedGeneratedTaskId: taskIdSchema.nullable(),
+  restoredNoteDraft: z.string().max(1200).nullable()
+});
+
+export type ReverseMaintenanceCompletionResponse = z.infer<
+  typeof reverseMaintenanceCompletionResponseSchema
 >;
 
 export const houseImprovementCategorySchema = z.enum([

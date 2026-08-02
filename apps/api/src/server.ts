@@ -71,7 +71,9 @@ import {
   updateMaintenanceSettingsResponseSchema,
   updateMaintenanceTaskRequestSchema,
   updateMaintenanceTaskStatusRequestSchema,
-  maintenanceHistoryQuerySchema
+  maintenanceHistoryQuerySchema,
+  reverseMaintenanceCompletionRequestSchema,
+  reverseMaintenanceCompletionResponseSchema
 } from "@matriva/shared";
 
 import { requireAdminUser, toAdminBootstrapResponse } from "./admin.ts";
@@ -94,6 +96,7 @@ import {
   archiveMaintenanceTaskForHouse,
   archiveHouseDocumentForHouse,
   completeMaintenanceTaskForHouse,
+  reverseMaintenanceCompletionForHouse,
   countActiveDocumentObjectReferences,
   consumeMagicLinkToken,
   createHouseDocumentForHouse,
@@ -1390,6 +1393,59 @@ const server = createServer((request, response) => {
           response,
           200,
           maintenanceHistoryDetailResponseSchema.parse({ historyEntry })
+        );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const maintenanceHistoryReverseMatch =
+    /^\/v1\/houses\/([^/]+)\/maintenance-history\/([^/]+)\/reverse$/.exec(requestPath);
+
+  if (request.method === "POST" && maintenanceHistoryReverseMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(maintenanceHistoryReverseMatch[1]);
+      const parsedCompletionId = maintenanceCompletionIdSchema.safeParse(
+        maintenanceHistoryReverseMatch[2]
+      );
+
+      if (!parsedHouseId.success || !parsedCompletionId.success) {
+        writeApiError(
+          response,
+          400,
+          "maintenance_history_reverse_route_invalid",
+          "Tilbageførsel kræver gyldige house_ og mcomp_ IDs."
+        );
+        return;
+      }
+
+      try {
+        const payload = await readJsonBody(request);
+        const parsedRequest = reverseMaintenanceCompletionRequestSchema.safeParse(payload);
+
+        if (!parsedRequest.success) {
+          writeApiError(
+            response,
+            400,
+            "maintenance_history_reverse_invalid",
+            "Tilbageførsel kræver et gyldigt notevalg."
+          );
+          return;
+        }
+
+        const userId = await requireUserId(request);
+        const result = await reverseMaintenanceCompletionForHouse(
+          userId,
+          parsedHouseId.data,
+          parsedCompletionId.data,
+          parsedRequest.data.noteHandling
+        );
+        writeJson(
+          response,
+          200,
+          reverseMaintenanceCompletionResponseSchema.parse(result)
         );
       } catch (error) {
         writeUnknownApiError(response, error);

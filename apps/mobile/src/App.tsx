@@ -588,6 +588,84 @@ function CompletionNoteModal({
   );
 }
 
+function ReverseMaintenanceModal({
+  visible,
+  recurring,
+  note,
+  noteHandling,
+  isSaving,
+  error,
+  onNoteHandlingChange,
+  onCancel,
+  onSave
+}: {
+  visible: boolean;
+  recurring: boolean;
+  note: string | null;
+  noteHandling: "keep_as_draft" | "discard";
+  isSaving: boolean;
+  error: string | null;
+  onNoteHandlingChange: (value: "keep_as_draft" | "discard") => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  const hasNote = Boolean(note?.trim());
+
+  return (
+    <Modal animationType="slide" transparent visible={visible} onRequestClose={onCancel}>
+      <View style={styles.datePickerBackdrop}>
+        <Pressable onPress={onCancel} style={styles.datePickerDismissArea} />
+        <View style={styles.reverseModalPanel}>
+          <View style={styles.reverseModalHeader}>
+            <Text style={styles.cardTitle}>Læg opgaven tilbage?</Text>
+            <Text style={styles.compactBodyText}>
+            {recurring
+              ? "Opgaven bliver aktiv igen. Den næste automatisk oprettede opgave fjernes samtidig, hvis den stadig er urørt."
+              : "Opgaven bliver aktiv igen."}
+            </Text>
+          </View>
+          {hasNote ? (
+            <View style={styles.reverseNoteCard}>
+              <Text style={styles.sectionEyebrow}>Note fra udførelsen</Text>
+              <Text numberOfLines={4} style={styles.reverseNoteText}>{note}</Text>
+              {([[
+                "keep_as_draft",
+                "Behold som kladde",
+                "Noten kan bruges, når opgaven fuldføres igen."
+              ], ["discard", "Fjern note", "Noten gemmes stadig i audit-historikken."]] as const).map(([value, label, detail]) => (
+                <Pressable
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: noteHandling === value }}
+                  key={value}
+                  onPress={() => onNoteHandlingChange(value)}
+                  style={({ pressed }) => [
+                    styles.reverseNoteOption,
+                    noteHandling === value ? styles.reverseNoteOptionSelected : null,
+                    pressed ? styles.reverseNoteOptionPressed : null
+                  ]}
+                >
+                  <View style={styles.reverseNoteOptionCopy}>
+                    <Text style={styles.reverseNoteOptionTitle}>{label}</Text>
+                    <Text style={styles.reverseNoteOptionDetail}>{detail}</Text>
+                  </View>
+                  <View style={[styles.reverseRadio, noteHandling === value ? styles.reverseRadioSelected : null]}>
+                    {noteHandling === value ? <Text style={styles.reverseRadioCheck}>✓</Text> : null}
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          <View style={styles.buttonRow}>
+            <SecondaryButton disabled={isSaving} label="Annuller" onPress={onCancel} />
+            <PrimaryButton loading={isSaving} label="Læg tilbage" onPress={onSave} />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function Pill({ children, tone = "default" }: { children: string; tone?: "default" | "warning" }) {
   return (
     <View style={[styles.pill, tone === "warning" ? styles.warningPill : null]}>
@@ -2339,6 +2417,9 @@ function MaintenanceScreen({
   onBackToMaintenance,
   onOpenTaskDetail,
   onOpenHistoryDetail,
+  onReverseHistory,
+  isReversingHistory,
+  historyReversalError,
   onUpdateTask,
   onDeleteTask,
   showForm,
@@ -2393,6 +2474,9 @@ function MaintenanceScreen({
   onBackToMaintenance: () => void;
   onOpenTaskDetail: (task: MaintenanceTask) => void;
   onOpenHistoryDetail: (entry: MaintenanceHistoryEntry) => void;
+  onReverseHistory: (noteHandling: "keep_as_draft" | "discard") => void;
+  isReversingHistory: boolean;
+  historyReversalError: string | null;
   onUpdateTask: (task: MaintenanceTask, patch: { title?: string; description?: string | null; timing?: MaintenanceTask["timing"]; priceAmountMinor?: number | null; priceCurrency?: "DKK"; recurrence?: MaintenanceTask["recurrence"] }) => void;
   onDeleteTask: (task: MaintenanceTask) => void;
   showForm: boolean;
@@ -2442,6 +2526,10 @@ function MaintenanceScreen({
   const [showDetailDatePicker, setShowDetailDatePicker] = useState(false);
   const [openSwipeRowId, setOpenSwipeRowId] = useState<string | null>(null);
   const pendingEditTaskId = useRef<TaskId | null>(null);
+  const [reverseModalVisible, setReverseModalVisible] = useState(false);
+  const [reverseNoteHandling, setReverseNoteHandling] = useState<"keep_as_draft" | "discard">(
+    historyDetail?.note?.trim() ? "keep_as_draft" : "discard"
+  );
 
   useEffect(() => {
     if (view !== "main" && view !== "recommendations") {
@@ -2743,6 +2831,21 @@ function MaintenanceScreen({
 
     return (
       <View style={styles.stack}>
+        <ReverseMaintenanceModal
+          error={historyReversalError}
+          isSaving={isReversingHistory}
+          note={historyDetail.note}
+          noteHandling={reverseNoteHandling}
+          onCancel={() => {
+            if (!isReversingHistory) {
+              setReverseModalVisible(false);
+            }
+          }}
+          onNoteHandlingChange={setReverseNoteHandling}
+          onSave={() => onReverseHistory(reverseNoteHandling)}
+          recurring={historyDetail.recurrence !== null}
+          visible={reverseModalVisible}
+        />
         <SecondaryButton label="Tilbage" onPress={onBackToMaintenance} />
         <SectionHeader title={historyDetail.title} subtitle={formatDisplayDate(historyDetail.completedDate)} />
         {detailMeta.length > 0 ? (
@@ -2767,6 +2870,13 @@ function MaintenanceScreen({
             <Text style={styles.compactBodyText}>{sourceText}</Text>
           </View>
         ) : null}
+        <PrimaryButton
+          label="Læg opgaven tilbage"
+          onPress={() => {
+            setReverseNoteHandling(historyDetail.note?.trim() ? "keep_as_draft" : "discard");
+            setReverseModalVisible(true);
+          }}
+        />
       </View>
     );
   }
@@ -3720,6 +3830,8 @@ export default function App() {
   const [maintenanceView, setMaintenanceView] = useState<MaintenanceView>("main");
   const [selectedHistoryDetail, setSelectedHistoryDetail] =
     useState<MaintenanceHistoryDetail | null>(null);
+  const [historyReversalInProgress, setHistoryReversalInProgress] = useState(false);
+  const [historyReversalError, setHistoryReversalError] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<TaskId | null>(null);
   const [maintenanceFilter, setMaintenanceFilter] =
     useState<MaintenanceFilter>("current");
@@ -4618,7 +4730,7 @@ export default function App() {
     }
 
     setCompletionNoteTask(task);
-    setCompletionNote("");
+    setCompletionNote(task.restoredNoteDraft ?? "");
     setCompletionDoNotAskAgain(false);
     setCompletionModalError(null);
   }
@@ -4854,6 +4966,30 @@ export default function App() {
 
     const response = await apiClient.getMaintenanceHistoryEntry(selectedHouse.id, completionId);
     setSelectedHistoryDetail(response.historyEntry);
+  }
+
+  async function reverseSelectedHistory(noteHandling: "keep_as_draft" | "discard") {
+    if (!selectedHouse || !selectedHistoryDetail || historyReversalInProgress) {
+      return;
+    }
+
+    setHistoryReversalInProgress(true);
+    setHistoryReversalError(null);
+
+    try {
+      await apiClient.reverseMaintenanceCompletion(
+        selectedHouse.id,
+        selectedHistoryDetail.id,
+        { noteHandling }
+      );
+      await loadMaintenanceV1(selectedHouse.id);
+      setSelectedHistoryDetail(null);
+      setMaintenanceView("main");
+    } catch (caughtError) {
+      setHistoryReversalError(userFacingError(caughtError));
+    } finally {
+      setHistoryReversalInProgress(false);
+    }
   }
 
   function addHouseDocument() {
@@ -5189,6 +5325,9 @@ export default function App() {
             setMaintenanceView("taskDetail");
           }}
           onOpenHistoryDetail={(entry) => void openHistoryDetail(entry)}
+          onReverseHistory={(noteHandling) => void reverseSelectedHistory(noteHandling)}
+          isReversingHistory={historyReversalInProgress}
+          historyReversalError={historyReversalError}
           onUpdateTask={(task, patch) => void updateTask(task, patch)}
           onDeleteTask={(task) => deleteTask(task)}
           showForm={showTaskForm}
@@ -5860,6 +5999,83 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
     paddingTop: 18,
     rowGap: 16
+  },
+  reverseModalPanel: {
+    backgroundColor: theme.surface,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    paddingHorizontal: 18,
+    paddingBottom: 22,
+    paddingTop: 20,
+    rowGap: 14
+  },
+  reverseModalHeader: {
+    rowGap: 7
+  },
+  reverseNoteCard: {
+    backgroundColor: theme.primaryFaint,
+    borderColor: theme.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    rowGap: 10
+  },
+  reverseNoteText: {
+    color: theme.text,
+    fontSize: 14,
+    lineHeight: 20
+  },
+  reverseNoteOption: {
+    alignItems: "center",
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    columnGap: 12,
+    flexDirection: "row",
+    paddingHorizontal: 12,
+    paddingVertical: 11
+  },
+  reverseNoteOptionSelected: {
+    backgroundColor: theme.primarySoft,
+    borderColor: theme.primary
+  },
+  reverseNoteOptionPressed: {
+    opacity: 0.78
+  },
+  reverseNoteOptionCopy: {
+    flex: 1,
+    rowGap: 3
+  },
+  reverseNoteOptionTitle: {
+    color: theme.subtle,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0,
+    textTransform: "uppercase"
+  },
+  reverseNoteOptionDetail: {
+    color: theme.subtle,
+    fontSize: 12,
+    lineHeight: 16
+  },
+  reverseRadio: {
+    alignItems: "center",
+    borderColor: theme.border,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    height: 24,
+    justifyContent: "center",
+    width: 24
+  },
+  reverseRadioSelected: {
+    backgroundColor: theme.primary,
+    borderColor: theme.primary
+  },
+  reverseRadioCheck: {
+    color: theme.surface,
+    fontSize: 14,
+    fontWeight: "900"
   },
   datePickerHeader: {
     alignItems: "flex-start",

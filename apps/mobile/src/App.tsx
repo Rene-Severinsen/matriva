@@ -190,12 +190,12 @@ function editablePriceValue(amountMinor: number | null) {
   return amountMinor !== null ? formatDkkPrice(amountMinor).replace(/\s?kr\.$/, "") : "";
 }
 
-function showDocumentSourcePicker(onPick: (source: "camera" | "library" | "file") => void) {
+function showDocumentSourcePicker(onPick: (source: "camera" | "library" | "file") => void, onCancel?: () => void) {
   Alert.alert("Tilføj dokument", "Vælg kilde", [
     { text: "Tag billede", onPress: () => onPick("camera") },
     { text: "Vælg fra billedbibliotek", onPress: () => onPick("library") },
     { text: "Vælg PDF", onPress: () => onPick("file") },
-    { text: "Annuller", style: "cancel" }
+    { text: "Annuller", style: "cancel", onPress: onCancel }
   ]);
 }
 
@@ -1828,6 +1828,8 @@ function SimpleImprovementDetail({ project, documents, onUpdate, onDelete, onAtt
   const [title, setTitle] = useState(project.title);
   const [description, setDescription] = useState(project.description ?? "");
   const [amount, setAmount] = useState(project.totalAmountMinor === null ? "" : formatDkkPrice(project.totalAmountMinor).replace(/\s?kr\.$/, ""));
+  const [completedDate, setCompletedDate] = useState(project.completedDate);
+  const [showCompletedDatePicker, setShowCompletedDatePicker] = useState(false);
   const [category, setCategory] = useState(project.category);
   return <View style={styles.stack}>
     <Card>
@@ -1835,10 +1837,11 @@ function SimpleImprovementDetail({ project, documents, onUpdate, onDelete, onAtt
       <Text style={styles.label}>Titel</Text>
       <TextInput value={title} onChangeText={setTitle} style={styles.input} />
       <Text style={styles.label}>Afsluttet dato</Text>
-      <View style={styles.dateField}>
-        <Text style={styles.dateFieldValue}>{formatDisplayDate(project.completedDate)}</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Afsluttet dato" onPress={() => setShowCompletedDatePicker(true)} style={styles.dateField}>
+        <Text style={completedDate ? styles.dateFieldValue : styles.dateFieldPlaceholder}>{completedDate ? formatDisplayDate(completedDate) : "Vælg dato"}</Text>
         <Text style={styles.dateFieldIcon}>⌄</Text>
-      </View>
+      </Pressable>
+      <DeadlineDatePicker title="Vælg afsluttet dato" visible={showCompletedDatePicker} selectedDate={completedDate} onClose={() => setShowCompletedDatePicker(false)} onClear={() => { setCompletedDate(""); setShowCompletedDatePicker(false); }} onSelect={(value) => { setCompletedDate(value); setShowCompletedDatePicker(false); }} />
       <Text style={styles.label}>Kategori</Text>
       <View style={styles.choiceWrap}>
         {improvementCategories.map(([key, label]) => <Pressable key={key} onPress={() => setCategory(key)} style={[styles.choiceChip, category === key ? styles.choiceChipSelected : null]}><Text style={[styles.choiceChipText, category === key ? styles.choiceChipTextSelected : null]}>{label}</Text></Pressable>)}
@@ -1847,7 +1850,7 @@ function SimpleImprovementDetail({ project, documents, onUpdate, onDelete, onAtt
       <TextInput value={description} onChangeText={setDescription} placeholder="Valgfrit" placeholderTextColor={theme.muted} multiline style={[styles.input, styles.textArea]} />
       <Text style={styles.label}>Beløb i DKK</Text>
       <TextInput accessibilityLabel="Beløb i DKK" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0,00" placeholderTextColor={theme.subtle} style={styles.input} />
-      <PrimaryButton label="Gem ændringer" onPress={() => { const parsed = parseDanishPriceInput(amount); if (parsed.ok) onUpdate({ title: title.trim(), description: description.trim() || null, category, totalAmountMinor: parsed.amountMinor }); }} />
+      <PrimaryButton label="Gem ændringer" onPress={() => { const parsed = parseDanishPriceInput(amount); if (parsed.ok && completedDate) onUpdate({ title: title.trim(), completedDate, description: description.trim() || null, category, totalAmountMinor: parsed.amountMinor }); }} />
     </Card>
     <Card>
       <Text style={styles.cardTitle}>Dokumenter</Text>
@@ -3980,6 +3983,7 @@ function DocumentsScreen({
   onDeleteDocument,
   onPickSource,
   onSaveDocument,
+  onClearPickedFile,
   fileName,
   isPicking
 }: {
@@ -3989,6 +3993,7 @@ function DocumentsScreen({
   onDeleteDocument: (document: HouseDocument) => void;
   onPickSource: (source: "camera" | "library" | "file") => void;
   onSaveDocument: (input: Omit<UploadHouseDocumentRequest, "fileName" | "mimeType" | "sizeBytes" | "contentBase64">) => Promise<boolean>;
+  onClearPickedFile: () => void;
   fileName: string | null;
   isPicking: boolean;
 }) {
@@ -4024,13 +4029,13 @@ function DocumentsScreen({
     return matchesSearch && matchesCategory && (filter === "all" || (filter === "important" && d.isImportant) || (filter === "expiring" && isExpiring(d)));
   });
   const categories: Array<[HouseDocumentCategory, string]> = [["reports", "Rapporter"], ["official", "Officielle oplysninger"], ["improvements", "Forbedringer"], ["manuals_warranties", "Manualer & garantier"]];
-  const resetForm = () => { setShowForm(false); setTitle(""); setDocumentDate(""); setDocumentType(null); setRelatedParty(""); setAmount(""); setExpiresAt(""); setNote(""); setIsImportant(false); setShowDocumentDatePicker(false); setShowExpiryDatePicker(false); };
+  const resetForm = () => { setShowForm(false); setTitle(""); setDocumentDate(""); setDocumentType(null); setRelatedParty(""); setAmount(""); setExpiresAt(""); setNote(""); setIsImportant(false); setShowDocumentDatePicker(false); setShowExpiryDatePicker(false); onClearPickedFile(); };
   const relatedPartyLabel = documentType === "invoice" || documentType === "receipt" ? "Virksomhed" : documentType === "warranty" ? "Producent eller leverandør" : documentType === "insurance_policy" ? "Forsikringsselskab" : documentType === "service_agreement" ? "Leverandør" : documentType === "purchase_agreement" ? "Relevant part" : null;
   const expiryLabel = documentType === "warranty" ? "Garanti til" : "Udløbsdato";
   const hasExpiry = documentType === "warranty" || documentType === "insurance_policy" || documentType === "service_agreement";
   return (
     <View style={styles.stack}>
-      <View style={styles.screenTitleRow}><SectionHeader title="Dokumenter" /><Pressable accessibilityRole="button" accessibilityLabel="Tilføj dokument" onPress={() => { resetForm(); setShowForm(true); }} style={styles.documentAddButton}><Text style={styles.documentAddButtonText}>+</Text></Pressable></View>
+      <View style={styles.screenTitleRow}><SectionHeader title="Dokumenter" /><Pressable accessibilityRole="button" accessibilityLabel="Tilføj dokument" onPress={() => { resetForm(); setShowForm(true); requestAnimationFrame(() => showDocumentSourcePicker(onPickSource, resetForm)); }} style={styles.documentAddButton}><Text style={styles.documentAddButtonText}>+</Text></Pressable></View>
       <TextInput value={search} onChangeText={setSearch} placeholder="⌕  Søg i dokumenter" placeholderTextColor={theme.subtle} style={styles.documentSearch} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.documentChips}>
         {([["all", "Alle"], ["important", "! Vigtige"], ["expiring", "Udløber snart"]] as const).map(([key, label]) => <Pressable key={key} onPress={() => setFilter(key)} style={[styles.documentChip, filter === key && styles.documentChipActive]}><Text style={[styles.documentChipText, filter === key && styles.documentChipTextActive]}>{label}</Text></Pressable>)}
@@ -4044,10 +4049,6 @@ function DocumentsScreen({
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.keyboardFrame}>
             <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
               <View style={styles.screenTitleRow}><Text style={styles.modalTitle}>Tilføj dokument</Text><Pressable accessibilityRole="button" onPress={resetForm}><Text style={styles.cancelText}>Annuller</Text></Pressable></View>
-              <View style={styles.sourceRow}>{[["camera", "Tag foto"], ["library", "Vælg billede"], ["file", "Upload PDF"]].map(([source, label]) => <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={isPicking || isSaving} key={source} style={[styles.sourceCard, (isPicking || isSaving) && styles.disabled]} onPress={() => onPickSource(source as "camera" | "library" | "file")}>
-                {source === "camera" ? <MaterialCommunityIcons color={theme.primary} name="camera-outline" size={27} /> : source === "library" ? <DocumentImageGlyph /> : <Text style={styles.sourceIcon}>PDF</Text>}
-                <Text style={styles.sourceLabel}>{label}</Text>
-              </Pressable>)}</View>
               {fileName ? <Text style={styles.selectedFile}>Valgt: {fileName}</Text> : null}
               <Text style={styles.label}>Titel</Text><TextInput accessibilityLabel="Titel" value={title} onChangeText={setTitle} placeholder="F.eks. Købsaftale" placeholderTextColor={theme.subtle} style={styles.input} />
               <Text style={styles.label}>Dokumentdato</Text>
@@ -4381,6 +4382,12 @@ export default function App() {
   const [publicDataRefreshMessage, setPublicDataRefreshMessage] =
     useState<PublicDataRefreshMessage | null>(null);
   const mainScrollRef = useRef<ScrollView | null>(null);
+
+  useEffect(() => {
+    if (activeTab === "house") {
+      requestAnimationFrame(() => mainScrollRef.current?.scrollTo({ y: 0, animated: false }));
+    }
+  }, [activeTab, houseView]);
 
   useEffect(() => {
     let isMounted = true;
@@ -5865,8 +5872,14 @@ export default function App() {
           isSavingImprovement={loadingAction === "improvement" || loadingAction === "improvementProject" || loadingAction === "improvementItem" || loadingAction === "improvementExpense" || loadingAction === "improvementDocument"}
           isUploadingPhoto={loadingAction === "photo"}
           publicDataRefreshMessage={publicDataRefreshMessage}
-          onOpenDetails={() => setHouseView("details")}
-          onOpenImprovements={() => setHouseView("improvements")}
+          onOpenDetails={() => {
+            setHouseView("details");
+            requestAnimationFrame(() => mainScrollRef.current?.scrollTo({ y: 0, animated: false }));
+          }}
+          onOpenImprovements={() => {
+            setHouseView("improvements");
+            requestAnimationFrame(() => mainScrollRef.current?.scrollTo({ y: 0, animated: false }));
+          }}
           onOpenAddImprovement={() => {
             resetImprovementForm();
             setHouseView("addImprovement");
@@ -5879,6 +5892,7 @@ export default function App() {
             void apiClient.getHouseImprovement(selectedHouse.id, improvement.id).then((response) => {
               setSelectedImprovement(response.improvement);
               setHouseView("improvementDetail");
+              requestAnimationFrame(() => mainScrollRef.current?.scrollTo({ y: 0, animated: false }));
             }).catch((caughtError) => setError(userFacingError(caughtError))).finally(() => setLoadingAction(null));
           }}
           onDeleteImprovement={() => {
@@ -6043,6 +6057,7 @@ export default function App() {
           onDeleteDocument={(document) => void deleteHouseDocument(document)}
           onPickSource={(source) => void pickHouseDocument(source)}
           onSaveDocument={saveHouseDocument}
+          onClearPickedFile={() => setPendingDocument(null)}
           fileName={pendingDocument?.fileName ?? null}
           isPicking={isPickingDocument}
         />

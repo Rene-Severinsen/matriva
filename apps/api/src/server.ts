@@ -24,6 +24,8 @@ import {
   consumeMagicLinkRequestSchema,
   currentUserResponseSchema,
   createHouseImprovementRequestSchema,
+  updateHouseImprovementRequestSchema,
+  attachHouseImprovementDocumentRequestSchema,
   createMaintenanceTaskRequestSchema,
   acceptMaintenanceRecommendationRequestSchema,
   completeMaintenanceTaskRequestSchema,
@@ -42,6 +44,7 @@ import {
   houseDraftOverviewPreviewResponseSchema,
   houseDraftResponseSchema,
   houseIdSchema,
+  improvementIdSchema,
   homeBootstrapResponseSchema,
   maintenanceTaskResponseSchema,
   maintenanceHistoryResponseSchema,
@@ -103,6 +106,11 @@ import {
   consumeMagicLinkToken,
   createHouseDocumentForHouse,
   createHouseImprovement,
+  getHouseImprovement,
+  updateHouseImprovement,
+  archiveHouseImprovement,
+  createHouseImprovementDocumentRelation,
+  deleteHouseImprovementDocumentRelation,
   createMaintenanceTaskForHouse,
   createMagicLinkToken,
   createSavedHouse,
@@ -2225,6 +2233,30 @@ const server = createServer((request, response) => {
       } catch (error) {
         writeUnknownApiError(response, error);
       }
+    })();
+    return;
+  }
+
+  const improvementDetailMatch = /^\/v1\/houses\/([^/]+)\/improvements\/([^/]+)$/.exec(request.url ?? "");
+  const documentRelationMatch = /^\/v1\/houses\/([^/]+)\/improvements\/([^/]+)\/documents(?:\/([^/]+))?$/.exec(request.url ?? "");
+
+  if (improvementDetailMatch || documentRelationMatch) {
+    void (async () => {
+      try {
+        const match = improvementDetailMatch ?? documentRelationMatch;
+        const parsedHouseId = houseIdSchema.safeParse(match?.[1]);
+        const parsedImprovementId = improvementIdSchema.safeParse(match?.[2]);
+        if (!parsedHouseId.success || !parsedImprovementId.success) { writeApiError(response, 400, "improvement_route_invalid", "Improvement route IDs are invalid."); return; }
+        const userId = await requireUserId(request);
+        const payload = request.method === "GET" || request.method === "DELETE" ? undefined : await readJsonBody(request);
+        if (improvementDetailMatch) {
+          if (request.method === "GET") { writeJson(response, 200, { improvement: await getHouseImprovement(userId, parsedHouseId.data, parsedImprovementId.data) }); return; }
+          if (request.method === "PATCH") { const parsed = updateHouseImprovementRequestSchema.safeParse(payload); if (!parsed.success) { writeApiError(response,400,"improvement_request_invalid","Projektdata er ugyldige."); return; } writeJson(response,200,{ improvement: await updateHouseImprovement(userId,parsedHouseId.data,parsedImprovementId.data,parsed.data) }); return; }
+          if (request.method === "DELETE") { await archiveHouseImprovement(userId,parsedHouseId.data,parsedImprovementId.data); writeJson(response,200,{ ok:true }); return; }
+        }
+        if (documentRelationMatch) { const documentId=documentRelationMatch[3]; if(request.method==="POST"&&!documentId){const p=attachHouseImprovementDocumentRequestSchema.safeParse(payload);if(!p.success){writeApiError(response,400,"improvement_document_invalid","Dokumentrelationen er ugyldig.");return;}writeJson(response,201,{improvement:await createHouseImprovementDocumentRelation(userId,parsedHouseId.data,parsedImprovementId.data,p.data)});return;}if(documentId&&request.method==="DELETE"){await deleteHouseImprovementDocumentRelation(userId,parsedHouseId.data,parsedImprovementId.data,documentId);writeJson(response,200,{ok:true});return;} }
+        writeApiError(response,405,"method_not_allowed","Methoden understøttes ikke.");
+      } catch (error) { writeUnknownApiError(response,error); }
     })();
     return;
   }

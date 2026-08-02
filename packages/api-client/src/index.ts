@@ -15,6 +15,7 @@ import {
   currentUserResponseSchema,
   houseImprovementResponseSchema,
   houseImprovementsResponseSchema,
+  houseImprovementDetailSchema,
   housePhotoResponseSchema,
   enrichHouseDraftResponseSchema,
   logoutResponseSchema,
@@ -60,6 +61,8 @@ import {
   type ConsumeMagicLinkRequest,
   type CurrentUserResponse,
   type CreateHouseImprovementRequest,
+  type UpdateHouseImprovementRequest,
+  type AttachHouseImprovementDocumentRequest,
   type CreateMaintenanceTaskRequest,
   type AcceptMaintenanceRecommendationRequest,
   type CompleteMaintenanceTaskRequest,
@@ -343,6 +346,11 @@ export type MatrivaApiClient = {
     houseId: HouseId,
     input: CreateHouseImprovementRequest
   ) => Promise<HouseImprovementResponse>;
+  getHouseImprovement: (houseId: HouseId, improvementId: string) => Promise<HouseImprovementResponse>;
+  updateHouseImprovement: (houseId: HouseId, improvementId: string, input: UpdateHouseImprovementRequest) => Promise<HouseImprovementResponse>;
+  deleteHouseImprovement: (houseId: HouseId, improvementId: string) => Promise<unknown>;
+  attachHouseImprovementDocument: (houseId: HouseId, improvementId: string, input: AttachHouseImprovementDocumentRequest) => Promise<HouseImprovementResponse>;
+  detachHouseImprovementDocument: (houseId: HouseId, improvementId: string, documentId: string) => Promise<unknown>;
   getHousePhoto: (houseId: HouseId) => Promise<HousePhotoResponse>;
   setHousePhoto: (
     houseId: HouseId,
@@ -1211,6 +1219,17 @@ export function createMatrivaApiClient(
         await parseApiResponse(response, "Could not create house improvement.")
       );
     },
+    async getHouseImprovement(houseId, improvementId) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/houses/${houseId}/improvements/${improvementId}`, { headers: authHeaders() });
+      return houseImprovementResponseSchema.parse(await parseApiResponse(response, "Could not load improvement."));
+    },
+    async updateHouseImprovement(houseId, improvementId, input) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/houses/${houseId}/improvements/${improvementId}`, { method: "PATCH", headers: authHeaders({"content-type":"application/json"}), body: JSON.stringify(input) });
+      return houseImprovementResponseSchema.parse(await parseApiResponse(response, "Could not update improvement."));
+    },
+    async deleteHouseImprovement(houseId, improvementId) { const response = await fetcher(`${normalizedBaseUrl}/v1/houses/${houseId}/improvements/${improvementId}`, {method:"DELETE",headers:authHeaders()}); return parseApiResponse(response,"Could not delete improvement."); },
+    async attachHouseImprovementDocument(houseId, improvementId, input) { const response=await fetcher(`${normalizedBaseUrl}/v1/houses/${houseId}/improvements/${improvementId}/documents`,{method:"POST",headers:authHeaders({"content-type":"application/json"}),body:JSON.stringify(input)});return houseImprovementResponseSchema.parse(await parseApiResponse(response,"Could not link improvement document.")); },
+    async detachHouseImprovementDocument(houseId, improvementId, documentId) { const response=await fetcher(`${normalizedBaseUrl}/v1/houses/${houseId}/improvements/${improvementId}/documents/${documentId}`,{method:"DELETE",headers:authHeaders()});return parseApiResponse(response,"Could not unlink improvement document."); },
     async getHousePhoto(houseId) {
       const response = await fetcher(`${normalizedBaseUrl}/v1/houses/${houseId}/photo`, {
         headers: authHeaders()

@@ -27,12 +27,16 @@ import DateTimePicker, {
 } from "@react-native-community/datetimepicker";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
+import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 import { WebView } from "react-native-webview";
 import { createMatrivaApiClient } from "@matriva/api-client";
 import {
   type AddressSuggestion,
   type AppBootstrapResponse,
   type CreateHouseImprovementRequest,
+  type UpdateHouseImprovementRequest,
+  type AttachHouseImprovementDocumentRequest,
   type CreateMaintenanceTaskRequest,
   type CurrentUser,
   type HouseId,
@@ -41,6 +45,7 @@ import {
   type HouseDocumentType,
   type UploadHouseDocumentRequest,
   type HouseImprovement,
+  type HouseImprovementDetail,
   type HouseImprovementCategory,
   type HouseMedia,
   type HousePublicDataProfileFact,
@@ -74,12 +79,12 @@ import {
 } from "./storage/uiPreferencesStorage";
 
 type TabKey = "dashboard" | "house" | "maintenance" | "documents" | "more";
-type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" | "publicData" | "improvement" | "photo" | "recommendation" | "logout";
+type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" | "publicData" | "improvement" | "improvementProject" | "improvementItem" | "improvementExpense" | "improvementDocument" | "photo" | "recommendation" | "logout";
 type MaintenanceFilter = "current" | "spring" | "summer" | "autumn" | "winter" | "all";
 type MaintenanceView = "main" | "history" | "historyDetail" | "taskDetail" | "recommendations";
 type AuthStatus = "restoring" | "anonymous" | "authenticated";
 type MoreView = "menu" | "profile" | "settings";
-type HouseView = "overview" | "details" | "improvements" | "addImprovement";
+type HouseView = "overview" | "details" | "improvements" | "improvementDetail" | "addImprovement";
 type UnauthenticatedStep = "welcome" | "create" | "login";
 type HouseOnboardingStep = "search" | "confirm" | "progress" | "publicDataIssue";
 type PublicDataRefreshMessage = {
@@ -159,6 +164,12 @@ function publicDataIssueMessage(
   return "Boligen er gemt, men BBR-oplysningerne kunne ikke hentes lige nu.";
 }
 
+function formatHouseAddressLabel(address: string) {
+  const normalized = address.replace(/,\s*/g, " ").trim();
+  const match = normalized.match(/^(.+?\s+\d+[A-Za-z]?)\s+(\d{4}\s+.+)$/);
+  return match ? `${match[1]}\n${match[2]}` : address.replace(/,\s*/, "\n");
+}
+
 function priceInputErrorMessage(code: "negative" | "invalid" | "too_many_decimals" | "too_large") {
   if (code === "negative") {
     return "Prisen må ikke være negativ.";
@@ -177,6 +188,15 @@ function priceInputErrorMessage(code: "negative" | "invalid" | "too_many_decimal
 
 function editablePriceValue(amountMinor: number | null) {
   return amountMinor !== null ? formatDkkPrice(amountMinor).replace(/\s?kr\.$/, "") : "";
+}
+
+function showDocumentSourcePicker(onPick: (source: "camera" | "library" | "file") => void) {
+  Alert.alert("Tilføj dokument", "Vælg kilde", [
+    { text: "Tag billede", onPress: () => onPick("camera") },
+    { text: "Vælg fra billedbibliotek", onPress: () => onPick("library") },
+    { text: "Vælg PDF", onPress: () => onPick("file") },
+    { text: "Annuller", style: "cancel" }
+  ]);
 }
 
 function formatStatus(status: MaintenanceTask["status"]) {
@@ -734,14 +754,12 @@ function HouseStatusCard({
           <Text style={styles.houseGlyphText}>M</Text>
         </View>
         <View style={styles.houseHeroText}>
-          <Text style={styles.houseLabel}>Dit gemte hus</Text>
-          <Text style={styles.houseAddress}>{house.addressLabel}</Text>
+          <Text style={styles.houseAddress}>{formatHouseAddressLabel(house.addressLabel)}</Text>
         </View>
       </View>
       <View style={styles.pillRow}>
-        <Pill>Gemt hus</Pill>
         <Pill tone={hasPublicData ? "default" : "warning"}>
-          {hasPublicData ? publicDataSummary.sourceLabel : "BBR-oplysninger mangler"}
+          {hasPublicData ? "BBR data er hentet" : "BBR-oplysninger mangler"}
         </Pill>
       </View>
     </Card>
@@ -1076,12 +1094,12 @@ const overviewFactLabels: Record<(typeof overviewFactOrder)[number], string> = {
 };
 
 const overviewFactIcons: Record<(typeof overviewFactOrder)[number], string> = {
-  housing_type: "⌂",
-  residential_area: "⌗",
-  construction_year: "◷",
-  rooms: "▦",
-  heating: "♨",
-  cadastral_number: "⌖"
+  housing_type: "home-outline",
+  residential_area: "ruler-square",
+  construction_year: "calendar-blank-outline",
+  rooms: "floor-plan",
+  heating: "fire",
+  cadastral_number: "crosshairs-gps"
 };
 
 const improvementCategoryLabels: Record<HouseImprovementCategory, string> = {
@@ -1099,6 +1117,8 @@ const improvementCategoryLabels: Record<HouseImprovementCategory, string> = {
 const improvementCategories = Object.entries(improvementCategoryLabels) as Array<
   [HouseImprovementCategory, string]
 >;
+const improvementStatusLabels = { planned: "Planlagt", in_progress: "I gang", completed: "Afsluttet", cancelled: "Annulleret" } as const;
+const expenseTypeLabels = { materials: "Materialer", labour: "Arbejdsløn", equipment: "Udstyr", transport: "Transport", fees: "Gebyrer", other: "Andet" } as const;
 
 function compactHouseType(value: string) {
   const lower = value.toLowerCase();
@@ -1236,26 +1256,22 @@ function updatedAtLabel(value: string | null | undefined) {
 }
 
 function improvementDateLabel(improvement: HouseImprovement) {
-  if (improvement.improvementDate) {
-    return formatDisplayDate(improvement.improvementDate);
-  }
-
-  return improvement.improvementYear ? `${improvement.improvementYear}` : "Ikke dateret";
+  return formatDisplayDate(improvement.completedDate);
 }
 
 function improvementMeta(improvement: HouseImprovement) {
   const parts = [improvementDateLabel(improvement)];
 
-  if (improvement.documentReference) {
-    parts.push("Dokument vedhæftet");
+  if (improvement.documentCount > 0) {
+    parts.push(`${improvement.documentCount} dokumenter`);
   }
 
-  if (improvement.costAmountMinor !== null && improvement.costCurrency) {
+  if (improvement.totalAmountMinor !== null) {
     parts.push(
       new Intl.NumberFormat("da-DK", {
         style: "currency",
-        currency: improvement.costCurrency
-      }).format(improvement.costAmountMinor / 100)
+        currency: improvement.currency
+      }).format(improvement.totalAmountMinor / 100)
     );
   }
 
@@ -1718,11 +1734,137 @@ function DashboardScreen({
   );
 }
 
+function ImprovementDetailPanel({
+  project, documents, busyAction, error, onUpdateProject, onCreateItem, onUpdateItem, onDeleteItem,
+  onCreateExpense, onUpdateExpense, onDeleteExpense, onLinkDocument, onUnlinkDocument, onArchive
+}: {
+  project: any;
+  documents: HouseDocument[];
+  busyAction: LoadingAction | null;
+  error: string | null;
+  onUpdateProject: (input: any) => void;
+  onCreateItem: (input: any) => void;
+  onUpdateItem: (id: string, input: any) => void;
+  onDeleteItem: (id: string) => void;
+  onCreateExpense: (input: any) => void;
+  onUpdateExpense: (id: string, input: any) => void;
+  onDeleteExpense: (id: string) => void;
+  onLinkDocument: (input: any) => void;
+  onUnlinkDocument: (id: string) => void;
+  onArchive: () => void;
+}) {
+  return null; /*
+  const [title, setTitle] = useState(project.title);
+  const [description, setDescription] = useState(project.description ?? "");
+  const [status, setStatus] = useState(project.status);
+  const [category, setCategory] = useState<HouseImprovementCategory | null>(project.category);
+  const [startDate, setStartDate] = useState(project.startDate ?? "");
+  const [datePrecision, setDatePrecision] = useState(project.datePrecision);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [budget, setBudget] = useState(project.budgetAmountMinor === null ? "" : formatDkkPrice(project.budgetAmountMinor).replace(/\s?kr\.$/, ""));
+  const [itemTitle, setItemTitle] = useState("");
+  const [itemDescription, setItemDescription] = useState("");
+  const [itemStartDate, setItemStartDate] = useState("");
+  const [itemCompletedDate, setItemCompletedDate] = useState("");
+  const [itemDateTarget, setItemDateTarget] = useState<"start" | "completed" | null>(null);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [expenseDescription, setExpenseDescription] = useState("");
+  const [expenseAmount, setExpenseAmount] = useState("");
+  const [expenseDate, setExpenseDate] = useState("");
+  const [expenseSupplier, setExpenseSupplier] = useState("");
+  const [expenseNote, setExpenseNote] = useState("");
+  const [expenseItemId, setExpenseItemId] = useState<string | null>(null);
+  const [showExpenseDatePicker, setShowExpenseDatePicker] = useState(false);
+  const [expenseType, setExpenseType] = useState<keyof typeof expenseTypeLabels>("materials");
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [relationTarget, setRelationTarget] = useState<{ improvementItemId?: string; expenseId?: string }>({});
+  const saving = busyAction !== null;
+  const saveProject = () => {
+    const parsed = parseDanishPriceInput(budget);
+    if (!parsed.ok) return;
+    onUpdateProject({ title: title.trim(), description: description.trim() || null, category, status, startDate: startDate || null, datePrecision, budgetAmountMinor: parsed.amountMinor });
+  };
+  const saveItem = () => {
+    if (!itemTitle.trim()) return;
+    if (editingItemId) onUpdateItem(editingItemId, { title: itemTitle.trim(), description: itemDescription.trim() || null, startDate: itemStartDate || null, completedDate: itemCompletedDate || null });
+    else onCreateItem({ title: itemTitle.trim(), description: itemDescription.trim() || undefined, startDate: itemStartDate || null, completedDate: itemCompletedDate || null });
+    setItemTitle(""); setItemDescription(""); setItemStartDate(""); setItemCompletedDate(""); setEditingItemId(null);
+  };
+  const saveExpense = () => {
+    const parsed = parseDanishPriceInput(expenseAmount);
+    if (!parsed.ok || parsed.amountMinor === null || !expenseDescription.trim()) return;
+    const input = { description: expenseDescription.trim(), expenseType, amountMinor: parsed.amountMinor, expenseDate: expenseDate || null, supplier: expenseSupplier.trim() || null, note: expenseNote.trim() || null, improvementItemId: expenseItemId };
+    if (editingExpenseId) onUpdateExpense(editingExpenseId, input);
+    else onCreateExpense(input);
+    setExpenseDescription(""); setExpenseAmount(""); setExpenseDate(""); setExpenseSupplier(""); setExpenseNote(""); setExpenseItemId(null); setEditingExpenseId(null);
+  };
+  return <View style={styles.stack}>
+    <Card><Text style={styles.cardTitle}>Overblik</Text>
+      <Text style={styles.label}>Titel</Text><TextInput editable={!saving} value={title} onChangeText={setTitle} style={styles.input} />
+      <Text style={styles.label}>Beskrivelse</Text><TextInput editable={!saving} value={description} onChangeText={setDescription} multiline style={[styles.input, styles.textArea]} />
+      <Text style={styles.label}>Status</Text><View style={styles.choiceWrap}>{(Object.keys(improvementStatusLabels) as Array<keyof typeof improvementStatusLabels>).map((key) => <Pressable key={key} onPress={() => setStatus(key)} style={[styles.choiceChip, status === key ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>{improvementStatusLabels[key]}</Text></Pressable>)}</View>
+      <Text style={styles.label}>Kategori</Text><View style={styles.choiceWrap}>{improvementCategories.map(([key, label]) => <Pressable key={key} onPress={() => setCategory(category === key ? null : key)} style={[styles.choiceChip, category === key ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>{label}</Text></Pressable>)}</View>
+      <Text style={styles.label}>Periode</Text><View style={styles.choiceWrap}><Pressable onPress={() => setDatePrecision("year")} style={[styles.choiceChip, datePrecision === "year" ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>År</Text></Pressable><Pressable onPress={() => setDatePrecision("exact")} style={[styles.choiceChip, datePrecision === "exact" ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>Eksakt dato</Text></Pressable></View>{datePrecision === "year" ? <TextInput value={startDate.slice(0, 4)} onChangeText={(value) => setStartDate(`${value}-01-01`)} keyboardType="number-pad" maxLength={4} placeholder="År" style={styles.input} /> : <><SecondaryButton label={startDate || "Vælg startdato"} onPress={() => setShowDatePicker(true)} />{showDatePicker ? <DateTimePicker value={startDate ? new Date(`${startDate}T12:00:00`) : new Date()} mode="date" onChange={(event, date) => { if (date) setStartDate(date.toISOString().slice(0, 10)); setShowDatePicker(false); }} /> : null}</>}
+      <Text style={styles.label}>Budget (DKK)</Text><TextInput editable={!saving} value={budget} onChangeText={setBudget} keyboardType="decimal-pad" placeholder="Valgfrit budget" style={styles.input} />
+      <PrimaryButton label={busyAction === "improvementProject" ? "Gemmer..." : "Gem projekt"} disabled={saving} onPress={saveProject} />
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+    </Card>
+    <Card><Text style={styles.cardTitle}>Opgaver</Text>
+      {project.items.map((item: any) => <View key={item.id} style={styles.improvementCard}><Text style={styles.taskRowTitle}>{item.title}</Text><Text style={styles.metaText}>{improvementStatusLabels[item.status as keyof typeof improvementStatusLabels]}</Text><View style={styles.summaryActions}><SecondaryButton label="Rediger" onPress={() => { setEditingItemId(item.id); setItemTitle(item.title); setItemDescription(item.description ?? ""); setItemStartDate(item.startDate ?? ""); setItemCompletedDate(item.completedDate ?? ""); }} /><SecondaryButton label={item.status === "completed" ? "Genåbn" : "Markér færdig"} onPress={() => onUpdateItem(item.id, { status: item.status === "completed" ? "in_progress" : "completed" })} /><SecondaryButton label="Slet" onPress={() => Alert.alert("Slet underopgave?", "Underopgaven arkiveres.", [{ text: "Annuller", style: "cancel" }, { text: "Slet", style: "destructive", onPress: () => onDeleteItem(item.id) }])} /></View></View>)}
+      <TextInput placeholder="Ny underopgave" value={itemTitle} onChangeText={setItemTitle} style={styles.input} /><TextInput placeholder="Beskrivelse" value={itemDescription} onChangeText={setItemDescription} style={styles.input} /><SecondaryButton label={itemStartDate || "Startdato"} onPress={() => setItemDateTarget("start")} /><SecondaryButton label={itemCompletedDate || "Færdigdato"} onPress={() => setItemDateTarget("completed")} />{itemDateTarget ? <DateTimePicker value={(itemDateTarget === "start" ? itemStartDate : itemCompletedDate) ? new Date(`${itemDateTarget === "start" ? itemStartDate : itemCompletedDate}T12:00:00`) : new Date()} mode="date" onChange={(event, date) => { if (date) (itemDateTarget === "start" ? setItemStartDate : setItemCompletedDate)(date.toISOString().slice(0, 10)); setItemDateTarget(null); }} /> : null}<PrimaryButton label={editingItemId ? "Gem underopgave" : "Opret underopgave"} disabled={saving} onPress={saveItem} />
+    </Card>
+    <Card><Text style={styles.cardTitle}>Udgifter</Text>
+      {project.expenses.map((expense: any) => <View key={expense.id} style={styles.improvementCard}><Text style={styles.taskRowTitle}>{expense.description}</Text><Text style={styles.metaText}>{expenseTypeLabels[expense.expenseType as keyof typeof expenseTypeLabels]} · {formatDkkPrice(expense.amountMinor)}</Text><View style={styles.summaryActions}><SecondaryButton label="Rediger" onPress={() => { setEditingExpenseId(expense.id); setExpenseDescription(expense.description); setExpenseAmount(formatDkkPrice(expense.amountMinor).replace(/\s?kr\.$/, "")); setExpenseType(expense.expenseType); setExpenseDate(expense.expenseDate ?? ""); setExpenseSupplier(expense.supplier ?? ""); setExpenseNote(expense.note ?? ""); setExpenseItemId(expense.improvementItemId); }} /><SecondaryButton label="Slet" onPress={() => Alert.alert("Slet udgift?", "Udgiften arkiveres.", [{ text: "Annuller", style: "cancel" }, { text: "Slet", style: "destructive", onPress: () => onDeleteExpense(expense.id) }])} /></View></View>)}
+      <SecondaryButton label={expenseDate || "Vælg dato"} onPress={() => setShowExpenseDatePicker(true)} />{showExpenseDatePicker ? <DateTimePicker value={expenseDate ? new Date(`${expenseDate}T12:00:00`) : new Date()} mode="date" onChange={(event, date) => { if (date) setExpenseDate(date.toISOString().slice(0, 10)); setShowExpenseDatePicker(false); }} /> : null}
+      <TextInput placeholder="Beskrivelse" value={expenseDescription} onChangeText={setExpenseDescription} style={styles.input} /><TextInput placeholder="Leverandør (valgfrit)" value={expenseSupplier} onChangeText={setExpenseSupplier} style={styles.input} /><TextInput placeholder="Beløb i DKK" value={expenseAmount} onChangeText={setExpenseAmount} keyboardType="decimal-pad" style={styles.input} /><TextInput placeholder="Note (valgfrit)" value={expenseNote} onChangeText={setExpenseNote} multiline style={[styles.input, styles.textArea]} /><Text style={styles.label}>Underopgave (valgfrit)</Text><View style={styles.choiceWrap}><Pressable onPress={() => setExpenseItemId(null)} style={[styles.choiceChip, expenseItemId === null ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>Projekt</Text></Pressable>{project.items.map((item: any) => <Pressable key={item.id} onPress={() => setExpenseItemId(item.id)} style={[styles.choiceChip, expenseItemId === item.id ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>{item.title}</Text></Pressable>)}</View><View style={styles.choiceWrap}>{(Object.keys(expenseTypeLabels) as Array<keyof typeof expenseTypeLabels>).map((key) => <Pressable key={key} onPress={() => setExpenseType(key)} style={[styles.choiceChip, expenseType === key ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>{expenseTypeLabels[key]}</Text></Pressable>)}</View><PrimaryButton label={editingExpenseId ? "Gem udgift" : "Registrer udgift"} disabled={saving} onPress={saveExpense} />
+    </Card>
+    <Card><Text style={styles.cardTitle}>Dokumenter</Text>{project.documents.map((relation) => <View key={`${relation.documentId}-${relation.relationType}`} style={styles.summaryActions}><Text style={styles.compactBodyText}>{relation.documentId} · {relation.relationType === "project" ? "Projekt" : relation.relationType === "item" ? "Underopgave" : "Udgift"}</Text><SecondaryButton label="Fjern" onPress={() => Alert.alert("Fjern dokumentrelation?", "Dokumentet slettes ikke.", [{ text: "Annuller", style: "cancel" }, { text: "Fjern", style: "destructive", onPress: () => onUnlinkDocument(relation.documentId) }])} /></View>)}<Text style={styles.label}>Tilknytning</Text><View style={styles.choiceWrap}><Pressable onPress={() => setRelationTarget({})} style={[styles.choiceChip, !relationTarget.improvementItemId && !relationTarget.expenseId ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>Projekt</Text></Pressable>{project.items.map((item) => <Pressable key={item.id} onPress={() => setRelationTarget({ improvementItemId: item.id })} style={[styles.choiceChip, relationTarget.improvementItemId === item.id ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>Opgave: {item.title}</Text></Pressable>)}{project.expenses.map((expense) => <Pressable key={expense.id} onPress={() => setRelationTarget({ expenseId: expense.id })} style={[styles.choiceChip, relationTarget.expenseId === expense.id ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>Udgift: {expense.description}</Text></Pressable>)}</View>{documents.filter((doc) => !project.documents.some((relation) => relation.documentId === doc.id)).slice(0, 8).map((doc) => <SecondaryButton key={doc.id} label={`Tilknyt ${doc.title ?? doc.originalFilename}`} disabled={saving} onPress={() => onLinkDocument({ documentId: doc.id, ...relationTarget })} />)}<Text style={styles.metaText}>Dokumenter uploades fortsat via dokumentarkivet.</Text></Card>
+    <SecondaryButton label="Arkivér projekt" onPress={onArchive} />
+  </View>;
+*/
+}
+
+function SimpleImprovementDetail({ project, documents, onUpdate, onDelete, onAttach, onDetach, pendingDocumentName, pendingDocumentMimeType, onRemovePending, onPickDocument, onUploadPending }: { project: any; documents: HouseDocument[]; onUpdate: (input: any) => void; onDelete: () => void; onAttach: (documentId: any) => void; onDetach: (documentId: any) => void; pendingDocumentName: string | null; pendingDocumentMimeType: HouseDocument["mimeType"] | null; onRemovePending: () => void; onPickDocument: (source: "camera" | "library" | "file") => void; onUploadPending: () => void }) {
+  const [title, setTitle] = useState(project.title);
+  const [description, setDescription] = useState(project.description ?? "");
+  const [amount, setAmount] = useState(project.totalAmountMinor === null ? "" : formatDkkPrice(project.totalAmountMinor).replace(/\s?kr\.$/, ""));
+  const [category, setCategory] = useState(project.category);
+  return <View style={styles.stack}>
+    <Card>
+      <Text style={styles.cardTitle}>Forbedring</Text>
+      <Text style={styles.label}>Titel</Text>
+      <TextInput value={title} onChangeText={setTitle} style={styles.input} />
+      <Text style={styles.label}>Afsluttet dato</Text>
+      <View style={styles.dateField}>
+        <Text style={styles.dateFieldValue}>{formatDisplayDate(project.completedDate)}</Text>
+        <Text style={styles.dateFieldIcon}>⌄</Text>
+      </View>
+      <Text style={styles.label}>Kategori</Text>
+      <View style={styles.choiceWrap}>
+        {improvementCategories.map(([key, label]) => <Pressable key={key} onPress={() => setCategory(key)} style={[styles.choiceChip, category === key ? styles.choiceChipSelected : null]}><Text style={[styles.choiceChipText, category === key ? styles.choiceChipTextSelected : null]}>{label}</Text></Pressable>)}
+      </View>
+      <Text style={styles.label}>Beskrivelse</Text>
+      <TextInput value={description} onChangeText={setDescription} placeholder="Valgfrit" placeholderTextColor={theme.muted} multiline style={[styles.input, styles.textArea]} />
+      <Text style={styles.label}>Beløb i DKK</Text>
+      <TextInput accessibilityLabel="Beløb i DKK" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0,00" placeholderTextColor={theme.subtle} style={styles.input} />
+      <PrimaryButton label="Gem ændringer" onPress={() => { const parsed = parseDanishPriceInput(amount); if (parsed.ok) onUpdate({ title: title.trim(), description: description.trim() || null, category, totalAmountMinor: parsed.amountMinor }); }} />
+    </Card>
+    <Card>
+      <Text style={styles.cardTitle}>Dokumenter</Text>
+      {project.documents.map((doc: HouseDocument) => <PendingDocumentRow key={doc.id} fileName={doc.title ?? doc.originalFilename} mimeType={doc.mimeType} statusText={doc.documentType ?? "Dokument"} onRemove={() => onDetach(doc.id)} />)}
+      {pendingDocumentName && pendingDocumentMimeType ? <><PendingDocumentRow fileName={pendingDocumentName} mimeType={pendingDocumentMimeType} onRemove={onRemovePending} /><PrimaryButton label="Upload og tilknyt" onPress={onUploadPending} /></> : null}
+      <SecondaryButton label="Tilføj dokument" onPress={() => showDocumentSourcePicker(onPickDocument)} />
+    </Card>
+    <SecondaryButton label="Arkivér forbedring" onPress={() => Alert.alert("Arkivér forbedring?", "Forbedringen skjules fra listen.", [{ text: "Annuller", style: "cancel" }, { text: "Arkivér", style: "destructive", onPress: onDelete }])} />
+  </View>;
+}
+
 function HouseScreen({
   house,
   publicDataSummary,
   publicDataProfile,
   improvements,
+  houseDocuments,
   housePhoto,
   housePhotoUri,
   housePhotoHeaders,
@@ -1730,9 +1872,12 @@ function HouseScreen({
   houseView,
   improvementTitle,
   improvementYear,
+  improvementDate,
+  improvementDatePrecision,
+  improvementStatus,
+  showImprovementDatePicker,
   improvementDescription,
   improvementCategory,
-  improvementDocumentReference,
   improvementCost,
   improvementFormError,
   photoError,
@@ -1744,6 +1889,19 @@ function HouseScreen({
   onOpenDetails,
   onOpenImprovements,
   onOpenAddImprovement,
+  selectedImprovement,
+  onOpenImprovement,
+  onDeleteImprovement,
+  onUpdateProject,
+  onCreateItem,
+  onUpdateItem,
+  onDeleteItem,
+  onCreateExpense,
+  onUpdateExpense,
+  onDeleteExpense,
+  onLinkDocument,
+  onUnlinkDocument,
+  improvementActionError,
   onBackToHouse,
   onRefreshPublicData,
   onOpenDocuments,
@@ -1752,16 +1910,27 @@ function HouseScreen({
   onRemoveHousePhoto,
   onImprovementTitleChange,
   onImprovementYearChange,
+  onImprovementDateChange,
+  onImprovementDatePrecisionChange,
+  onImprovementStatusChange,
+  onToggleImprovementDatePicker,
   onImprovementDescriptionChange,
   onImprovementCategoryChange,
-  onImprovementDocumentReferenceChange,
   onImprovementCostChange,
   onSaveImprovement
+  ,pendingDocumentName,
+  pendingDocumentMimeType,
+  pendingImprovementDocuments,
+  onRemovePendingDocument,
+  onPickImprovementDocument,
+  onRemoveImprovementDocument
+  ,onUploadImprovementDocument
 }: {
   house: SavedHouse | null;
   publicDataSummary: HousePublicDataSummary | null;
   publicDataProfile: HousePublicDataProfileV1 | null;
   improvements: HouseImprovement[];
+  houseDocuments: HouseDocument[];
   housePhoto: HouseMedia | null;
   housePhotoUri: string | null;
   housePhotoHeaders: Record<string, string> | undefined;
@@ -1769,9 +1938,12 @@ function HouseScreen({
   houseView: HouseView;
   improvementTitle: string;
   improvementYear: string;
+  improvementDate: string;
+  improvementDatePrecision: "exact" | "month" | "year" | "unknown";
+  improvementStatus: keyof typeof improvementStatusLabels;
+  showImprovementDatePicker: boolean;
   improvementDescription: string;
   improvementCategory: HouseImprovementCategory | "";
-  improvementDocumentReference: string;
   improvementCost: string;
   improvementFormError: string | null;
   photoError: string | null;
@@ -1783,6 +1955,19 @@ function HouseScreen({
   onOpenDetails: () => void;
   onOpenImprovements: () => void;
   onOpenAddImprovement: () => void;
+  selectedImprovement: HouseImprovementDetail | null;
+  onOpenImprovement: (improvement: HouseImprovement) => void;
+  onDeleteImprovement: () => void;
+  onUpdateProject: (input: any) => void;
+  onCreateItem: (input: any) => void;
+  onUpdateItem: (id: string, input: any) => void;
+  onDeleteItem: (id: string) => void;
+  onCreateExpense: (input: any) => void;
+  onUpdateExpense: (id: string, input: any) => void;
+  onDeleteExpense: (id: string) => void;
+  onLinkDocument: (input: any) => void;
+  onUnlinkDocument: (id: string) => void;
+  improvementActionError: string | null;
   onBackToHouse: () => void;
   onRefreshPublicData: () => void;
   onOpenDocuments: () => void;
@@ -1791,11 +1976,21 @@ function HouseScreen({
   onRemoveHousePhoto: () => void;
   onImprovementTitleChange: (value: string) => void;
   onImprovementYearChange: (value: string) => void;
+  onImprovementDateChange: (value: string) => void;
+  onImprovementDatePrecisionChange: (value: "exact" | "month" | "year" | "unknown") => void;
+  onImprovementStatusChange: (value: keyof typeof improvementStatusLabels) => void;
+  onToggleImprovementDatePicker: () => void;
   onImprovementDescriptionChange: (value: string) => void;
   onImprovementCategoryChange: (value: HouseImprovementCategory | "") => void;
-  onImprovementDocumentReferenceChange: (value: string) => void;
   onImprovementCostChange: (value: string) => void;
   onSaveImprovement: () => void;
+  pendingDocumentName: string | null;
+  pendingDocumentMimeType: HouseDocument["mimeType"] | null;
+  pendingImprovementDocuments: Array<Pick<UploadHouseDocumentRequest, "fileName" | "mimeType" | "sizeBytes" | "contentBase64">>;
+  onRemovePendingDocument: () => void;
+  onPickImprovementDocument: (source: "camera" | "library" | "file") => void;
+  onRemoveImprovementDocument: (index: number) => void;
+  onUploadImprovementDocument: () => void;
 }) {
   if (!house) {
     return <HouseOnboarding {...onboarding} />;
@@ -1806,7 +2001,22 @@ function HouseScreen({
       <View style={styles.stack}>
         <View style={styles.screenTitleRow}>
           <SectionHeader title="Boligoplysninger" subtitle="Detaljer fra BBR." />
-          <SecondaryButton label="Tilbage" onPress={onBackToHouse} />
+          <View style={styles.houseMenuInline}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Opdater BBR"
+              disabled={isRefreshingPublicData}
+              onPress={onRefreshPublicData}
+              style={({ pressed }) => [
+                styles.iconAction,
+                pressed && !isRefreshingPublicData ? styles.secondaryButtonPressed : null,
+                isRefreshingPublicData ? styles.disabled : null
+              ]}
+            >
+              <MaterialCommunityIcons color={theme.primary} name="refresh" size={22} />
+            </Pressable>
+            <SecondaryButton label="Tilbage" onPress={onBackToHouse} />
+          </View>
         </View>
         <Card>
           {publicDataProfile ? (
@@ -1825,13 +2035,6 @@ function HouseScreen({
                   defaultExpanded={index < 2}
                 />
               ))}
-              <View style={styles.summaryActions}>
-                <SecondaryButton
-                  label={isRefreshingPublicData ? "Opdaterer..." : "Opdater BBR"}
-                  disabled={isRefreshingPublicData}
-                  onPress={onRefreshPublicData}
-                />
-              </View>
               {publicDataRefreshMessage ? (
                 <Text
                   style={[
@@ -1877,13 +2080,20 @@ function HouseScreen({
           />
         ) : (
           <View style={styles.taskList}>
-            {improvements.map((improvement) => (
-              <ImprovementCard key={improvement.id} improvement={improvement} />
-            ))}
+            {[...improvements]
+              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+              .map((improvement) => (
+              <ImprovementCard key={improvement.id} improvement={improvement} onPress={() => onOpenImprovement(improvement)} />
+              ))}
           </View>
         )}
       </View>
     );
+  }
+
+  if (houseView === "improvementDetail") {
+    const project = selectedImprovement;
+    return <View style={styles.stack}><View style={styles.screenTitleRow}><SectionHeader title={project?.title ?? "Forbedring"} subtitle="Afsluttet forbedring" /><SecondaryButton label="Tilbage" onPress={onBackToHouse} /></View>{project ? <SimpleImprovementDetail project={project} documents={houseDocuments} onUpdate={onUpdateProject} onDelete={onDeleteImprovement} onAttach={(documentId) => onLinkDocument({ documentId })} onDetach={onUnlinkDocument} pendingDocumentName={pendingDocumentName} pendingDocumentMimeType={pendingDocumentMimeType} onRemovePending={onRemovePendingDocument} onPickDocument={onPickImprovementDocument} onUploadPending={onUploadImprovementDocument} /> : <ActivityIndicator color={theme.primary} />}</View>;
   }
 
   if (houseView === "addImprovement") {
@@ -1901,24 +2111,37 @@ function HouseScreen({
               editable={!isSavingImprovement}
               onChangeText={onImprovementTitleChange}
               placeholder="Fx Nye vinduer"
-              placeholderTextColor={theme.muted}
+              placeholderTextColor={theme.subtle}
               style={styles.input}
               value={improvementTitle}
             />
           </View>
           <View style={styles.formSection}>
-            <Text style={styles.label}>År</Text>
-            <TextInput
-              accessibilityLabel="År for forbedring"
-              editable={!isSavingImprovement}
-              inputMode="numeric"
-              keyboardType="number-pad"
-              maxLength={4}
-              onChangeText={onImprovementYearChange}
-              placeholder="2024"
-              placeholderTextColor={theme.muted}
-              style={styles.input}
-              value={improvementYear}
+            <Text style={styles.label}>Afsluttet dato</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Afsluttet dato"
+              disabled={isSavingImprovement}
+              onPress={onToggleImprovementDatePicker}
+              style={styles.dateField}
+            >
+              <Text style={improvementDate ? styles.dateFieldValue : styles.dateFieldPlaceholder}>
+                {improvementDate ? formatDisplayDate(improvementDate) : "Vælg dato"}
+              </Text>
+              <Text style={styles.dateFieldIcon}>⌄</Text>
+            </Pressable>
+            <DeadlineDatePicker
+              title="Vælg afsluttet dato"
+              visible={showImprovementDatePicker}
+              selectedDate={improvementDate}
+              onClose={onToggleImprovementDatePicker}
+              onClear={() => {
+                onImprovementDateChange("");
+                onToggleImprovementDatePicker();
+              }}
+              onSelect={(value) => {
+                onImprovementDateChange(value);
+              }}
             />
           </View>
           <View style={styles.formSection}>
@@ -1967,31 +2190,19 @@ function HouseScreen({
             />
           </View>
           <View style={styles.formSection}>
-            <Text style={styles.label}>Dokumentreference</Text>
+            <Text style={styles.label}>Beløb i DKK</Text>
             <TextInput
-              accessibilityLabel="Dokumentreference"
+              accessibilityLabel="Beløb i DKK"
               editable={!isSavingImprovement}
-              onChangeText={onImprovementDocumentReferenceChange}
-              placeholder="Fx Faktura i dokumentarkiv"
-              placeholderTextColor={theme.muted}
-              style={styles.input}
-              value={improvementDocumentReference}
-            />
-          </View>
-          <View style={styles.formSection}>
-            <Text style={styles.label}>Udgift</Text>
-            <TextInput
-              accessibilityLabel="Udgift i kroner"
-              editable={!isSavingImprovement}
-              inputMode="decimal"
               keyboardType="decimal-pad"
               onChangeText={onImprovementCostChange}
-              placeholder="Valgfrit beløb i kr."
-              placeholderTextColor={theme.muted}
+              placeholder="0,00"
+              placeholderTextColor={theme.subtle}
               style={styles.input}
               value={improvementCost}
             />
           </View>
+          <View style={styles.formSection}><Text style={styles.label}>Dokumenter</Text>{pendingImprovementDocuments.map((document, index) => <PendingDocumentRow key={`${document.fileName}-${index}`} fileName={document.fileName} mimeType={document.mimeType === "application/pdf" ? "application/pdf" : "image/jpeg"} onRemove={() => onRemoveImprovementDocument(index)} />)}<SecondaryButton label="Tilføj dokument" disabled={isSavingImprovement} onPress={() => showDocumentSourcePicker(onPickImprovementDocument)} /><Text style={styles.metaText}>Dokumenttype: Forbedringsdokument</Text></View>
           {improvementFormError ? (
             <Text style={styles.errorText}>{improvementFormError}</Text>
           ) : null}
@@ -2019,7 +2230,9 @@ function HouseScreen({
   const basementAreaFact = publicDataProfile?.sections
     .find((section) => section.key === "floorsAndBasement")
     ?.facts.find((fact) => fact.key === "basement_area");
-  const latestImprovements = improvements.slice(0, 2);
+  const latestImprovements = [...improvements]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 3);
   const houseTypeValue = productHouseTypeValue(
     factMap.get("housing_type"),
     buildingUseFact
@@ -2061,7 +2274,7 @@ function HouseScreen({
           />
         ) : null}
         <View style={styles.houseIdentity}>
-          <Text style={styles.houseAddress}>{house.addressLabel}</Text>
+          <Text style={styles.houseAddress}>{formatHouseAddressLabel(house.addressLabel)}</Text>
           <Text style={styles.houseMeta}>
             {identityType} · {updatedAtLabel(publicDataProfile?.fetchedAt ?? publicDataSummary?.fetchedAt)}
           </Text>
@@ -2092,7 +2305,7 @@ function HouseScreen({
               key={key}
               style={styles.overviewFactCard}
             >
-              <Text style={styles.overviewFactIcon}>{overviewFactIcons[key]}</Text>
+              <MaterialCommunityIcons color={theme.primary} name={overviewFactIcons[key] as React.ComponentProps<typeof MaterialCommunityIcons>["name"]} size={key === "cadastral_number" ? 23 : 20} />
               <Text style={styles.overviewFactLabel}>{overviewFactLabels[key]}</Text>
               <Text style={styles.overviewFactValue}>{value}</Text>
             </View>
@@ -2129,7 +2342,7 @@ function HouseScreen({
           </Card>
         ) : latestImprovements.length > 0 ? (
           latestImprovements.map((improvement) => (
-            <ImprovementCard key={improvement.id} improvement={improvement} />
+            <ImprovementCard key={improvement.id} improvement={improvement} onPress={() => onOpenImprovement(improvement)} />
           ))
         ) : (
           <EmptyState
@@ -2227,9 +2440,9 @@ function HousePhotoMenu({
   );
 }
 
-function ImprovementCard({ improvement }: { improvement: HouseImprovement }) {
+function ImprovementCard({ improvement, onPress = () => undefined }: { improvement: HouseImprovement; onPress?: () => void }) {
   return (
-    <View style={styles.improvementCard}>
+    <Pressable accessibilityRole="button" onPress={onPress} style={styles.improvementCard}>
       <View style={styles.cardHeaderRow}>
         <View style={styles.taskTitleGroup}>
           <Text style={styles.taskRowTitle}>{improvement.title}</Text>
@@ -2242,7 +2455,7 @@ function ImprovementCard({ improvement }: { improvement: HouseImprovement }) {
           <Pill>{improvementCategoryLabels[improvement.category]}</Pill>
         ) : null}
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -3641,7 +3854,7 @@ const documentTypeGroups: Array<{ label: string; options: Array<[HouseDocumentTy
   { label: "Manualer og garantier", options: [["manual", "Brugermanual"], ["warranty", "Garantibevis"]] },
   { label: "Fakturaer og kvitteringer", options: [["invoice", "Faktura"], ["receipt", "Kvittering"]] },
   { label: "Aftaler", options: [["purchase_agreement", "Købsaftale"], ["insurance_policy", "Forsikringspolice"], ["service_agreement", "Serviceaftale"]] },
-  { label: "Forbedringer", options: [["renovation_documentation", "Renoveringsdokumentation"]] },
+  { label: "Forbedringer", options: [["improvement_document", "Forbedringsdokument"]] },
   { label: "Andet", options: [["other", "Andet dokument"]] }
 ];
 
@@ -3649,7 +3862,7 @@ const documentTypesWithAmount: ReadonlySet<HouseDocumentType> = new Set([
   "invoice",
   "receipt",
   "purchase_agreement",
-  "renovation_documentation"
+  "improvement_document"
 ]);
 
 function documentTypeHasAmount(value: HouseDocumentType | null) {
@@ -3696,6 +3909,21 @@ function DocumentListIcon({ mimeType }: { mimeType: HouseDocument["mimeType"] })
   }
 
   return <View style={[styles.documentListIcon, styles.documentImageIcon]}><DocumentImageGlyph /></View>;
+}
+
+function PendingDocumentRow({ fileName, mimeType, statusText = "Klar til at blive gemt", onRemove }: { fileName: string; mimeType: HouseDocument["mimeType"]; statusText?: string; onRemove: () => void }) {
+  return (
+    <View style={styles.pendingDocumentRow}>
+      <DocumentListIcon mimeType={mimeType} />
+      <View style={styles.fileTextGroup}>
+        <Text numberOfLines={1} style={styles.taskRowTitle}>{fileName}</Text>
+        <Text style={styles.metaText}>{statusText}</Text>
+      </View>
+      <Pressable accessibilityRole="button" accessibilityLabel="Fjern fil" hitSlop={8} onPress={onRemove} style={styles.pendingDocumentRemove}>
+        <MaterialCommunityIcons color={theme.error} name="close-circle" size={28} />
+      </Pressable>
+    </View>
+  );
 }
 
 function CategoryIcon({ category }: { category: HouseDocumentCategory }) {
@@ -3766,6 +3994,7 @@ function DocumentsScreen({
 }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "important" | "expiring">("all");
+  const [categoryFilter, setCategoryFilter] = useState<HouseDocumentCategory | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [documentDate, setDocumentDate] = useState("");
@@ -3791,7 +4020,8 @@ function DocumentsScreen({
   const isExpiring = (d: HouseDocument) => Boolean(d.expiresAt && new Date(d.expiresAt) <= soon);
   const filtered = documents.filter((d) => {
     const matchesSearch = (d.title ?? d.originalFilename).toLowerCase().includes(search.toLowerCase());
-    return matchesSearch && (filter === "all" || (filter === "important" && d.isImportant) || (filter === "expiring" && isExpiring(d)));
+    const matchesCategory = categoryFilter === null || d.category === categoryFilter;
+    return matchesSearch && matchesCategory && (filter === "all" || (filter === "important" && d.isImportant) || (filter === "expiring" && isExpiring(d)));
   });
   const categories: Array<[HouseDocumentCategory, string]> = [["reports", "Rapporter"], ["official", "Officielle oplysninger"], ["improvements", "Forbedringer"], ["manuals_warranties", "Manualer & garantier"]];
   const resetForm = () => { setShowForm(false); setTitle(""); setDocumentDate(""); setDocumentType(null); setRelatedParty(""); setAmount(""); setExpiresAt(""); setNote(""); setIsImportant(false); setShowDocumentDatePicker(false); setShowExpiryDatePicker(false); };
@@ -3806,9 +4036,9 @@ function DocumentsScreen({
         {([["all", "Alle"], ["important", "! Vigtige"], ["expiring", "Udløber snart"]] as const).map(([key, label]) => <Pressable key={key} onPress={() => setFilter(key)} style={[styles.documentChip, filter === key && styles.documentChipActive]}><Text style={[styles.documentChipText, filter === key && styles.documentChipTextActive]}>{label}</Text></Pressable>)}
       </ScrollView>
       <Text style={styles.documentSectionTitle}>Kategorier</Text>
-      <View style={styles.categoryGrid}>{categories.map(([key, label]) => <View key={key} style={styles.categoryCard}><CategoryIcon category={key} /><Text style={styles.categoryTitle}>{label}</Text><Text style={styles.categoryCount}>{documents.filter((d) => d.category === key).length} filer</Text></View>)}</View>
+      <View style={styles.categoryGrid}>{categories.map(([key, label]) => { const selected = categoryFilter === key; return <Pressable accessibilityRole="button" accessibilityState={{ selected }} key={key} onPress={() => setCategoryFilter(selected ? null : key)} style={[styles.categoryCard, selected ? styles.categoryCardActive : null]}><CategoryIcon category={key} /><Text style={styles.categoryTitle}>{label}</Text><Text style={styles.categoryCount}>{documents.filter((d) => d.category === key).length} filer</Text></Pressable>; })}</View>
       <Text style={styles.documentSectionTitle}>Seneste dokumenter</Text>
-      {filtered.length ? filtered.map((document) => <Pressable key={document.id} style={styles.documentListRow} onPress={() => setSelectedDocument(document)}><DocumentListIcon mimeType={document.mimeType} /><View style={styles.fileTextGroup}><Text numberOfLines={1} style={styles.taskRowTitle}>{document.title ?? document.originalFilename}</Text><Text style={styles.metaText}>{documentCreatedLabel(document.createdAt)} · {(document.sizeBytes / 1024 / 1024).toFixed(1)} MB</Text>{isMissing(document) ? <Text style={styles.missingLabel}>MANGLER</Text> : null}</View><Text style={styles.documentChevron}>›</Text></Pressable>) : <EmptyState title="Ingen dokumenter matcher" body="Prøv et andet søgeord eller filter." />}
+      {filtered.length ? filtered.map((document) => <Pressable key={document.id} style={styles.documentListRow} onPress={() => setSelectedDocument(document)}><DocumentListIcon mimeType={document.mimeType} /><View style={styles.fileTextGroup}><Text numberOfLines={1} style={styles.taskRowTitle}>{document.title ?? document.originalFilename}</Text><Text style={styles.metaText}>{documentCreatedLabel(document.createdAt)} · {(document.sizeBytes / 1024 / 1024).toFixed(1)} MB</Text><View style={styles.documentMetaRow}><Text style={styles.documentTypeChip}>{document.documentType ? documentTypeLabel(document.documentType) : "Mangler type"}</Text>{isMissing(document) ? <Text style={styles.missingLabel}>MANGLER</Text> : null}</View></View><Text style={styles.documentChevron}>›</Text></Pressable>) : <EmptyState title="Ingen dokumenter matcher" body="Prøv et andet søgeord eller filter." />}
       <Modal visible={showForm} animationType="slide" onRequestClose={resetForm}>
         <SafeAreaView style={styles.modalSurface}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.keyboardFrame}>
@@ -4094,6 +4324,7 @@ export default function App() {
     mimeType: string;
   } | null>(null);
   const [pendingDocument, setPendingDocument] = useState<Pick<UploadHouseDocumentRequest, "fileName" | "mimeType" | "sizeBytes" | "contentBase64"> | null>(null);
+  const [pendingImprovementDocuments, setPendingImprovementDocuments] = useState<Array<Pick<UploadHouseDocumentRequest, "fileName" | "mimeType" | "sizeBytes" | "contentBase64">>>([]);
   const [isPickingDocument, setIsPickingDocument] = useState(false);
   const [maintenanceView, setMaintenanceView] = useState<MaintenanceView>("main");
   const [selectedHistoryDetail, setSelectedHistoryDetail] =
@@ -4105,6 +4336,7 @@ export default function App() {
     useState<MaintenanceFilter>("current");
   const [historyYearFilter, setHistoryYearFilter] = useState<number | null>(null);
   const [improvements, setImprovements] = useState<HouseImprovement[]>([]);
+  const [selectedImprovement, setSelectedImprovement] = useState<HouseImprovementDetail | null>(null);
   const [housePhoto, setHousePhoto] = useState<HouseMedia | null>(null);
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
@@ -4134,17 +4366,21 @@ export default function App() {
   const [taskFormError, setTaskFormError] = useState<string | null>(null);
   const [improvementTitle, setImprovementTitle] = useState("");
   const [improvementYear, setImprovementYear] = useState("");
+  const [improvementDate, setImprovementDate] = useState("");
+  const [improvementDatePrecision, setImprovementDatePrecision] = useState<"exact" | "month" | "year" | "unknown">("year");
+  const [showImprovementDatePicker, setShowImprovementDatePicker] = useState(false);
+  const [improvementStatus, setImprovementStatus] = useState<keyof typeof improvementStatusLabels>("planned");
   const [improvementDescription, setImprovementDescription] = useState("");
   const [improvementCategory, setImprovementCategory] = useState<
     HouseImprovementCategory | ""
   >("");
-  const [improvementDocumentReference, setImprovementDocumentReference] =
-    useState("");
   const [improvementCost, setImprovementCost] = useState("");
   const [improvementFormError, setImprovementFormError] = useState<string | null>(null);
+  const [improvementActionError, setImprovementActionError] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [publicDataRefreshMessage, setPublicDataRefreshMessage] =
     useState<PublicDataRefreshMessage | null>(null);
+  const mainScrollRef = useRef<ScrollView | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -4213,9 +4449,12 @@ export default function App() {
     setTaskFormError(null);
     setImprovementTitle("");
     setImprovementYear("");
+    setImprovementDate("");
+    setImprovementDatePrecision("year");
+    setShowImprovementDatePicker(false);
+    setImprovementStatus("planned");
     setImprovementDescription("");
     setImprovementCategory("");
-    setImprovementDocumentReference("");
     setImprovementCost("");
     setImprovementFormError(null);
     setPhotoError(null);
@@ -4791,11 +5030,13 @@ export default function App() {
   function resetImprovementForm() {
     setImprovementTitle("");
     setImprovementYear("");
+    setImprovementDate("");
     setImprovementDescription("");
     setImprovementCategory("");
-    setImprovementDocumentReference("");
     setImprovementCost("");
     setImprovementFormError(null);
+    setPendingDocument(null);
+    setPendingImprovementDocuments([]);
   }
 
   async function saveImprovement() {
@@ -4805,29 +5046,30 @@ export default function App() {
     }
 
     const title = improvementTitle.trim();
-    const year = Number(improvementYear.trim());
+    const completedDate = improvementDate;
     const costText = improvementCost.trim().replace(",", ".");
 
     if (!title) {
       setImprovementFormError("Titel er påkrævet.");
       return;
     }
-
-    if (!Number.isInteger(year) || year < 1700 || year > 2200) {
-      setImprovementFormError("Skriv et gyldigt år.");
+    if (!improvementCategory) {
+      setImprovementFormError("Vælg en kategori.");
       return;
     }
 
-    const parsedCostAmountMinor = costText
-      ? Math.round(Number(costText) * 100)
-      : undefined;
+    if (!completedDate) {
+      setImprovementFormError("Vælg en afsluttet dato.");
+      return;
+    }
+
+    const parsedCost = parseDanishPriceInput(costText);
+    const parsedCostAmountMinor = parsedCost.ok ? parsedCost.amountMinor ?? undefined : undefined;
 
     if (
       costText &&
       (
-        parsedCostAmountMinor === undefined ||
-        !Number.isFinite(parsedCostAmountMinor) ||
-        parsedCostAmountMinor < 0
+      !parsedCost.ok || parsedCostAmountMinor === undefined
       )
     ) {
       setImprovementFormError("Udgift skal være et gyldigt beløb.");
@@ -4836,16 +5078,13 @@ export default function App() {
 
     const payload: CreateHouseImprovementRequest = {
       title,
-      improvementYear: year,
+      completedDate,
       ...(improvementDescription.trim()
         ? { description: improvementDescription.trim() }
         : {}),
-      ...(improvementCategory ? { category: improvementCategory } : {}),
-      ...(improvementDocumentReference.trim()
-        ? { documentReference: improvementDocumentReference.trim() }
-        : {}),
+      category: improvementCategory,
       ...(parsedCostAmountMinor !== undefined
-        ? { costAmountMinor: parsedCostAmountMinor, costCurrency: "DKK" }
+        ? { totalAmountMinor: parsedCostAmountMinor }
         : {})
     };
 
@@ -4854,7 +5093,18 @@ export default function App() {
     setError(null);
 
     try {
-      await apiClient.createHouseImprovement(selectedHouse.id, payload);
+      const createdResponse = await apiClient.createHouseImprovement(selectedHouse.id, payload);
+      for (const pendingImprovementDocument of pendingImprovementDocuments) {
+        const uploaded = await apiClient.uploadHouseDocument(selectedHouse.id, {
+          ...pendingImprovementDocument,
+          title: pendingImprovementDocument.fileName,
+          documentType: "improvement_document",
+          documentDate: completedDate,
+          category: "improvements"
+        });
+        await apiClient.attachHouseImprovementDocument(selectedHouse.id, createdResponse.improvement.id, { documentId: uploaded.document.id });
+      }
+      await loadHouseDocuments(selectedHouse.id);
       await loadHouseImprovements(selectedHouse.id);
       resetImprovementForm();
       setHouseView("overview");
@@ -4863,6 +5113,31 @@ export default function App() {
     } finally {
       setLoadingAction(null);
     }
+  }
+
+  async function reloadImprovementDetail() {
+    if (!selectedHouse || !selectedImprovement) return;
+    const response = await apiClient.getHouseImprovement(selectedHouse.id, selectedImprovement.id);
+    setSelectedImprovement(response.improvement);
+    await loadHouseImprovements(selectedHouse.id);
+  }
+
+  async function uploadPendingImprovementDocument() {
+    if (!selectedHouse || !selectedImprovement || !pendingDocument) return;
+    setLoadingAction("improvementDocument"); setImprovementActionError(null);
+    try {
+      const uploaded = await apiClient.uploadHouseDocument(selectedHouse.id, { ...pendingDocument, title: pendingDocument.fileName, documentType: "improvement_document", documentDate: selectedImprovement.completedDate, category: "improvements" });
+      await apiClient.attachHouseImprovementDocument(selectedHouse.id, selectedImprovement.id, { documentId: uploaded.document.id });
+      setPendingDocument(null); await loadHouseDocuments(selectedHouse.id); await reloadImprovementDetail();
+    } catch (caughtError) { setImprovementActionError(userFacingError(caughtError)); }
+    finally { setLoadingAction(null); }
+  }
+
+  async function runImprovementAction(action: Exclude<LoadingAction, "app" | "auth" | "profile" | "address" | "house" | "task" | "publicData" | "improvement" | "photo" | "recommendation" | "logout">, work: () => Promise<unknown>) {
+    setLoadingAction(action); setImprovementActionError(null);
+    try { await work(); await reloadImprovementDetail(); }
+    catch (caughtError) { setImprovementActionError(userFacingError(caughtError)); }
+    finally { setLoadingAction(null); }
   }
 
   async function pickHousePhoto(source: "library" | "camera") {
@@ -4874,7 +5149,6 @@ export default function App() {
     setPhotoError(null);
 
     try {
-      const ImagePicker = await import("expo-image-picker");
       const permission =
         source === "camera"
           ? await ImagePicker.requestCameraPermissionsAsync()
@@ -5260,7 +5534,7 @@ export default function App() {
     }
   }
 
-  async function pickHouseDocument(source: "camera" | "library" | "file") {
+  async function pickHouseDocument(source: "camera" | "library" | "file", target: "document" | "improvement" = "document") {
     if (!selectedHouse || loadingAction === "photo") {
       return;
     }
@@ -5269,9 +5543,16 @@ export default function App() {
     setIsPickingDocument(true);
     setError(null);
 
+    const storePickedDocument = (document: Pick<UploadHouseDocumentRequest, "fileName" | "mimeType" | "sizeBytes" | "contentBase64">) => {
+      if (target === "improvement") {
+        setPendingImprovementDocuments((current) => [...current, document]);
+      } else {
+        setPendingDocument(document);
+      }
+    };
+
     try {
       if (source === "camera" || source === "library") {
-        const ImagePicker = await import("expo-image-picker");
         const permission =
           source === "camera"
             ? await ImagePicker.requestCameraPermissionsAsync()
@@ -5317,14 +5598,13 @@ export default function App() {
         const sizeBytes =
           asset.fileSize ?? Math.floor((base64.replace(/=+$/, "").length * 3) / 4);
 
-        setPendingDocument({
+        storePickedDocument({
           fileName: asset.fileName ?? `vedligehold.${mimeType.split("/")[1] ?? "jpg"}`,
           mimeType: mimeType as "image/jpeg" | "image/png" | "image/heic" | "image/heif",
           sizeBytes,
           contentBase64: base64
         });
       } else {
-        const DocumentPicker = await import("expo-document-picker");
         const result = await DocumentPicker.getDocumentAsync({
           type: "application/pdf",
           copyToCacheDirectory: true,
@@ -5346,7 +5626,7 @@ export default function App() {
           encoding: FileSystem.EncodingType.Base64
         });
 
-        setPendingDocument({
+        storePickedDocument({
           fileName: asset.name,
           mimeType: "application/pdf",
           sizeBytes:
@@ -5561,6 +5841,7 @@ export default function App() {
           publicDataSummary={selectedPublicDataSummary}
           publicDataProfile={publicDataProfile}
           improvements={improvements}
+          houseDocuments={houseDocuments}
           housePhoto={housePhoto}
           housePhotoUri={
             housePhoto ? `${apiClient.baseUrl}${housePhoto.contentPath}` : null
@@ -5576,18 +5857,47 @@ export default function App() {
           improvementYear={improvementYear}
           improvementDescription={improvementDescription}
           improvementCategory={improvementCategory}
-          improvementDocumentReference={improvementDocumentReference}
           improvementCost={improvementCost}
           improvementFormError={improvementFormError}
           photoError={photoError}
           isRefreshingPublicData={loadingAction === "publicData"}
           isLoadingImprovements={false}
-          isSavingImprovement={loadingAction === "improvement"}
+          isSavingImprovement={loadingAction === "improvement" || loadingAction === "improvementProject" || loadingAction === "improvementItem" || loadingAction === "improvementExpense" || loadingAction === "improvementDocument"}
           isUploadingPhoto={loadingAction === "photo"}
           publicDataRefreshMessage={publicDataRefreshMessage}
           onOpenDetails={() => setHouseView("details")}
           onOpenImprovements={() => setHouseView("improvements")}
-          onOpenAddImprovement={() => setHouseView("addImprovement")}
+          onOpenAddImprovement={() => {
+            resetImprovementForm();
+            setHouseView("addImprovement");
+            requestAnimationFrame(() => mainScrollRef.current?.scrollTo({ y: 0, animated: false }));
+          }}
+          selectedImprovement={selectedImprovement}
+          onOpenImprovement={(improvement) => {
+            if (!selectedHouse) return;
+            setLoadingAction("improvement");
+            void apiClient.getHouseImprovement(selectedHouse.id, improvement.id).then((response) => {
+              setSelectedImprovement(response.improvement);
+              setHouseView("improvementDetail");
+            }).catch((caughtError) => setError(userFacingError(caughtError))).finally(() => setLoadingAction(null));
+          }}
+          onDeleteImprovement={() => {
+            if (!selectedHouse || !selectedImprovement) return;
+            Alert.alert("Arkivér projekt?", "Projektet skjules fra oversigten.", [
+              { text: "Annuller", style: "cancel" },
+              { text: "Arkivér", style: "destructive", onPress: () => void runImprovementAction("improvementProject", async () => { await apiClient.deleteHouseImprovement(selectedHouse.id, selectedImprovement.id); await loadHouseImprovements(selectedHouse.id); setHouseView("improvements"); }) }
+            ]);
+          }}
+          onUpdateProject={(input) => { if (selectedHouse && selectedImprovement) void runImprovementAction("improvementProject", () => apiClient.updateHouseImprovement(selectedHouse.id, selectedImprovement.id, input)); }}
+          onCreateItem={() => undefined}
+          onUpdateItem={() => undefined}
+          onDeleteItem={() => undefined}
+          onCreateExpense={() => undefined}
+          onUpdateExpense={() => undefined}
+          onDeleteExpense={() => undefined}
+          onLinkDocument={(input) => { if (selectedHouse && selectedImprovement) void runImprovementAction("improvementDocument", () => apiClient.attachHouseImprovementDocument(selectedHouse.id, selectedImprovement.id, input)); }}
+          onUnlinkDocument={(documentId) => { if (selectedHouse && selectedImprovement) void runImprovementAction("improvementDocument", () => apiClient.detachHouseImprovementDocument(selectedHouse.id, selectedImprovement.id, documentId)); }}
+          improvementActionError={improvementActionError}
           onBackToHouse={() => {
             resetImprovementForm();
             setHouseView("overview");
@@ -5605,14 +5915,28 @@ export default function App() {
             setImprovementYear(value.replace(/[^\d]/g, "").slice(0, 4));
             setImprovementFormError(null);
           }}
+          improvementDate={improvementDate}
+          improvementDatePrecision={improvementDatePrecision}
+          improvementStatus={improvementStatus}
+          showImprovementDatePicker={showImprovementDatePicker}
+          onImprovementDateChange={(value) => { setImprovementDate(value); setImprovementFormError(null); }}
+          onImprovementDatePrecisionChange={setImprovementDatePrecision}
+          onImprovementStatusChange={setImprovementStatus}
+          onToggleImprovementDatePicker={() => setShowImprovementDatePicker((visible) => !visible)}
           onImprovementDescriptionChange={setImprovementDescription}
           onImprovementCategoryChange={setImprovementCategory}
-          onImprovementDocumentReferenceChange={setImprovementDocumentReference}
           onImprovementCostChange={(value) => {
             setImprovementCost(value);
             setImprovementFormError(null);
           }}
           onSaveImprovement={() => void saveImprovement()}
+          pendingDocumentName={pendingDocument?.fileName ?? null}
+          pendingDocumentMimeType={pendingDocument?.mimeType === "application/pdf" ? "application/pdf" : pendingDocument ? "image/jpeg" : null}
+          pendingImprovementDocuments={pendingImprovementDocuments}
+          onRemovePendingDocument={() => setPendingDocument(null)}
+          onPickImprovementDocument={(source) => void pickHouseDocument(source, "improvement")}
+          onRemoveImprovementDocument={(index) => setPendingImprovementDocuments((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+          onUploadImprovementDocument={() => void uploadPendingImprovementDocument()}
         />
       );
     }
@@ -5901,6 +6225,7 @@ export default function App() {
       <StatusBar style="dark" />
       <View style={styles.appFrame}>
         <ScrollView
+          ref={mainScrollRef}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
@@ -6676,12 +7001,15 @@ const styles = StyleSheet.create({
   documentSectionTitle: { color: theme.text, fontSize: 21, fontWeight: "900", marginTop: 8 },
   categoryGrid: { columnGap: 10, flexDirection: "row", flexWrap: "wrap", rowGap: 10 },
   categoryCard: { backgroundColor: theme.surface, borderColor: theme.border, borderRadius: 14, borderWidth: 1, minHeight: 120, padding: 14, width: "48%" },
+  categoryCardActive: { backgroundColor: theme.primarySoft, borderColor: theme.primary },
   categoryIcon: { alignItems: "center", backgroundColor: theme.primarySoft, borderRadius: 10, height: 48, justifyContent: "center", marginBottom: 10, width: 48 },
   categoryTitle: { color: theme.text, fontSize: 15, fontWeight: "800" },
   categoryCount: { color: theme.subtle, fontSize: 13, marginTop: 4 },
   documentRow: { alignItems: "center", backgroundColor: theme.surface, borderRadius: 14, columnGap: 12, minHeight: 82, padding: 12 },
   documentListRow: { alignItems: "center", backgroundColor: theme.surface, borderRadius: 14, columnGap: 14, flexDirection: "row", minHeight: 86, paddingHorizontal: 14, paddingVertical: 12 },
   documentListIcon: { alignItems: "center", borderRadius: 11, height: 54, justifyContent: "center", width: 54 },
+  pendingDocumentRow: { alignItems: "center", backgroundColor: theme.surface, borderRadius: 14, columnGap: 12, flexDirection: "row", minHeight: 76, paddingHorizontal: 10, paddingVertical: 10 },
+  pendingDocumentRemove: { alignItems: "center", justifyContent: "center", padding: 2 },
   documentPdfIcon: { backgroundColor: theme.errorSoft },
   documentPdfIconText: { color: theme.error, fontSize: 13, fontWeight: "900" },
   documentImageIcon: { backgroundColor: theme.primarySoft },
@@ -6689,6 +7017,8 @@ const styles = StyleSheet.create({
   documentImageGlyphSun: { backgroundColor: theme.primary, borderRadius: 4, height: 6, position: "absolute", right: 4, top: 4, width: 6 },
   documentImageGlyphMountainLeft: { borderBottomColor: theme.primary, borderBottomWidth: 10, borderLeftColor: "transparent", borderLeftWidth: 7, borderRightColor: "transparent", borderRightWidth: 7, bottom: 1, left: 2, position: "absolute", width: 0 },
   documentImageGlyphMountainRight: { borderBottomColor: theme.primary, borderBottomWidth: 7, borderLeftColor: "transparent", borderLeftWidth: 5, borderRightColor: "transparent", borderRightWidth: 5, bottom: 1, position: "absolute", right: 1, width: 0 },
+  documentMetaRow: { alignItems: "center", columnGap: 8, flexDirection: "row", flexWrap: "wrap" },
+  documentTypeChip: { backgroundColor: theme.primarySoft, borderRadius: 8, color: theme.primary, fontSize: 11, fontWeight: "800", overflow: "hidden", paddingHorizontal: 8, paddingVertical: 4 },
   documentTypeIcon: { backgroundColor: theme.primarySoft, borderRadius: 10, color: theme.primary, fontSize: 20, fontWeight: "900", padding: 12 },
   pdfIcon: { backgroundColor: theme.errorSoft, color: theme.error, fontSize: 12 },
   documentChevron: { color: theme.subtle, fontSize: 32 },
@@ -7056,12 +7386,12 @@ const styles = StyleSheet.create({
   },
   overviewFactCard: {
     backgroundColor: theme.surface,
-    borderColor: theme.border,
-    borderRadius: 8,
+    borderColor: "#D8E1EA",
+    borderRadius: 10,
     borderWidth: 1,
-    minHeight: 96,
-    padding: 12,
-    rowGap: 5,
+    minHeight: 98,
+    padding: 14,
+    rowGap: 6,
     width: "48%"
   },
   overviewFactIcon: {
@@ -7071,16 +7401,18 @@ const styles = StyleSheet.create({
     lineHeight: 22
   },
   overviewFactLabel: {
-    color: theme.muted,
-    fontSize: 12,
+    color: "#63748B",
+    fontSize: 11,
     fontWeight: "800",
-    lineHeight: 16
+    letterSpacing: 0.5,
+    lineHeight: 15,
+    textTransform: "uppercase"
   },
   overviewFactValue: {
-    color: theme.text,
-    fontSize: 18,
-    fontWeight: "700",
-    lineHeight: 23
+    color: "#19202A",
+    fontSize: 16,
+    fontWeight: "800",
+    lineHeight: 21
   },
   linkRow: {
     alignItems: "center",

@@ -23,6 +23,8 @@ import {
 import type {
   AppBootstrapResponse,
   CreateHouseImprovementRequest,
+  UpdateHouseImprovementRequest,
+  AttachHouseImprovementDocumentRequest,
   CreateMaintenanceTaskRequest,
   AcceptMaintenanceRecommendationRequest,
   CompleteMaintenanceTaskRequest,
@@ -252,14 +254,13 @@ type HouseImprovementRow = {
   title: string;
   description: string | null;
   category: HouseImprovement["category"];
-  improvement_date: string | null;
-  improvement_year: number | null;
-  cost_amount_minor: number | null;
-  cost_currency: string | null;
-  document_reference: string | null;
-  status: HouseImprovement["status"];
+  completed_date: string;
+  total_amount_minor: number | null;
+  currency: "DKK";
   created_at: Date;
   updated_at: Date;
+  archived_at: Date | null;
+  document_count: number;
 };
 
 type HouseMediaRow = {
@@ -314,6 +315,8 @@ export function createOpaqueId(
     | "pubflr"
     | "pubpar"
     | "impr"
+    | "impitem"
+    | "impexp"
     | "media"
     | "mrec"
     | "mcat"
@@ -592,8 +595,8 @@ function toCurrentUser(row: UserRow): CurrentUser {
   return currentUserSchema.parse({
     id: row.id,
     email: row.email,
-    emailVerifiedAt: isoDate(row.email_verified_at),
     status: row.status,
+    emailVerifiedAt: isoDate(row.email_verified_at),
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
     lastLoginAt: isoDate(row.last_login_at)
@@ -785,14 +788,13 @@ function toHouseImprovement(row: HouseImprovementRow): HouseImprovement {
     title: row.title,
     description: row.description,
     category: row.category,
-    improvementDate: row.improvement_date,
-    improvementYear: row.improvement_year,
-    costAmountMinor: row.cost_amount_minor,
-    costCurrency: row.cost_currency,
-    documentReference: row.document_reference,
-    status: row.status,
+    completedDate: row.completed_date,
+    totalAmountMinor: row.total_amount_minor === null ? null : Number(row.total_amount_minor),
+    currency: row.currency,
+    documentCount: Number(row.document_count),
     createdAt: row.created_at.toISOString(),
-    updatedAt: row.updated_at.toISOString()
+    updatedAt: row.updated_at.toISOString(),
+    archivedAt: row.archived_at?.toISOString() ?? null
   });
 }
 
@@ -2711,31 +2713,26 @@ export async function countActiveDocumentObjectReferences(objectKey: string) {
 }
 
 export async function listHouseImprovements(userId: string, houseId: string) {
-  const house = await getSavedHouse(userId, houseId);
-  const result = await pool.query<HouseImprovementRow>(
-    `
-      select
-        id,
-        house_id,
-        title,
-        description,
-        category,
-        to_char(improvement_date, 'YYYY-MM-DD') as improvement_date,
-        improvement_year,
-        cost_amount_minor,
-        cost_currency,
-        document_reference,
-        status,
-        created_at,
-        updated_at
-      from house_improvements
-      where house_id = $1 and user_id = $2
-      order by coalesce(improvement_date, make_date(improvement_year, 1, 1)) desc, created_at desc
-    `,
-    [house.id, userId]
-  );
-
+  const result = await pool.query<HouseImprovementRow>(`${improvementSelect} order by i.completed_date desc, i.created_at desc`, [houseId, userId]);
   return result.rows.map(toHouseImprovement);
+}
+
+const improvementSelect = `select i.*, to_char(i.completed_date, 'YYYY-MM-DD') as completed_date,
+  (select count(*) from house_improvement_documents d where d.improvement_id = i.id) as document_count
+  from house_improvements i where i.house_id = $1 and i.user_id = $2 and i.archived_at is null`;
+
+async function requireImprovement(userId: string, houseId: string, improvementId: string) {
+  await getSavedHouse(userId, houseId);
+  const result = await pool.query<HouseImprovementRow>(`${improvementSelect} and i.id = $3`, [houseId, userId, improvementId]);
+  const row = result.rows[0];
+  if (!row) throw new ApiError(404, "improvement_not_found", "Forbedringen blev ikke fundet.");
+  return row;
+}
+
+export async function getHouseImprovement(userId: string, houseId: string, improvementId: string) {
+  const row = await requireImprovement(userId, houseId, improvementId);
+  const documents = await pool.query(`select d.* from house_documents d join house_improvement_documents r on r.document_id=d.id and r.house_id=d.house_id and r.user_id=d.user_id where r.improvement_id=$1 and d.archived_at is null order by r.created_at desc`, [improvementId]);
+  return { ...toHouseImprovement(row), documents: documents.rows.map(toHouseDocument) };
 }
 
 export async function createHouseImprovement(
@@ -2744,56 +2741,20 @@ export async function createHouseImprovement(
   input: CreateHouseImprovementRequest
 ) {
   const house = await getSavedHouse(userId, houseId);
-  const result = await pool.query<HouseImprovementRow>(
-    `
-      insert into house_improvements (
-        id,
-        house_id,
-        user_id,
-        title,
-        description,
-        category,
-        improvement_date,
-        improvement_year,
-        cost_amount_minor,
-        cost_currency,
-        document_reference,
-        status
-      )
-      values ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12)
-      returning
-        id,
-        house_id,
-        title,
-        description,
-        category,
-        to_char(improvement_date, 'YYYY-MM-DD') as improvement_date,
-        improvement_year,
-        cost_amount_minor,
-        cost_currency,
-        document_reference,
-        status,
-        created_at,
-        updated_at
-    `,
-    [
-      createOpaqueId("impr"),
-      house.id,
-      userId,
-      input.title.trim(),
-      input.description?.trim() || null,
-      input.category ?? null,
-      input.improvementDate ?? null,
-      input.improvementYear ?? null,
-      input.costAmountMinor ?? null,
-      input.costCurrency ?? null,
-      input.documentReference?.trim() || null,
-      input.status ?? (input.documentReference ? "documented" : "completed")
-    ]
-  );
-
-  return toHouseImprovement(result.rows[0] as HouseImprovementRow);
+  const result = await pool.query(`insert into house_improvements (id,house_id,user_id,title,description,category,completed_date,total_amount_minor) values ($1,$2,$3,$4,$5,$6,$7::date,$8) returning id`, [createOpaqueId("impr"), house.id, userId, input.title.trim(), input.description?.trim() || null, input.category, input.completedDate, input.totalAmountMinor ?? null]);
+  return getHouseImprovement(userId, houseId, result.rows[0].id);
 }
+
+export async function updateHouseImprovement(userId: string, houseId: string, improvementId: string, input: UpdateHouseImprovementRequest) {
+  await requireImprovement(userId, houseId, improvementId);
+  const fields: string[] = []; const values: unknown[] = [];
+  for (const [key, column] of [["title","title"],["description","description"],["category","category"],["completedDate","completed_date"],["totalAmountMinor","total_amount_minor"]] as const) if (key in input) { const raw = (input as any)[key]; values.push(raw ?? null); fields.push(`${column}=$${values.length}${column.endsWith("date") ? "::date" : ""}`); }
+  if (fields.length) { values.push(improvementId, houseId, userId); await pool.query(`update house_improvements set ${fields.join(",")}, updated_at=now() where id=$${values.length-2} and house_id=$${values.length-1} and user_id=$${values.length}`, values); }
+  return getHouseImprovement(userId, houseId, improvementId);
+}
+export async function archiveHouseImprovement(userId: string, houseId: string, improvementId: string) { await requireImprovement(userId, houseId, improvementId); await pool.query(`update house_improvements set archived_at=now(), updated_at=now() where id=$1 and house_id=$2 and user_id=$3`, [improvementId,houseId,userId]); }
+export async function createHouseImprovementDocumentRelation(userId:string,houseId:string,improvementId:string,input:AttachHouseImprovementDocumentRequest){await requireImprovement(userId,houseId,improvementId);const r=await pool.query(`select 1 from house_documents where id=$1 and house_id=$2 and user_id=$3 and archived_at is null`,[input.documentId,houseId,userId]);if(!r.rowCount)throw new ApiError(404,'house_document_not_found','Dokumentet blev ikke fundet.');await pool.query(`insert into house_improvement_documents(improvement_id,house_id,user_id,document_id) values($1,$2,$3,$4) on conflict do nothing`,[improvementId,houseId,userId,input.documentId]);return getHouseImprovement(userId,houseId,improvementId);}
+export async function deleteHouseImprovementDocumentRelation(userId:string,houseId:string,improvementId:string,documentId:string){await requireImprovement(userId,houseId,improvementId);await pool.query(`delete from house_improvement_documents where improvement_id=$1 and house_id=$2 and user_id=$3 and document_id=$4`,[improvementId,houseId,userId,documentId]);}
 
 export async function getCurrentHousePhoto(userId: string, houseId: string) {
   const house = await getSavedHouse(userId, houseId);

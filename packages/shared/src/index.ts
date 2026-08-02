@@ -1550,7 +1550,7 @@ export type HouseDocumentCategory = z.infer<typeof houseDocumentCategorySchema>;
 export const houseDocumentTypeSchema = z.enum([
   "condition_report", "energy_label", "bbr_notice", "purchase_agreement",
   "manual", "warranty", "invoice", "receipt", "insurance_policy",
-  "service_agreement", "renovation_documentation", "other"
+  "service_agreement", "improvement_document", "other"
 ]);
 export type HouseDocumentType = z.infer<typeof houseDocumentTypeSchema>;
 export const houseDocumentCategoryByType: Record<HouseDocumentType, HouseDocumentCategory> = {
@@ -1561,7 +1561,7 @@ export const houseDocumentCategoryByType: Record<HouseDocumentType, HouseDocumen
   warranty: "manuals_warranties",
   invoice: "invoices_receipts",
   receipt: "invoices_receipts",
-  renovation_documentation: "improvements",
+  improvement_document: "improvements",
   insurance_policy: "insurance",
   purchase_agreement: "agreements",
   service_agreement: "agreements",
@@ -1837,70 +1837,45 @@ export type HouseImprovementCategory = z.infer<
   typeof houseImprovementCategorySchema
 >;
 
-export const houseImprovementStatusSchema = z.enum([
-  "planned",
-  "completed",
-  "documented"
-]);
-
-export type HouseImprovementStatus = z.infer<
-  typeof houseImprovementStatusSchema
->;
-
 export const houseImprovementSchema = z.object({
   id: improvementIdSchema,
   houseId: houseIdSchema,
   title: z.string().min(1),
-  description: z.string().min(1).nullable(),
-  category: houseImprovementCategorySchema.nullable(),
-  improvementDate: z.string().date().nullable(),
-  improvementYear: z.number().int().min(1700).max(2200).nullable(),
-  costAmountMinor: z.number().int().nonnegative().nullable(),
-  costCurrency: z.string().length(3).nullable(),
-  documentReference: z.string().min(1).nullable(),
-  status: houseImprovementStatusSchema,
+  description: z.string().nullable(),
+  category: houseImprovementCategorySchema,
+  completedDate: z.string().date(),
+  totalAmountMinor: priceAmountMinorSchema.nullable(),
+  currency: dkkCurrencySchema,
+  documentCount: z.number().int().nonnegative(),
   createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime()
+  updatedAt: z.string().datetime(),
+  archivedAt: z.string().datetime().nullable()
 });
 
 export type HouseImprovement = z.infer<typeof houseImprovementSchema>;
 
-export const createHouseImprovementRequestSchema = z
-  .object({
-    title: z.string().trim().min(1).max(140),
-    description: z.string().trim().max(1200).optional(),
-    category: houseImprovementCategorySchema.optional(),
-    improvementDate: z.string().date().optional(),
-    improvementYear: z.number().int().min(1700).max(2200).optional(),
-    costAmountMinor: z.number().int().nonnegative().optional(),
-    costCurrency: z.string().length(3).optional(),
-    documentReference: z.string().trim().max(240).optional(),
-    status: houseImprovementStatusSchema.optional()
-  })
-  .superRefine((input, context) => {
-    if (!input.improvementDate && input.improvementYear === undefined) {
-      context.addIssue({
-        code: "custom",
-        path: ["improvementYear"],
-        message: "An improvement requires either a date or a year."
-      });
-    }
-
-    if (input.costAmountMinor !== undefined && !input.costCurrency) {
-      context.addIssue({
-        code: "custom",
-        path: ["costCurrency"],
-        message: "Currency is required when cost is provided."
-      });
-    }
-  });
+export const createHouseImprovementRequestSchema = z.object({
+  title: z.string().trim().min(1).max(140),
+  description: z.string().trim().max(1200).optional(),
+  category: houseImprovementCategorySchema,
+  completedDate: z.string().date(),
+  totalAmountMinor: priceAmountMinorSchema.nullable().optional()
+});
 
 export type CreateHouseImprovementRequest = z.infer<
   typeof createHouseImprovementRequestSchema
 >;
 
+export const updateHouseImprovementRequestSchema = createHouseImprovementRequestSchema.partial().extend({ description: z.string().trim().max(1200).nullable().optional(), totalAmountMinor: priceAmountMinorSchema.nullable().optional() });
+export type UpdateHouseImprovementRequest = z.infer<typeof updateHouseImprovementRequestSchema>;
+export const attachHouseImprovementDocumentRequestSchema = z.object({ documentId: documentIdSchema });
+export type AttachHouseImprovementDocumentRequest = z.infer<typeof attachHouseImprovementDocumentRequestSchema>;
+
+export const houseImprovementDetailSchema = houseImprovementSchema.extend({ documents: z.array(houseDocumentSchema) });
+export type HouseImprovementDetail = z.infer<typeof houseImprovementDetailSchema>;
+
 export const houseImprovementResponseSchema = z.object({
-  improvement: houseImprovementSchema
+  improvement: houseImprovementDetailSchema
 });
 
 export type HouseImprovementResponse = z.infer<

@@ -29,6 +29,25 @@ function stringValue(node: DatafordelerNode | null | undefined, key: string) {
   return String(value);
 }
 
+function postalAddressFallback(addressLabel: string) {
+  const match = addressLabel.match(/\b(\d{4})\s+(.+)$/);
+  return {
+    postalCode: match?.[1] ?? null,
+    postalDistrict: match?.[2]?.trim() ?? null
+  };
+}
+
+function addressWithoutPostalPart(addressLabel: string, postalCode: string | null, postalDistrict: string | null) {
+  if (!postalCode) return addressLabel;
+
+  const escapedDistrict = postalDistrict?.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const suffix = escapedDistrict
+    ? new RegExp(`[,\\s]+${postalCode}\\s+${escapedDistrict}$`, "i")
+    : new RegExp(`[,\\s]+${postalCode}(?:\\s+.*)?$`, "i");
+
+  return addressLabel.replace(suffix, "").trim().replace(/,$/, "").trim();
+}
+
 function intValue(node: DatafordelerNode | null | undefined, key: string) {
   const value = node?.[key];
 
@@ -259,12 +278,26 @@ export function mapPublicData(
     message: error.message,
     ...(error.sourceId ? { path: error.sourceId } : {})
   }));
+  const addressFallback = postalAddressFallback(target.addressLabel);
   const addressHouseNumber =
     relationNodes(raw.address, "adresseHarHusnummer")[0] ?? null;
   const property =
     relationNodes(raw.ground, "grundSamletFastEjendom")[0] ?? null;
   const addressBuildingId = stringValue(raw.addressBuilding, "id_lokalId");
   const bfeNumber = normalizeExternalCode(property?.bfeNummer);
+  const postalCode = stringValue(
+    relationNodes(addressHouseNumber, "postnummer")[0],
+    "postnr"
+  ) ?? addressFallback.postalCode;
+  const postalDistrict = stringValue(
+    relationNodes(addressHouseNumber, "postnummer")[0],
+    "navn"
+  ) ?? addressFallback.postalDistrict;
+  const addressLabel = addressWithoutPostalPart(
+    stringValue(raw.address, "adressebetegnelse") ?? target.addressLabel,
+    postalCode,
+    postalDistrict
+  );
 
   if (!bfeNumber) {
     warnings.push({
@@ -477,7 +510,7 @@ export function mapPublicData(
             : "not_found"
     },
     address: {
-      label: stringValue(raw.address, "adressebetegnelse") ?? target.addressLabel,
+      label: addressLabel,
       darAddressId: target.darAddressId,
       darAccessAddressId: target.darAccessAddressId,
       roadName: stringValue(
@@ -485,14 +518,8 @@ export function mapPublicData(
         "vejnavn"
       ),
       houseNumberText: stringValue(addressHouseNumber, "husnummertekst"),
-      postalCode: stringValue(
-        relationNodes(addressHouseNumber, "postnummer")[0],
-        "postnr"
-      ),
-      postalDistrict: stringValue(
-        relationNodes(addressHouseNumber, "postnummer")[0],
-        "navn"
-      )
+      postalCode,
+      postalDistrict
     },
     property: {
       bfeNumber,

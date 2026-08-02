@@ -90,15 +90,15 @@ type PublicDataRefreshMessage = {
 type Tab = {
   key: TabKey;
   label: string;
-  icon: string;
+  icon: "view-dashboard-outline" | "check-bold" | "file-document-outline" | "dots-horizontal";
 };
 
 const tabs: Tab[] = [
-  { key: "dashboard", icon: "▦", label: "Dashboard" },
-  { key: "house", icon: "⌂", label: "Mit hus" },
-  { key: "maintenance", icon: "✓", label: "Vedligehold" },
-  { key: "documents", icon: "▤", label: "Dokumenter" },
-  { key: "more", icon: "•••", label: "Mere" }
+  { key: "dashboard", icon: "view-dashboard-outline", label: "Dashboard" },
+  { key: "house", icon: "view-dashboard-outline", label: "Mit hus" },
+  { key: "maintenance", icon: "check-bold", label: "Vedligehold" },
+  { key: "documents", icon: "file-document-outline", label: "Dokumenter" },
+  { key: "more", icon: "dots-horizontal", label: "Mere" }
 ];
 
 const houseHeroPlaceholder = require("../assets/onboarding/house-hero-placeholder.png");
@@ -5969,9 +5969,21 @@ export default function App() {
                 }}
                 style={[styles.tabItem, isActive ? styles.tabItemActive : null]}
               >
-                <Text style={[styles.tabIcon, isActive ? styles.tabIconActive : null]}>
-                  {tab.icon}
-                </Text>
+                {tab.key === "house" ? (
+                  <Image
+                    accessibilityElementsHidden
+                    source={matrivaSymbol}
+                    style={[styles.tabHouseIcon, !isActive ? styles.tabHouseIconInactive : null]}
+                  />
+                ) : (
+                  <MaterialCommunityIcons
+                    accessibilityElementsHidden
+                    color={isActive ? theme.primary : theme.muted}
+                    name={tab.icon}
+                    size={22}
+                    style={styles.tabIcon}
+                  />
+                )}
                 <Text style={[styles.tabLabel, isActive ? styles.tabLabelActive : null]}>
                   {tab.label}
                 </Text>
@@ -7292,14 +7304,15 @@ const styles = StyleSheet.create({
     backgroundColor: theme.primarySoft
   },
   tabIcon: {
-    color: theme.muted,
-    fontSize: 19,
-    fontWeight: "900",
-    lineHeight: 22,
     textAlign: "center"
   },
-  tabIconActive: {
-    color: theme.primary
+  tabHouseIcon: {
+    height: 22,
+    resizeMode: "contain",
+    width: 22
+  },
+  tabHouseIconInactive: {
+    opacity: 0.55
   },
   tabLabel: {
     color: theme.muted,

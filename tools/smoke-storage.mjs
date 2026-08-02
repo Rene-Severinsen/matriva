@@ -206,7 +206,9 @@ async function runSmoke() {
       fileName: "smoke-report.pdf",
       mimeType: "application/pdf",
       sizeBytes: pdfBytes.byteLength,
-      contentBase64: pdfBytes.toString("base64")
+      contentBase64: pdfBytes.toString("base64"),
+      title: "Smoke rapport",
+      documentType: "condition_report"
     })
   });
   assert(document.document.id.startsWith("doc_"), "Document ID must be opaque.");
@@ -264,7 +266,9 @@ async function runSmoke() {
         fileName: "cross.pdf",
         mimeType: "application/pdf",
         sizeBytes: pdfBytes.byteLength,
-        contentBase64: pdfBytes.toString("base64")
+        contentBase64: pdfBytes.toString("base64"),
+        title: "Cross owner dokument",
+        documentType: "condition_report"
       })
     }
   );

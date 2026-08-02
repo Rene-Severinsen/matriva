@@ -224,8 +224,26 @@ type HouseDocumentRow = {
   size_bytes: number;
   checksum_sha256: string | null;
   upload_status: HouseDocument["uploadStatus"];
-  created_at: Date;
-  updated_at: Date;
+  created_at: Date | string;
+  updated_at: Date | string;
+  title: string | null;
+  category: HouseDocument["category"];
+  document_type: HouseDocument["documentType"];
+  document_date: Date | string | null;
+  related_party: string | null;
+  amount_minor: number | null;
+  currency: "DKK";
+  expires_at: Date | string | null;
+  is_important: boolean;
+  note: string | null;
+  analysis_status: HouseDocument["analysisStatus"];
+  analysis_version: string | null;
+  analysis_requested_at: Date | string | null;
+  analysis_started_at: Date | string | null;
+  analysis_completed_at: Date | string | null;
+  analysis_error_code: string | null;
+  detected_document_type: HouseDocument["detectedDocumentType"];
+  extracted_metadata: Record<string, unknown>;
 };
 
 type HouseImprovementRow = {
@@ -318,8 +336,20 @@ export function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
-function isoDate(value: Date | null) {
-  return value ? value.toISOString() : null;
+function isoDate(value: Date | string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  return value instanceof Date ? value.toISOString() : value;
+}
+
+function dateOnly(value: Date | string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  return value instanceof Date ? value.toISOString().slice(0, 10) : value.slice(0, 10);
 }
 
 function nullableNumber(value: number | string | null) {
@@ -721,8 +751,26 @@ function toHouseDocument(row: HouseDocumentRow): HouseDocument {
       row.upload_status === "uploaded"
         ? houseDocumentContentPath(row.house_id, row.id)
         : null,
-    createdAt: row.created_at.toISOString(),
-    updatedAt: row.updated_at.toISOString()
+    createdAt: isoDate(row.created_at),
+    updatedAt: isoDate(row.updated_at),
+    title: row.title ?? null,
+    category: row.category ?? null,
+    documentType: row.document_type ?? null,
+    documentDate: dateOnly(row.document_date),
+    relatedParty: row.related_party ?? null,
+    amountMinor: row.amount_minor ?? null,
+    currency: row.currency ?? "DKK",
+    expiresAt: dateOnly(row.expires_at),
+    isImportant: row.is_important ?? false,
+    note: row.note ?? null,
+    analysisStatus: row.analysis_status ?? "not_requested",
+    analysisVersion: row.analysis_version ?? null,
+    analysisRequestedAt: isoDate(row.analysis_requested_at),
+    analysisStartedAt: isoDate(row.analysis_started_at),
+    analysisCompletedAt: isoDate(row.analysis_completed_at),
+    analysisErrorCode: row.analysis_error_code ?? null,
+    detectedDocumentType: row.detected_document_type ?? null,
+    extractedMetadata: row.extracted_metadata ?? {}
   });
 }
 
@@ -2419,6 +2467,9 @@ export async function listHouseDocumentsForHouse(userId: string, houseId: string
         size_bytes,
         checksum_sha256,
         upload_status,
+        title, category, document_type, document_date, related_party, amount_minor, currency,
+        expires_at, is_important, note, analysis_status, analysis_version, analysis_requested_at,
+        analysis_started_at, analysis_completed_at, analysis_error_code, detected_document_type, extracted_metadata,
         created_at,
         updated_at
       from house_documents
@@ -2440,6 +2491,15 @@ export async function createHouseDocumentForHouse(
     mimeType: HouseDocument["mimeType"];
     sizeBytes: number;
     checksumSha256: string;
+    title?: string | null | undefined;
+    category?: HouseDocument["category"] | undefined;
+    documentType?: HouseDocument["documentType"] | undefined;
+    documentDate?: string | null | undefined;
+    relatedParty?: string | null | undefined;
+    amountMinor?: number | null | undefined;
+    expiresAt?: string | null | undefined;
+    isImportant?: boolean | undefined;
+    note?: string | null | undefined;
   }
 ) {
   const house = await getSavedHouse(userId, houseId);
@@ -2455,9 +2515,11 @@ export async function createHouseDocumentForHouse(
         size_bytes,
         checksum_sha256,
         upload_status,
-        storage_provider
+        storage_provider,
+        title, category, document_type, document_date, related_party, amount_minor,
+        expires_at, is_important, note
       )
-      values ($1, $2, $3, $4, $5, $6, $7, $8, 'uploaded', $9)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, 'uploaded', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       returning
         id,
         house_id,
@@ -2467,6 +2529,9 @@ export async function createHouseDocumentForHouse(
         size_bytes,
         checksum_sha256,
         upload_status,
+        title, category, document_type, document_date, related_party, amount_minor, currency,
+        expires_at, is_important, note, analysis_status, analysis_version, analysis_requested_at,
+        analysis_started_at, analysis_completed_at, analysis_error_code, detected_document_type, extracted_metadata,
         created_at,
         updated_at
     `,
@@ -2479,7 +2544,10 @@ export async function createHouseDocumentForHouse(
       input.mimeType,
       input.sizeBytes,
       input.checksumSha256,
-      process.env.MATRIVA_STORAGE_ADAPTER === "local" ? "local" : "s3"
+      process.env.MATRIVA_STORAGE_ADAPTER === "local" ? "local" : "s3",
+      input.title ?? null, input.category ?? null, input.documentType ?? null,
+      input.documentDate ?? null, input.relatedParty ?? null, input.amountMinor ?? null,
+      input.expiresAt ?? null, input.isImportant ?? false, input.note ?? null
     ]
   );
 
@@ -2503,6 +2571,9 @@ export async function getHouseDocumentForHouse(
         size_bytes,
         checksum_sha256,
         upload_status,
+        title, category, document_type, document_date, related_party, amount_minor, currency,
+        expires_at, is_important, note, analysis_status, analysis_version, analysis_requested_at,
+        analysis_started_at, analysis_completed_at, analysis_error_code, detected_document_type, extracted_metadata,
         created_at,
         updated_at
       from house_documents
@@ -2547,6 +2618,9 @@ export async function archiveHouseDocumentForHouse(
         size_bytes,
         checksum_sha256,
         upload_status,
+        title, category, document_type, document_date, related_party, amount_minor, currency,
+        expires_at, is_important, note, analysis_status, analysis_version, analysis_requested_at,
+        analysis_started_at, analysis_completed_at, analysis_error_code, detected_document_type, extracted_metadata,
         created_at,
         updated_at
     `,
@@ -2557,6 +2631,68 @@ export async function archiveHouseDocumentForHouse(
     document: toHouseDocument(result.rows[0] as HouseDocumentRow),
     objectKey
   };
+}
+
+export async function updateHouseDocumentForHouse(
+  userId: string,
+  houseId: string,
+  documentId: string,
+  input: {
+    title?: string | null | undefined;
+    category?: HouseDocument["category"] | undefined;
+    documentType?: HouseDocument["documentType"] | undefined;
+    documentDate?: string | null | undefined;
+    relatedParty?: string | null | undefined;
+    amountMinor?: number | null | undefined;
+    expiresAt?: string | null | undefined;
+    isImportant?: boolean | undefined;
+    note?: string | null | undefined;
+  }
+) {
+  const house = await getSavedHouse(userId, houseId);
+  const result = await pool.query<HouseDocumentRow>(
+    `update house_documents set
+      title = case when $4::boolean then $5::text else title end,
+      category = case when $6::boolean then $7::text else category end,
+      document_type = case when $8::boolean then $9::text else document_type end,
+      document_date = case when $10::boolean then $11::date else document_date end,
+      related_party = case when $12::boolean then $13::text else related_party end,
+      amount_minor = case when $14::boolean then $15::integer else amount_minor end,
+      expires_at = case when $16::boolean then $17::date else expires_at end,
+      is_important = case when $18::boolean then $19::boolean else is_important end,
+      note = case when $20::boolean then $21::text else note end,
+      updated_at = now()
+      where id = $1 and house_id = $2 and user_id = $3 and upload_status = 'uploaded' and archived_at is null
+      returning id, house_id, object_key, original_filename, mime_type, size_bytes, checksum_sha256, upload_status,
+        title, category, document_type, document_date, related_party, amount_minor, currency, expires_at, is_important, note,
+        analysis_status, analysis_version, analysis_requested_at, analysis_started_at, analysis_completed_at, analysis_error_code,
+        detected_document_type, extracted_metadata, created_at, updated_at`,
+    [
+      documentId,
+      house.id,
+      userId,
+      input.title !== undefined,
+      input.title ?? null,
+      input.category !== undefined,
+      input.category ?? null,
+      input.documentType !== undefined,
+      input.documentType ?? null,
+      input.documentDate !== undefined,
+      input.documentDate ?? null,
+      input.relatedParty !== undefined,
+      input.relatedParty ?? null,
+      input.amountMinor !== undefined,
+      input.amountMinor ?? null,
+      input.expiresAt !== undefined,
+      input.expiresAt ?? null,
+      input.isImportant !== undefined,
+      input.isImportant ?? null,
+      input.note !== undefined,
+      input.note ?? null
+    ]
+  );
+  if (!result.rows[0]) throw new ApiError(404, "house_document_not_found", "Dokumentet blev ikke fundet.");
+  return toHouseDocument(result.rows[0]);
 }
 
 export async function countActiveDocumentObjectReferences(objectKey: string) {

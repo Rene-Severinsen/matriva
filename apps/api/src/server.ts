@@ -65,12 +65,14 @@ import {
   taskIdSchema,
   uploadHousePhotoRequestSchema,
   uploadHouseDocumentRequestSchema,
+  updateHouseDocumentRequestSchema,
   updateProfileRequestSchema,
   updateProfileResponseSchema,
   updateMaintenanceSettingsRequestSchema,
   updateMaintenanceSettingsResponseSchema,
   updateMaintenanceTaskRequestSchema,
   updateMaintenanceTaskStatusRequestSchema,
+  houseDocumentCategoryForType,
   maintenanceHistoryQuerySchema,
   reverseMaintenanceCompletionRequestSchema,
   reverseMaintenanceCompletionResponseSchema
@@ -109,6 +111,7 @@ import {
   getSavedHouse,
   getMaintenanceTaskForHouse,
   getHouseDocumentForHouse,
+  updateHouseDocumentForHouse,
   getMaintenanceHistoryEntryForHouse,
   getUserById,
   listHouseDocumentsForHouse,
@@ -372,8 +375,19 @@ function mediaExtension(mimeType: string) {
   return ".jpg";
 }
 
+function storageEnvironmentPrefix() {
+  const configuredEnvironment =
+    process.env.MATRIVA_ENVIRONMENT ?? process.env.NODE_ENV ?? "local";
+  const normalizedEnvironment = configuredEnvironment
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]/g, "_");
+
+  return normalizedEnvironment || "local";
+}
+
 function mediaStorageKey(houseId: string, mimeType: string) {
   return join(
+    storageEnvironmentPrefix(),
     "houses",
     houseId,
     "photos",
@@ -394,10 +408,8 @@ function objectExtension(mimeType: string) {
 }
 
 function documentObjectKey(houseId: string, mimeType: string) {
-  const environment = process.env.MATRIVA_ENVIRONMENT ?? process.env.NODE_ENV ?? "local";
-
   return [
-    environment.replace(/[^a-zA-Z0-9_-]/g, "_"),
+    storageEnvironmentPrefix(),
     "houses",
     houseId,
     "documents",
@@ -1522,6 +1534,18 @@ const server = createServer((request, response) => {
           return;
         }
 
+        const title = parsedRequest.data.title?.trim() ?? "";
+        const documentType = parsedRequest.data.documentType ?? null;
+        if (!title || !documentType) {
+          writeApiError(
+            response,
+            400,
+            "house_document_metadata_required",
+            "Upload kræver titel og dokumenttype."
+          );
+          return;
+        }
+
         const userId = await requireUserId(request);
         const content = Buffer.from(parsedRequest.data.contentBase64, "base64");
         validateDocumentBytes(
@@ -1539,7 +1563,16 @@ const server = createServer((request, response) => {
           originalFilename: parsedRequest.data.fileName.trim(),
           mimeType: parsedRequest.data.mimeType,
           sizeBytes: parsedRequest.data.sizeBytes,
-          checksumSha256: sha256Hex(content)
+          checksumSha256: sha256Hex(content),
+          title,
+          category: houseDocumentCategoryForType(documentType),
+          documentType,
+          documentDate: parsedRequest.data.documentDate,
+          relatedParty: parsedRequest.data.relatedParty,
+          amountMinor: parsedRequest.data.amountMinor,
+          expiresAt: parsedRequest.data.expiresAt,
+          isImportant: parsedRequest.data.isImportant,
+          note: parsedRequest.data.note
         };
         const document = await createHouseDocumentForHouse(
           userId,
@@ -1564,6 +1597,40 @@ const server = createServer((request, response) => {
 
   const houseDocumentMatch =
     /^\/v1\/houses\/([^/]+)\/documents\/([^/]+)$/.exec(requestPath);
+
+  if (request.method === "PATCH" && houseDocumentMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(houseDocumentMatch[1]);
+      const parsedDocumentId = documentIdSchema.safeParse(houseDocumentMatch[2]);
+      if (!parsedHouseId.success || !parsedDocumentId.success) {
+        writeApiError(response, 400, "house_document_route_invalid", "Dokumentruten er ugyldig.");
+        return;
+      }
+      try {
+        const parsedRequest = updateHouseDocumentRequestSchema.safeParse(await readJsonBody(request));
+        if (!parsedRequest.success) {
+          writeApiError(response, 400, "house_document_metadata_invalid", "Dokumentmetadata er ugyldig.");
+          return;
+        }
+        const userId = await requireUserId(request);
+        const document = await updateHouseDocumentForHouse(
+          userId,
+          parsedHouseId.data,
+          parsedDocumentId.data,
+          {
+            ...parsedRequest.data,
+            ...(parsedRequest.data.documentType !== undefined
+              ? { category: houseDocumentCategoryForType(parsedRequest.data.documentType) }
+              : { category: undefined })
+          }
+        );
+        writeJson(response, 200, houseDocumentResponseSchema.parse({ document }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
 
   if (request.method === "DELETE" && houseDocumentMatch) {
     void (async () => {

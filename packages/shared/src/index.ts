@@ -1542,6 +1542,41 @@ export const houseDocumentMimeTypeSchema = z.enum([
 
 export type HouseDocumentMimeType = z.infer<typeof houseDocumentMimeTypeSchema>;
 
+export const houseDocumentCategorySchema = z.enum([
+  "reports", "official", "manuals_warranties", "invoices_receipts",
+  "improvements", "insurance", "agreements", "other"
+]);
+export type HouseDocumentCategory = z.infer<typeof houseDocumentCategorySchema>;
+export const houseDocumentTypeSchema = z.enum([
+  "condition_report", "energy_label", "bbr_notice", "purchase_agreement",
+  "manual", "warranty", "invoice", "receipt", "insurance_policy",
+  "service_agreement", "renovation_documentation", "other"
+]);
+export type HouseDocumentType = z.infer<typeof houseDocumentTypeSchema>;
+export const houseDocumentCategoryByType: Record<HouseDocumentType, HouseDocumentCategory> = {
+  condition_report: "reports",
+  energy_label: "reports",
+  bbr_notice: "official",
+  manual: "manuals_warranties",
+  warranty: "manuals_warranties",
+  invoice: "invoices_receipts",
+  receipt: "invoices_receipts",
+  renovation_documentation: "improvements",
+  insurance_policy: "insurance",
+  purchase_agreement: "agreements",
+  service_agreement: "agreements",
+  other: "other"
+};
+export function houseDocumentCategoryForType(
+  documentType: HouseDocumentType | null | undefined
+): HouseDocumentCategory | null {
+  return documentType ? houseDocumentCategoryByType[documentType] : null;
+}
+export const houseDocumentAnalysisStatusSchema = z.enum([
+  "not_requested", "queued", "running", "completed", "failed"
+]);
+export type HouseDocumentAnalysisStatus = z.infer<typeof houseDocumentAnalysisStatusSchema>;
+
 export const houseDocumentSchema = z.object({
   id: documentIdSchema,
   houseId: houseIdSchema,
@@ -1551,7 +1586,25 @@ export const houseDocumentSchema = z.object({
   uploadStatus: z.enum(["uploaded", "archived"]),
   contentPath: z.string().min(1).nullable(),
   createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime()
+  updatedAt: z.string().datetime(),
+  title: z.string().nullable(),
+  category: houseDocumentCategorySchema.nullable(),
+  documentType: houseDocumentTypeSchema.nullable(),
+  documentDate: z.string().date().nullable(),
+  relatedParty: z.string().nullable(),
+  amountMinor: z.number().int().nonnegative().nullable(),
+  currency: z.literal("DKK"),
+  expiresAt: z.string().date().nullable(),
+  isImportant: z.boolean(),
+  note: z.string().nullable(),
+  analysisStatus: houseDocumentAnalysisStatusSchema,
+  analysisVersion: z.string().nullable(),
+  analysisRequestedAt: z.string().datetime().nullable(),
+  analysisStartedAt: z.string().datetime().nullable(),
+  analysisCompletedAt: z.string().datetime().nullable(),
+  analysisErrorCode: z.string().nullable(),
+  detectedDocumentType: houseDocumentTypeSchema.nullable(),
+  extractedMetadata: z.record(z.string(), z.unknown())
 });
 
 export type HouseDocument = z.infer<typeof houseDocumentSchema>;
@@ -1560,7 +1613,16 @@ export const uploadHouseDocumentRequestSchema = z.object({
   fileName: z.string().trim().min(1).max(180),
   mimeType: houseDocumentMimeTypeSchema,
   sizeBytes: z.number().int().positive().max(15 * 1024 * 1024),
-  contentBase64: z.string().min(1)
+  contentBase64: z.string().min(1),
+  title: z.string().trim().max(240).nullable().optional(),
+  category: houseDocumentCategorySchema.nullable().optional(),
+  documentType: houseDocumentTypeSchema.nullable().optional(),
+  documentDate: z.string().date().nullable().optional(),
+  relatedParty: z.string().trim().max(240).nullable().optional(),
+  amountMinor: z.number().int().nonnegative().nullable().optional(),
+  expiresAt: z.string().date().nullable().optional(),
+  isImportant: z.boolean().optional(),
+  note: z.string().trim().max(2000).nullable().optional()
 });
 
 export type UploadHouseDocumentRequest = z.infer<
@@ -1572,6 +1634,11 @@ export const houseDocumentResponseSchema = z.object({
 });
 
 export type HouseDocumentResponse = z.infer<typeof houseDocumentResponseSchema>;
+
+export const updateHouseDocumentRequestSchema = uploadHouseDocumentRequestSchema
+  .omit({ fileName: true, mimeType: true, sizeBytes: true, contentBase64: true })
+  .partial();
+export type UpdateHouseDocumentRequest = z.infer<typeof updateHouseDocumentRequestSchema>;
 
 export const houseDocumentsResponseSchema = z.object({
   documents: z.array(houseDocumentSchema),

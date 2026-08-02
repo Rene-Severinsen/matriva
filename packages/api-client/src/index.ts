@@ -100,6 +100,7 @@ import {
   type HouseDocumentResponse,
   type HouseDocumentsResponse,
   type UploadHouseDocumentRequest,
+  type UpdateHouseDocumentRequest,
   type UploadHousePhotoRequest,
   type UpdateMaintenanceTaskRequest,
   type UpdateMaintenanceTaskStatusRequest,
@@ -316,6 +317,11 @@ export type MatrivaApiClient = {
   deleteHouseDocument: (
     houseId: HouseId,
     documentId: DocumentId
+  ) => Promise<HouseDocumentResponse>;
+  updateHouseDocument: (
+    houseId: HouseId,
+    documentId: DocumentId,
+    input: UpdateHouseDocumentRequest
   ) => Promise<HouseDocumentResponse>;
   listMaintenanceRecommendations: (
     houseId: HouseId
@@ -1128,6 +1134,15 @@ export function createMatrivaApiClient(
 
       return houseDocumentResponseSchema.parse(
         await parseApiResponse(response, "Could not delete house document.")
+      );
+    },
+    async updateHouseDocument(houseId, documentId, input) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/documents/${documentId}`,
+        { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) }
+      );
+      return houseDocumentResponseSchema.parse(
+        await parseApiResponse(response, "Could not update house document.")
       );
     },
     async listMaintenanceRecommendations(houseId) {

@@ -13,16 +13,19 @@
     "postinstall": "cd ../.. && npm run build:packages"
   },
   "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
     "@matriva/api-client": "0.1.0",
     "@matriva/shared": "0.1.0",
     "@react-native-community/datetimepicker": "9.1.0",
     "expo": "~57.0.8",
     "expo-document-picker": "~57.0.1",
+    "expo-file-system": "~57.0.1",
     "expo-image-picker": "~57.0.6",
     "expo-secure-store": "~57.0.1",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
-    "react-native": "0.86.0"
+    "react-native": "0.86.0",
+    "react-native-webview": "^13.15.0"
   },
   "devDependencies": {
     "@types/react": "latest",

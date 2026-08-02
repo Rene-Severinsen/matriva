@@ -25,6 +25,9 @@ import {
 import DateTimePicker, {
   type DateTimePickerEvent
 } from "@react-native-community/datetimepicker";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import * as FileSystem from "expo-file-system/legacy";
+import { WebView } from "react-native-webview";
 import { createMatrivaApiClient } from "@matriva/api-client";
 import {
   type AddressSuggestion,
@@ -34,6 +37,9 @@ import {
   type CurrentUser,
   type HouseId,
   type HouseDocument,
+  type HouseDocumentCategory,
+  type HouseDocumentType,
+  type UploadHouseDocumentRequest,
   type HouseImprovement,
   type HouseImprovementCategory,
   type HouseMedia,
@@ -57,6 +63,7 @@ import {
   type TaskId,
   type UserProfile
 } from "@matriva/shared";
+import { houseDocumentCategoryForType } from "@matriva/shared";
 
 import { matrivaApiConfig } from "./config/api";
 import { clearStoredSession, readStoredSession, writeStoredSession } from "./auth/sessionStorage";
@@ -452,21 +459,31 @@ function SecondaryButton({
 function DeadlineDatePicker({
   visible,
   selectedDate,
+  title,
   onClose,
   onClear,
   onSelect
 }: {
   visible: boolean;
   selectedDate: string;
+  title?: string;
   onClose: () => void;
   onClear: () => void;
   onSelect: (dateOnly: string) => void;
 }) {
+  const [draftDate, setDraftDate] = useState(selectedDate || todayDateOnly());
+
+  useEffect(() => {
+    if (visible) {
+      setDraftDate(selectedDate || todayDateOnly());
+    }
+  }, [selectedDate, visible]);
+
   if (!visible) {
     return null;
   }
 
-  const pickerValue = dateFromDateOnly(selectedDate || todayDateOnly());
+  const pickerValue = dateFromDateOnly(draftDate);
   const isIos = Platform.OS === "ios";
 
   function handleDateChange(event: DateTimePickerEvent, date?: Date) {
@@ -476,7 +493,12 @@ function DeadlineDatePicker({
     }
 
     if (date) {
-      onSelect(dateOnlyFromDate(date));
+      const nextDate = dateOnlyFromDate(date);
+      setDraftDate(nextDate);
+
+      if (!isIos) {
+        onSelect(nextDate);
+      }
     }
 
     if (!isIos) {
@@ -495,7 +517,7 @@ function DeadlineDatePicker({
         <View style={styles.nativeDatePickerPanel}>
           <View style={styles.datePickerHeader}>
             <View>
-              <Text style={styles.cardTitle}>Vælg deadline</Text>
+              <Text style={styles.cardTitle}>{title ?? "Vælg deadline"}</Text>
               <Text style={styles.compactBodyText}>
                 {selectedDate ? formatDisplayDate(selectedDate) : "Ingen dato valgt"}
               </Text>
@@ -514,7 +536,7 @@ function DeadlineDatePicker({
           {isIos ? (
             <View style={styles.datePickerFooter}>
               <SecondaryButton label="Fjern dato" disabled={!selectedDate} onPress={onClear} />
-              <PrimaryButton label="Vælg dato" onPress={onClose} />
+              <PrimaryButton label="Vælg dato" onPress={() => { onSelect(draftDate); onClose(); }} />
             </View>
           ) : (
             <View style={styles.datePickerFooter}>
@@ -3613,53 +3635,270 @@ function BootstrapRetryScreen({
   );
 }
 
+const documentTypeGroups: Array<{ label: string; options: Array<[HouseDocumentType, string]> }> = [
+  { label: "Rapporter", options: [["condition_report", "Tilstandsrapport"], ["energy_label", "Energimærke"]] },
+  { label: "Officielle oplysninger", options: [["bbr_notice", "BBR-meddelelse"]] },
+  { label: "Manualer og garantier", options: [["manual", "Brugermanual"], ["warranty", "Garantibevis"]] },
+  { label: "Fakturaer og kvitteringer", options: [["invoice", "Faktura"], ["receipt", "Kvittering"]] },
+  { label: "Aftaler", options: [["purchase_agreement", "Købsaftale"], ["insurance_policy", "Forsikringspolice"], ["service_agreement", "Serviceaftale"]] },
+  { label: "Forbedringer", options: [["renovation_documentation", "Renoveringsdokumentation"]] },
+  { label: "Andet", options: [["other", "Andet dokument"]] }
+];
+
+const documentTypesWithAmount: ReadonlySet<HouseDocumentType> = new Set([
+  "invoice",
+  "receipt",
+  "purchase_agreement",
+  "renovation_documentation"
+]);
+
+function documentTypeHasAmount(value: HouseDocumentType | null) {
+  return value !== null && documentTypesWithAmount.has(value);
+}
+
+function documentTypeLabel(value: HouseDocumentType | null) {
+  return documentTypeGroups.flatMap((group) => group.options).find(([key]) => key === value)?.[1] ?? "Vælg dokumenttype";
+}
+
+function documentCategoryLabel(value: HouseDocumentCategory | null) {
+  return {
+    reports: "Rapporter",
+    official: "Officielle oplysninger",
+    manuals_warranties: "Manualer og garantier",
+    invoices_receipts: "Fakturaer og kvitteringer",
+    improvements: "Forbedringer",
+    insurance: "Forsikring",
+    agreements: "Aftaler",
+    other: "Andet"
+  }[value ?? "other"] ?? "Mangler";
+}
+
+function documentMimeLabel(mimeType: HouseDocument["mimeType"]) {
+  return mimeType === "application/pdf" ? "PDF-dokument" : "Billede";
+}
+
+function documentCreatedLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Oprettet: Ukendt dato";
+  }
+
+  return `Oprettet: ${date.getDate()}. ${danishMonthNames[date.getMonth()]}`;
+}
+
+function DocumentImageGlyph() {
+  return <View style={styles.documentImageGlyph}><View style={styles.documentImageGlyphSun} /><View style={styles.documentImageGlyphMountainLeft} /><View style={styles.documentImageGlyphMountainRight} /></View>;
+}
+
+function DocumentListIcon({ mimeType }: { mimeType: HouseDocument["mimeType"] }) {
+  if (mimeType === "application/pdf") {
+    return <View style={[styles.documentListIcon, styles.documentPdfIcon]}><Text style={styles.documentPdfIconText}>PDF</Text></View>;
+  }
+
+  return <View style={[styles.documentListIcon, styles.documentImageIcon]}><DocumentImageGlyph /></View>;
+}
+
+function CategoryIcon({ category }: { category: HouseDocumentCategory }) {
+  const iconName = category === "official"
+    ? "shield-check"
+    : category === "improvements"
+      ? "tools"
+      : category === "manuals_warranties"
+        ? "folder-cog-outline"
+        : "file-document-outline";
+
+  return <View style={styles.categoryIcon}><MaterialCommunityIcons accessibilityLabel="Kategorisymbol" color={theme.primary} name={iconName} size={27} /></View>;
+}
+
+function DocumentTypeSelector({
+  value,
+  onChange
+}: {
+  value: HouseDocumentType | null;
+  onChange: (value: HouseDocumentType) => void;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Vælg dokumenttype"
+        accessibilityHint="Åbner en liste over dokumenttyper"
+        onPress={() => setVisible(true)}
+        style={[styles.input, styles.selectorField]}
+      >
+        <Text style={value ? styles.dateFieldValue : styles.dateFieldPlaceholder}>{documentTypeLabel(value)}</Text>
+        <Text style={styles.dateFieldIcon}>⌄</Text>
+      </Pressable>
+      <Modal visible={visible} animationType="slide" transparent onRequestClose={() => setVisible(false)}>
+        <View style={styles.selectorBackdrop}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Luk dokumenttypevælger" onPress={() => setVisible(false)} style={styles.datePickerDismissArea} />
+          <View style={styles.selectorPanel}>
+            <View style={styles.screenTitleRow}><Text style={styles.modalTitle}>Vælg dokumenttype</Text><Pressable accessibilityRole="button" onPress={() => setVisible(false)}><Text style={styles.cancelText}>Luk</Text></Pressable></View>
+            <ScrollView keyboardShouldPersistTaps="handled">
+              {documentTypeGroups.map((group) => <View key={group.label} style={styles.selectorGroup}><Text style={styles.selectorGroupTitle}>{group.label}</Text>{group.options.map(([key, label]) => <Pressable key={key} accessibilityRole="radio" accessibilityState={{ checked: value === key }} onPress={() => { onChange(key); setVisible(false); }} style={[styles.selectorOption, value === key && styles.selectorOptionSelected]}><Text style={[styles.selectorOptionText, value === key && styles.selectorOptionTextSelected]}>{label}</Text><Text style={styles.selectorCheck}>{value === key ? "✓" : ""}</Text></Pressable>)}</View>)}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
 function DocumentsScreen({
   documents,
   isSaving,
-  onAddDocument,
   onOpenDocument,
-  onDeleteDocument
+  onDeleteDocument,
+  onPickSource,
+  onSaveDocument,
+  fileName,
+  isPicking
 }: {
   documents: HouseDocument[];
   isSaving: boolean;
-  onAddDocument: () => void;
   onOpenDocument: (document: HouseDocument) => void;
   onDeleteDocument: (document: HouseDocument) => void;
+  onPickSource: (source: "camera" | "library" | "file") => void;
+  onSaveDocument: (input: Omit<UploadHouseDocumentRequest, "fileName" | "mimeType" | "sizeBytes" | "contentBase64">) => Promise<boolean>;
+  fileName: string | null;
+  isPicking: boolean;
 }) {
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"all" | "important" | "expiring">("all");
+  const [showForm, setShowForm] = useState(false);
+  const [title, setTitle] = useState("");
+  const [documentDate, setDocumentDate] = useState("");
+  const [documentType, setDocumentType] = useState<HouseDocumentType | null>(null);
+  const [relatedParty, setRelatedParty] = useState("");
+  const [amount, setAmount] = useState("");
+  const [expiresAt, setExpiresAt] = useState("");
+  const [note, setNote] = useState("");
+  const [isImportant, setIsImportant] = useState(false);
+  const [showDocumentDatePicker, setShowDocumentDatePicker] = useState(false);
+  const [showExpiryDatePicker, setShowExpiryDatePicker] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<HouseDocument | null>(null);
+  const [isDocumentNoteExpanded, setIsDocumentNoteExpanded] = useState(false);
+  useEffect(() => {
+    setIsDocumentNoteExpanded(false);
+  }, [selectedDocument?.id]);
+  useEffect(() => {
+    if (fileName && !title) setTitle(fileName.replace(/\.[^.]+$/, ""));
+  }, [fileName, title]);
+  const now = new Date();
+  const soon = new Date(now.getTime() + 90 * 86400000);
+  const isMissing = (d: HouseDocument) => !d.title || !d.category || !d.documentType;
+  const isExpiring = (d: HouseDocument) => Boolean(d.expiresAt && new Date(d.expiresAt) <= soon);
+  const filtered = documents.filter((d) => {
+    const matchesSearch = (d.title ?? d.originalFilename).toLowerCase().includes(search.toLowerCase());
+    return matchesSearch && (filter === "all" || (filter === "important" && d.isImportant) || (filter === "expiring" && isExpiring(d)));
+  });
+  const categories: Array<[HouseDocumentCategory, string]> = [["reports", "Rapporter"], ["official", "Officielle oplysninger"], ["improvements", "Forbedringer"], ["manuals_warranties", "Manualer & garantier"]];
+  const resetForm = () => { setShowForm(false); setTitle(""); setDocumentDate(""); setDocumentType(null); setRelatedParty(""); setAmount(""); setExpiresAt(""); setNote(""); setIsImportant(false); setShowDocumentDatePicker(false); setShowExpiryDatePicker(false); };
+  const relatedPartyLabel = documentType === "invoice" || documentType === "receipt" ? "Virksomhed" : documentType === "warranty" ? "Producent eller leverandør" : documentType === "insurance_policy" ? "Forsikringsselskab" : documentType === "service_agreement" ? "Leverandør" : documentType === "purchase_agreement" ? "Relevant part" : null;
+  const expiryLabel = documentType === "warranty" ? "Garanti til" : "Udløbsdato";
+  const hasExpiry = documentType === "warranty" || documentType === "insurance_policy" || documentType === "service_agreement";
   return (
     <View style={styles.stack}>
-      <View style={styles.screenTitleRow}>
-        <SectionHeader title="Dokumenter" />
-        <SecondaryButton
-          disabled={isSaving}
-          label="Tilføj dokument"
-          onPress={onAddDocument}
-        />
-      </View>
-      {documents.length > 0 ? (
-        <View style={styles.taskList}>
-          {documents.map((document) => (
-            <View key={document.id} style={styles.fileRow}>
-              <Text style={styles.fileIcon}>{document.mimeType.startsWith("image/") ? "▧" : "▤"}</Text>
-              <View style={styles.fileTextGroup}>
-                <Text style={styles.taskRowTitle}>{document.originalFilename}</Text>
-                <Text style={styles.metaText}>
-                  {document.mimeType} · {Math.round(document.sizeBytes / 1024)} KB
-                </Text>
+      <View style={styles.screenTitleRow}><SectionHeader title="Dokumenter" /><Pressable accessibilityRole="button" accessibilityLabel="Tilføj dokument" onPress={() => { resetForm(); setShowForm(true); }} style={styles.documentAddButton}><Text style={styles.documentAddButtonText}>+</Text></Pressable></View>
+      <TextInput value={search} onChangeText={setSearch} placeholder="⌕  Søg i dokumenter" placeholderTextColor={theme.subtle} style={styles.documentSearch} />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.documentChips}>
+        {([["all", "Alle"], ["important", "! Vigtige"], ["expiring", "Udløber snart"]] as const).map(([key, label]) => <Pressable key={key} onPress={() => setFilter(key)} style={[styles.documentChip, filter === key && styles.documentChipActive]}><Text style={[styles.documentChipText, filter === key && styles.documentChipTextActive]}>{label}</Text></Pressable>)}
+      </ScrollView>
+      <Text style={styles.documentSectionTitle}>Kategorier</Text>
+      <View style={styles.categoryGrid}>{categories.map(([key, label]) => <View key={key} style={styles.categoryCard}><CategoryIcon category={key} /><Text style={styles.categoryTitle}>{label}</Text><Text style={styles.categoryCount}>{documents.filter((d) => d.category === key).length} filer</Text></View>)}</View>
+      <Text style={styles.documentSectionTitle}>Seneste dokumenter</Text>
+      {filtered.length ? filtered.map((document) => <Pressable key={document.id} style={styles.documentListRow} onPress={() => setSelectedDocument(document)}><DocumentListIcon mimeType={document.mimeType} /><View style={styles.fileTextGroup}><Text numberOfLines={1} style={styles.taskRowTitle}>{document.title ?? document.originalFilename}</Text><Text style={styles.metaText}>{documentCreatedLabel(document.createdAt)} · {(document.sizeBytes / 1024 / 1024).toFixed(1)} MB</Text>{isMissing(document) ? <Text style={styles.missingLabel}>MANGLER</Text> : null}</View><Text style={styles.documentChevron}>›</Text></Pressable>) : <EmptyState title="Ingen dokumenter matcher" body="Prøv et andet søgeord eller filter." />}
+      <Modal visible={showForm} animationType="slide" onRequestClose={resetForm}>
+        <SafeAreaView style={styles.modalSurface}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.keyboardFrame}>
+            <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
+              <View style={styles.screenTitleRow}><Text style={styles.modalTitle}>Tilføj dokument</Text><Pressable accessibilityRole="button" onPress={resetForm}><Text style={styles.cancelText}>Annuller</Text></Pressable></View>
+              <View style={styles.sourceRow}>{[["camera", "Tag foto"], ["library", "Vælg billede"], ["file", "Upload PDF"]].map(([source, label]) => <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={isPicking || isSaving} key={source} style={[styles.sourceCard, (isPicking || isSaving) && styles.disabled]} onPress={() => onPickSource(source as "camera" | "library" | "file")}>
+                {source === "camera" ? <MaterialCommunityIcons color={theme.primary} name="camera-outline" size={27} /> : source === "library" ? <DocumentImageGlyph /> : <Text style={styles.sourceIcon}>PDF</Text>}
+                <Text style={styles.sourceLabel}>{label}</Text>
+              </Pressable>)}</View>
+              {fileName ? <Text style={styles.selectedFile}>Valgt: {fileName}</Text> : null}
+              <Text style={styles.label}>Titel</Text><TextInput accessibilityLabel="Titel" value={title} onChangeText={setTitle} placeholder="F.eks. Købsaftale" placeholderTextColor={theme.subtle} style={styles.input} />
+              <Text style={styles.label}>Dokumentdato</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel="Dokumentdato" onPress={() => setShowDocumentDatePicker(true)} style={styles.dateField}><Text style={documentDate ? styles.dateFieldValue : styles.dateFieldPlaceholder}>{documentDate ? formatDisplayDate(documentDate) : "Vælg dato"}</Text><Text style={styles.dateFieldIcon}>⌄</Text></Pressable>
+              {documentDate ? <Pressable accessibilityRole="button" onPress={() => setDocumentDate("")}><Text style={styles.clearDateText}>Fjern dato</Text></Pressable> : null}
+              <DeadlineDatePicker title="Vælg dokumentdato" visible={showDocumentDatePicker} selectedDate={documentDate} onClose={() => setShowDocumentDatePicker(false)} onClear={() => { setDocumentDate(""); setShowDocumentDatePicker(false); }} onSelect={(value) => { setDocumentDate(value); setShowDocumentDatePicker(false); }} />
+              <Text style={styles.label}>Dokumenttype</Text><DocumentTypeSelector value={documentType} onChange={setDocumentType} />
+              {documentTypeHasAmount(documentType) ? <><Text style={styles.label}>Beløb i DKK</Text><TextInput accessibilityLabel="Beløb i DKK" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0,00" placeholderTextColor={theme.subtle} style={styles.input} /></> : null}
+              {relatedPartyLabel ? <><Text style={styles.label}>{relatedPartyLabel}</Text><TextInput accessibilityLabel={relatedPartyLabel} value={relatedParty} onChangeText={setRelatedParty} style={styles.input} /></> : null}
+              {hasExpiry ? <><Text style={styles.label}>{expiryLabel}</Text><Pressable accessibilityRole="button" accessibilityLabel={expiryLabel} onPress={() => setShowExpiryDatePicker(true)} style={styles.dateField}><Text style={expiresAt ? styles.dateFieldValue : styles.dateFieldPlaceholder}>{expiresAt ? formatDisplayDate(expiresAt) : "Vælg dato"}</Text><Text style={styles.dateFieldIcon}>⌄</Text></Pressable>{expiresAt ? <Pressable accessibilityRole="button" onPress={() => setExpiresAt("")}><Text style={styles.clearDateText}>Fjern dato</Text></Pressable> : null}<DeadlineDatePicker title={expiryLabel} visible={showExpiryDatePicker} selectedDate={expiresAt} onClose={() => setShowExpiryDatePicker(false)} onClear={() => { setExpiresAt(""); setShowExpiryDatePicker(false); }} onSelect={(value) => { setExpiresAt(value); setShowExpiryDatePicker(false); }} /></> : null}
+              <View style={styles.switchRow}><Text style={styles.label}>Markér som vigtigt</Text><Switch accessibilityLabel="Markér som vigtigt" value={isImportant} onValueChange={setIsImportant} trackColor={{ true: theme.primary }} /></View>
+              <Text style={styles.label}>Notat</Text><TextInput value={note} onChangeText={setNote} multiline style={[styles.input, styles.textArea]} />
+              <PrimaryButton
+                label="Gem"
+                disabled={!fileName || !title.trim() || !documentType || isSaving}
+                loading={isSaving}
+                onPress={async () => {
+                  const saved = await onSaveDocument({
+                    title: title.trim(),
+                    documentDate: documentDate || null,
+                    category: houseDocumentCategoryForType(documentType),
+                    documentType,
+                    relatedParty: relatedParty || null,
+                    amountMinor: amount ? Math.round(Number(amount.replace(",", ".")) * 100) : null,
+                    expiresAt: expiresAt || null,
+                    isImportant,
+                    note: note || null
+                  });
+                  if (saved) {
+                    resetForm();
+                  }
+                }}
+              />
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
+      <Modal visible={Boolean(selectedDocument)} animationType="slide" onRequestClose={() => setSelectedDocument(null)}>
+        <SafeAreaView style={styles.modalSurface}>
+          <ScrollView contentContainerStyle={styles.documentDetailContent}>
+            {selectedDocument ? <>
+              <View style={styles.documentDetailHeader}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Luk dokumentdetalje" onPress={() => setSelectedDocument(null)} style={styles.documentDetailBack}><Text style={styles.documentDetailBackText}>‹</Text></Pressable>
+                <Text style={styles.documentDetailHeaderTitle}>Dokumentdetalje</Text>
+                <View style={styles.documentDetailHeaderSpacer} />
               </View>
-              <View style={styles.fileActions}>
-                <SecondaryButton label="Åbn" onPress={() => onOpenDocument(document)} />
-                <SecondaryButton label="Fjern" onPress={() => onDeleteDocument(document)} />
+              <View style={styles.documentDetailPreview}>
+                <Text style={[styles.documentDetailPreviewIcon, selectedDocument.mimeType === "application/pdf" && styles.pdfIcon]}>{selectedDocument.mimeType === "application/pdf" ? "PDF" : "▧"}</Text>
+                <Text style={styles.documentDetailPreviewHint}>{documentMimeLabel(selectedDocument.mimeType)}</Text>
+                <Text numberOfLines={2} style={styles.documentDetailPreviewName}>{selectedDocument.title ?? selectedDocument.originalFilename}</Text>
               </View>
-            </View>
-          ))}
-        </View>
-      ) : (
-        <EmptyState
-          title="Ingen dokumenter endnu"
-          body="Upload dokumenter til huset her. De knyttes ikke automatisk til vedligeholdelsesopgaver."
-        />
-      )}
+              <Text style={styles.documentDetailTitle}>{selectedDocument.title ?? selectedDocument.originalFilename}</Text>
+              <View style={styles.documentDetailCard}>
+                <View style={styles.documentDetailRow}><Text style={styles.documentDetailLabel}>Kategori</Text><Text style={styles.documentDetailValue}>{selectedDocument.category ? documentCategoryLabel(selectedDocument.category) : "Mangler"}</Text></View>
+                <View style={styles.documentDetailRow}><Text style={styles.documentDetailLabel}>Dokumenttype</Text><Text style={styles.documentDetailValue}>{selectedDocument.documentType ? documentTypeLabel(selectedDocument.documentType) : "Mangler"}</Text></View>
+                <View style={styles.documentDetailRow}><Text style={styles.documentDetailLabel}>Dokumentdato</Text><Text style={styles.documentDetailValue}>{selectedDocument.documentDate ? formatDisplayDate(selectedDocument.documentDate) : "Mangler"}</Text></View>
+                {selectedDocument.relatedParty ? <View style={styles.documentDetailRow}><Text style={styles.documentDetailLabel}>Relevant part</Text><Text style={styles.documentDetailValue}>{selectedDocument.relatedParty}</Text></View> : null}
+                {selectedDocument.amountMinor !== null ? <View style={styles.documentDetailRow}><Text style={styles.documentDetailLabel}>Beløb</Text><Text style={styles.documentDetailValue}>{(selectedDocument.amountMinor / 100).toLocaleString("da-DK", { minimumFractionDigits: 2 })} kr.</Text></View> : null}
+                {selectedDocument.expiresAt ? <View style={styles.documentDetailRow}><Text style={styles.documentDetailLabel}>Garanti-/udløbsdato</Text><Text style={styles.documentDetailValue}>{formatDisplayDate(selectedDocument.expiresAt)}</Text></View> : null}
+                {selectedDocument.note?.trim() ? (
+                  <>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: isDocumentNoteExpanded }}
+                      accessibilityLabel={isDocumentNoteExpanded ? "Skjul notat" : "Vis notat"}
+                      onPress={() => setIsDocumentNoteExpanded((expanded) => !expanded)}
+                      style={styles.documentNoteToggle}
+                    >
+                      <Text style={styles.documentDetailLabel}>Notat</Text>
+                      <Text style={styles.documentDetailValue}>{isDocumentNoteExpanded ? "Skjul" : "Vis notat"}</Text>
+                    </Pressable>
+                    {isDocumentNoteExpanded ? <Text style={styles.documentNoteText}>{selectedDocument.note}</Text> : null}
+                  </>
+                ) : null}
+              </View>
+              <PrimaryButton label="Åbn dokument" onPress={() => { const documentToOpen = selectedDocument; setSelectedDocument(null); onOpenDocument(documentToOpen); }} />
+              <SecondaryButton label="Fjern dokument" onPress={() => { setSelectedDocument(null); onDeleteDocument(selectedDocument); }} />
+            </> : null}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </View>
   );
 }
@@ -3849,6 +4088,13 @@ export default function App() {
   >([]);
   const [maintenanceSwipeHintSeen, setMaintenanceSwipeHintSeen] = useState<boolean | null>(null);
   const [houseDocuments, setHouseDocuments] = useState<HouseDocument[]>([]);
+  const [documentPreview, setDocumentPreview] = useState<{
+    uri: string;
+    title: string;
+    mimeType: string;
+  } | null>(null);
+  const [pendingDocument, setPendingDocument] = useState<Pick<UploadHouseDocumentRequest, "fileName" | "mimeType" | "sizeBytes" | "contentBase64"> | null>(null);
+  const [isPickingDocument, setIsPickingDocument] = useState(false);
   const [maintenanceView, setMaintenanceView] = useState<MaintenanceView>("main");
   const [selectedHistoryDetail, setSelectedHistoryDetail] =
     useState<MaintenanceHistoryDetail | null>(null);
@@ -5014,21 +5260,13 @@ export default function App() {
     }
   }
 
-  function addHouseDocument() {
-    Alert.alert("Tilføj dokument", "Vælg kilde", [
-      { text: "Tag billede", onPress: () => void pickHouseDocument("camera") },
-      { text: "Vælg fra billedbibliotek", onPress: () => void pickHouseDocument("library") },
-      { text: "Vælg PDF", onPress: () => void pickHouseDocument("file") },
-      { text: "Annuller", style: "cancel" }
-    ]);
-  }
-
   async function pickHouseDocument(source: "camera" | "library" | "file") {
     if (!selectedHouse || loadingAction === "photo") {
       return;
     }
 
     setLoadingAction("photo");
+    setIsPickingDocument(true);
     setError(null);
 
     try {
@@ -5079,7 +5317,7 @@ export default function App() {
         const sizeBytes =
           asset.fileSize ?? Math.floor((base64.replace(/=+$/, "").length * 3) / 4);
 
-        await apiClient.uploadHouseDocument(selectedHouse.id, {
+        setPendingDocument({
           fileName: asset.fileName ?? `vedligehold.${mimeType.split("/")[1] ?? "jpg"}`,
           mimeType: mimeType as "image/jpeg" | "image/png" | "image/heic" | "image/heif",
           sizeBytes,
@@ -5099,22 +5337,46 @@ export default function App() {
 
         const asset = result.assets[0];
 
-        if (!asset?.base64) {
+        if (!asset?.uri) {
           setError("PDF-filen kunne ikke læses. Prøv et andet dokument.");
           return;
         }
 
-        await apiClient.uploadHouseDocument(selectedHouse.id, {
+        const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+          encoding: FileSystem.EncodingType.Base64
+        });
+
+        setPendingDocument({
           fileName: asset.name,
           mimeType: "application/pdf",
           sizeBytes:
-            asset.size ?? Math.floor((asset.base64.replace(/=+$/, "").length * 3) / 4),
-          contentBase64: asset.base64
+            asset.size ?? Math.floor((base64.replace(/=+$/, "").length * 3) / 4),
+          contentBase64: base64
         });
       }
-      await loadHouseDocuments(selectedHouse.id);
     } catch (caughtError) {
       setError(userFacingError(caughtError));
+    } finally {
+      setIsPickingDocument(false);
+      setLoadingAction(null);
+    }
+  }
+
+  async function saveHouseDocument(metadata: Omit<UploadHouseDocumentRequest, "fileName" | "mimeType" | "sizeBytes" | "contentBase64">): Promise<boolean> {
+    if (!selectedHouse || !pendingDocument) {
+      setError("Vælg en fil, før dokumentet gemmes.");
+      return false;
+    }
+    setLoadingAction("photo");
+    setError(null);
+    try {
+      await apiClient.uploadHouseDocument(selectedHouse.id, { ...pendingDocument, ...metadata });
+      setPendingDocument(null);
+      await loadHouseDocuments(selectedHouse.id);
+      return true;
+    } catch (caughtError) {
+      setError(userFacingError(caughtError));
+      return false;
     } finally {
       setLoadingAction(null);
     }
@@ -5138,13 +5400,47 @@ export default function App() {
     }
   }
 
-  function openHouseDocument(document: HouseDocument) {
+  async function openHouseDocument(document: HouseDocument) {
     if (!document.contentPath) {
       setError("Dokumentet er ikke klar til åbning endnu.");
       return;
     }
 
-    void Linking.openURL(`${apiClient.baseUrl}${document.contentPath}`);
+    if (!accessTokenRef.current || !FileSystem.cacheDirectory) {
+      setError("Dokumentet kan ikke åbnes, før din session er klar.");
+      return;
+    }
+
+    setLoadingAction("photo");
+    setError(null);
+
+    try {
+      const safeFilename = document.originalFilename.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const targetUri = `${FileSystem.cacheDirectory}${document.id}-${safeFilename}`;
+      const download = await FileSystem.downloadAsync(
+        `${apiClient.baseUrl}${document.contentPath}`,
+        targetUri,
+        { headers: { authorization: `Bearer ${accessTokenRef.current}` } }
+      );
+
+      if (download.status < 200 || download.status >= 300) {
+        throw new Error("Dokumentet kunne ikke hentes fra Matriva.");
+      }
+
+      const openUri =
+        Platform.OS === "android"
+          ? await FileSystem.getContentUriAsync(download.uri)
+          : download.uri;
+      setDocumentPreview({
+        uri: openUri,
+        title: document.title ?? document.originalFilename,
+        mimeType: document.mimeType
+      });
+    } catch (caughtError) {
+      setError(userFacingError(caughtError));
+    } finally {
+      setLoadingAction(null);
+    }
   }
 
   async function refreshPublicData() {
@@ -5418,10 +5714,13 @@ export default function App() {
       return (
         <DocumentsScreen
           documents={houseDocuments}
-          isSaving={loadingAction === "photo"}
-          onAddDocument={addHouseDocument}
+          isSaving={loadingAction === "photo" && !isPickingDocument}
           onOpenDocument={openHouseDocument}
           onDeleteDocument={(document) => void deleteHouseDocument(document)}
+          onPickSource={(source) => void pickHouseDocument(source)}
+          onSaveDocument={saveHouseDocument}
+          fileName={pendingDocument?.fileName ?? null}
+          isPicking={isPickingDocument}
         />
       );
     }
@@ -5613,6 +5912,46 @@ export default function App() {
           ) : null}
           {renderActiveScreen()}
         </ScrollView>
+        <Modal
+          animationType="fade"
+          visible={Boolean(documentPreview)}
+          onRequestClose={() => setDocumentPreview(null)}
+        >
+          <SafeAreaView style={styles.documentPreviewSurface}>
+            <View style={styles.documentPreviewHeader}>
+              <Text numberOfLines={1} style={styles.documentPreviewTitle}>
+                {documentPreview?.title ?? "Dokument"}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Luk forhåndsvisning"
+                onPress={() => setDocumentPreview(null)}
+                style={styles.documentPreviewClose}
+              >
+                <Text style={styles.documentPreviewCloseText}>Luk</Text>
+              </Pressable>
+            </View>
+            {documentPreview ? (
+              documentPreview.mimeType === "application/pdf" ? (
+                <WebView
+                  accessibilityLabel={`Forhåndsvisning af ${documentPreview.title}`}
+                  allowFileAccess
+                  allowUniversalAccessFromFileURLs
+                  originWhitelist={["*"]}
+                  source={{ uri: documentPreview.uri }}
+                  style={styles.documentPreviewWebView}
+                />
+              ) : (
+                <Image
+                  accessibilityLabel={documentPreview.title}
+                  resizeMode="contain"
+                  source={{ uri: documentPreview.uri }}
+                  style={styles.documentPreviewImage}
+                />
+              )
+            ) : null}
+          </SafeAreaView>
+        </Modal>
         <View style={styles.tabBar}>
           {tabs.map((tab) => {
             const isActive = activeTab === tab.key;
@@ -6314,6 +6653,78 @@ const styles = StyleSheet.create({
     minHeight: 48,
     paddingVertical: 8
   },
+  documentAddButton: { alignItems: "center", backgroundColor: theme.primary, borderRadius: 22, height: 44, justifyContent: "center", width: 44 },
+  documentAddButtonText: { color: theme.surface, fontSize: 30, fontWeight: "500", lineHeight: 34 },
+  documentSearch: { backgroundColor: theme.surface, borderRadius: 14, color: theme.text, fontSize: 17, minHeight: 58, paddingHorizontal: 18 },
+  documentChips: { columnGap: 8, paddingVertical: 2 },
+  documentChip: { backgroundColor: theme.surface, borderColor: theme.border, borderRadius: 22, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 10 },
+  documentChipActive: { backgroundColor: theme.primary, borderColor: theme.primary },
+  documentChipText: { color: theme.text, fontSize: 14, fontWeight: "700" },
+  documentChipTextActive: { color: theme.surface },
+  documentSectionTitle: { color: theme.text, fontSize: 21, fontWeight: "900", marginTop: 8 },
+  categoryGrid: { columnGap: 10, flexDirection: "row", flexWrap: "wrap", rowGap: 10 },
+  categoryCard: { backgroundColor: theme.surface, borderColor: theme.border, borderRadius: 14, borderWidth: 1, minHeight: 120, padding: 14, width: "48%" },
+  categoryIcon: { alignItems: "center", backgroundColor: theme.primarySoft, borderRadius: 10, height: 48, justifyContent: "center", marginBottom: 10, width: 48 },
+  categoryTitle: { color: theme.text, fontSize: 15, fontWeight: "800" },
+  categoryCount: { color: theme.subtle, fontSize: 13, marginTop: 4 },
+  documentRow: { alignItems: "center", backgroundColor: theme.surface, borderRadius: 14, columnGap: 12, minHeight: 82, padding: 12 },
+  documentListRow: { alignItems: "center", backgroundColor: theme.surface, borderRadius: 14, columnGap: 14, flexDirection: "row", minHeight: 86, paddingHorizontal: 14, paddingVertical: 12 },
+  documentListIcon: { alignItems: "center", borderRadius: 11, height: 54, justifyContent: "center", width: 54 },
+  documentPdfIcon: { backgroundColor: theme.errorSoft },
+  documentPdfIconText: { color: theme.error, fontSize: 13, fontWeight: "900" },
+  documentImageIcon: { backgroundColor: theme.primarySoft },
+  documentImageGlyph: { borderColor: theme.primary, borderRadius: 3, borderWidth: 2, height: 25, overflow: "hidden", position: "relative", width: 30 },
+  documentImageGlyphSun: { backgroundColor: theme.primary, borderRadius: 4, height: 6, position: "absolute", right: 4, top: 4, width: 6 },
+  documentImageGlyphMountainLeft: { borderBottomColor: theme.primary, borderBottomWidth: 10, borderLeftColor: "transparent", borderLeftWidth: 7, borderRightColor: "transparent", borderRightWidth: 7, bottom: 1, left: 2, position: "absolute", width: 0 },
+  documentImageGlyphMountainRight: { borderBottomColor: theme.primary, borderBottomWidth: 7, borderLeftColor: "transparent", borderLeftWidth: 5, borderRightColor: "transparent", borderRightWidth: 5, bottom: 1, position: "absolute", right: 1, width: 0 },
+  documentTypeIcon: { backgroundColor: theme.primarySoft, borderRadius: 10, color: theme.primary, fontSize: 20, fontWeight: "900", padding: 12 },
+  pdfIcon: { backgroundColor: theme.errorSoft, color: theme.error, fontSize: 12 },
+  documentChevron: { color: theme.subtle, fontSize: 32 },
+  missingLabel: { color: theme.warning, fontSize: 10, fontWeight: "900", marginTop: 3 },
+  modalSurface: { backgroundColor: theme.background, flex: 1 },
+  modalContent: { padding: 20, rowGap: 10 },
+  modalTitle: { color: theme.text, flex: 1, fontSize: 25, fontWeight: "900" },
+  cancelText: { color: theme.primary, fontSize: 16, fontWeight: "800" },
+  sourceRow: { columnGap: 8, flexDirection: "row", marginBottom: 12 },
+  sourceCard: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.border, borderRadius: 14, borderWidth: 1, flex: 1, minHeight: 92, justifyContent: "center", padding: 8 },
+  sourceIcon: { color: theme.primary, fontSize: 24, fontWeight: "900" },
+  sourceLabel: { color: theme.text, fontSize: 13, fontWeight: "800", marginTop: 7, textAlign: "center" },
+  selectedFile: { backgroundColor: theme.primarySoft, borderRadius: 8, color: theme.text, padding: 10 },
+  documentPreviewSurface: { backgroundColor: theme.background, flex: 1 },
+  documentPreviewHeader: { alignItems: "center", borderBottomColor: theme.border, borderBottomWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 14 },
+  documentPreviewTitle: { color: theme.text, flex: 1, fontSize: 17, fontWeight: "800" },
+  documentPreviewClose: { paddingHorizontal: 4, paddingVertical: 6 },
+  documentPreviewCloseText: { color: theme.primary, fontSize: 16, fontWeight: "800" },
+  documentPreviewImage: { flex: 1, width: "100%" },
+  documentPreviewWebView: { backgroundColor: theme.surface, flex: 1, width: "100%" },
+  documentDetailContent: { padding: 20, rowGap: 14 },
+  documentDetailHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", paddingBottom: 4 },
+  documentDetailBack: { alignItems: "center", backgroundColor: theme.surface, borderRadius: 20, height: 40, justifyContent: "center", width: 40 },
+  documentDetailBackText: { color: theme.text, fontSize: 30, lineHeight: 32 },
+  documentDetailHeaderTitle: { color: theme.text, fontSize: 20, fontWeight: "900" },
+  documentDetailHeaderSpacer: { width: 40 },
+  documentDetailPreview: { alignItems: "center", backgroundColor: theme.primarySoft, borderRadius: 18, minHeight: 190, justifyContent: "center", padding: 20 },
+  documentDetailPreviewIcon: { backgroundColor: theme.surface, borderRadius: 16, color: theme.primary, fontSize: 42, fontWeight: "900", paddingHorizontal: 20, paddingVertical: 16 },
+  documentDetailPreviewHint: { color: theme.subtle, fontSize: 13, fontWeight: "700", marginTop: 12 },
+  documentDetailPreviewName: { color: theme.text, fontSize: 14, fontWeight: "800", marginTop: 4, textAlign: "center" },
+  documentDetailTitle: { color: theme.text, fontSize: 24, fontWeight: "900", lineHeight: 29 },
+  documentDetailCard: { backgroundColor: theme.surface, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 6 },
+  documentDetailRow: { borderBottomColor: theme.border, borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", paddingVertical: 13 },
+  documentDetailLabel: { color: theme.muted, flex: 1, fontSize: 14 },
+  documentDetailValue: { color: theme.text, flex: 1.2, fontSize: 14, fontWeight: "800", textAlign: "right" },
+  documentNoteToggle: { alignItems: "center", borderBottomColor: theme.border, borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", paddingVertical: 13 },
+  documentNoteText: { color: theme.text, fontSize: 14, lineHeight: 21, paddingBottom: 14, paddingTop: 10 },
+  selectorField: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  selectorBackdrop: { backgroundColor: "rgba(15, 92, 73, 0.24)", flex: 1, justifyContent: "flex-end" },
+  selectorPanel: { backgroundColor: theme.background, borderTopLeftRadius: 22, borderTopRightRadius: 22, maxHeight: "82%", padding: 20 },
+  selectorGroup: { marginTop: 14, rowGap: 6 },
+  selectorGroupTitle: { color: theme.subtle, fontSize: 12, fontWeight: "900", textTransform: "uppercase" },
+  selectorOption: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.border, borderRadius: 10, borderWidth: 1, flexDirection: "row", justifyContent: "space-between", minHeight: 48, paddingHorizontal: 14 },
+  selectorOptionSelected: { backgroundColor: theme.primarySoft, borderColor: theme.primary },
+  selectorOptionText: { color: theme.text, fontSize: 15, fontWeight: "700" },
+  selectorOptionTextSelected: { color: theme.primaryPressed },
+  selectorCheck: { color: theme.primary, fontSize: 18, fontWeight: "900" },
+  switchRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   fileIcon: {
     color: theme.primary,
     fontSize: 18,

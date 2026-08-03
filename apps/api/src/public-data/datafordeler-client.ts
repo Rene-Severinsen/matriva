@@ -20,11 +20,18 @@ export type DatafordelerTransport = (
 export class DatafordelerProviderError extends Error {
   readonly code: string;
   readonly retryable: boolean;
+  readonly httpStatus: number | null;
 
-  constructor(code: string, message: string, retryable = false) {
+  constructor(
+    code: string,
+    message: string,
+    retryable = false,
+    httpStatus: number | null = null
+  ) {
     super(message);
     this.code = code;
     this.retryable = retryable;
+    this.httpStatus = httpStatus;
   }
 }
 
@@ -321,7 +328,8 @@ export class DatafordelerClient {
             ? "provider_temporarily_unavailable"
             : "provider_request_failed",
           `Datafordeler request failed with status ${response.status}.`,
-          response.status >= 500
+          response.status >= 500,
+          response.status
         );
       }
 

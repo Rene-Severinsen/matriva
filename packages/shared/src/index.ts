@@ -2400,6 +2400,17 @@ export const publicDataWarningSchema = z.object({
 
 export type PublicDataWarning = z.infer<typeof publicDataWarningSchema>;
 
+export const housePublicDataRefreshStatusSchema = z.enum([
+  "success",
+  "temporarily_unavailable",
+  "failed",
+  "not_found"
+]);
+
+export type HousePublicDataRefreshStatus = z.infer<
+  typeof housePublicDataRefreshStatusSchema
+>;
+
 export const publicCodeValueSchema = z.object({
   code: z.string().min(1),
   label: z.string().min(1).nullable(),
@@ -2592,6 +2603,12 @@ export type PublicBuilding = z.infer<typeof publicBuildingSchema>;
 export const housePublicDataResponseV1Schema = z.object({
   contract: z.literal("house_public_data.v1"),
   status: publicDataEnrichmentStatusSchema,
+  refresh: z
+    .object({
+      status: housePublicDataRefreshStatusSchema,
+      attemptedAt: z.string().datetime()
+    })
+    .optional(),
   source: z.object({
     provider: z.literal("datafordeler"),
     register: z.literal("bbr"),

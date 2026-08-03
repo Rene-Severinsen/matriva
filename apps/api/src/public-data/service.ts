@@ -38,6 +38,17 @@ async function previousUsableHousePublicData(userId: string, houseId: string) {
   return publicDataCanBeShownAfterRefreshFailure(current) ? current : null;
 }
 
+function withRefreshStatus(
+  publicData: HousePublicDataResponseV1,
+  status: "success" | "temporarily_unavailable" | "failed" | "not_found",
+  attemptedAt: string
+): HousePublicDataResponseV1 {
+  return {
+    ...publicData,
+    refresh: { status, attemptedAt }
+  };
+}
+
 function unavailableResponse(): HousePublicDataResponseV1 {
   return {
     contract: "house_public_data.v1",
@@ -170,6 +181,7 @@ async function performHousePublicDataRefresh(
   houseId: string,
   client: DatafordelerClient
 ) {
+  const attemptedAt = new Date().toISOString();
   const target = await getPublicDataTargetForHouse(userId, houseId);
   const configStatus = getDatafordelerConfigStatus();
 
@@ -181,16 +193,22 @@ async function performHousePublicDataRefresh(
       "Public data enrichment is not configured on the server."
     );
 
-    return (
-      (await previousUsableHousePublicData(userId, houseId)) ??
-      unavailableResponse()
+    const previous = await previousUsableHousePublicData(userId, houseId);
+    return withRefreshStatus(
+      previous ?? unavailableResponse(),
+      "temporarily_unavailable",
+      attemptedAt
     );
   }
 
   try {
     const raw = await client.enrichAddress(target.darAddressId);
     const normalized = mapPublicData(target, raw);
-    return saveHousePublicDataSnapshot(target, raw, normalized);
+    return withRefreshStatus(
+      await saveHousePublicDataSnapshot(target, raw, normalized),
+      "success",
+      attemptedAt
+    );
   } catch (error) {
     if (error instanceof DatafordelerProviderError) {
       const status =
@@ -206,27 +224,42 @@ async function performHousePublicDataRefresh(
         error.message
       );
 
+      console.error(
+        JSON.stringify({
+          event: "public_data.provider_refresh_failed",
+          houseId,
+          providerCode: error.code,
+          httpStatus: error.httpStatus,
+          retryable: error.retryable,
+          attemptedAt
+        })
+      );
+
       if (status !== "not_found") {
         const previous = await previousUsableHousePublicData(userId, houseId);
 
         if (previous) {
-          return previous;
+          return withRefreshStatus(previous, status, attemptedAt);
         }
       }
 
-      return {
-        ...unavailableResponse(),
+      return withRefreshStatus(
+        {
+          ...unavailableResponse(),
+          status,
+          warnings: [
+            {
+              code:
+                status === "not_found"
+                  ? "provider_not_found"
+                  : "provider_temporarily_unavailable",
+              message: error.message
+            }
+          ]
+        } satisfies HousePublicDataResponseV1,
         status,
-        warnings: [
-          {
-            code:
-              status === "not_found"
-                ? "provider_not_found"
-                : "provider_temporarily_unavailable",
-            message: error.message
-          }
-        ]
-      } satisfies HousePublicDataResponseV1;
+        attemptedAt
+      );
     }
 
     await recordHousePublicDataFailure(
@@ -238,7 +271,7 @@ async function performHousePublicDataRefresh(
     const previous = await previousUsableHousePublicData(userId, houseId);
 
     if (previous) {
-      return previous;
+      return withRefreshStatus(previous, "failed", attemptedAt);
     }
 
     throw error;

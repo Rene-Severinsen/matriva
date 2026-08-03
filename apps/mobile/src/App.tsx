@@ -4405,13 +4405,26 @@ function ProfileScreen({
 
 export default function App() {
   const accessTokenRef = useRef<string | null>(null);
+  const refreshTokenRef = useRef<string | null>(null);
   const consumedMagicLinkTokensRef = useRef<Set<string>>(new Set());
   const isConsumingMagicLinkRef = useRef(false);
   const apiClient = useMemo(
     () =>
       createMatrivaApiClient({
         baseUrl: matrivaApiConfig.baseUrl,
-        getAccessToken: () => accessTokenRef.current
+        getAccessToken: () => accessTokenRef.current,
+        getRefreshToken: () => refreshTokenRef.current,
+        onSessionRefreshed: async (tokens) => {
+          accessTokenRef.current = tokens.accessToken;
+          refreshTokenRef.current = tokens.refreshToken;
+          setSession(tokens);
+          await writeStoredSession(tokens);
+        },
+        onSessionExpired: async () => {
+          await clearStoredSession();
+          resetUnauthenticatedFlowState();
+          setAuthStatus("anonymous");
+        }
       }),
     []
   );
@@ -4541,6 +4554,7 @@ export default function App() {
 
   function resetUnauthenticatedFlowState() {
     accessTokenRef.current = null;
+    refreshTokenRef.current = null;
     isConsumingMagicLinkRef.current = false;
     consumedMagicLinkTokensRef.current.clear();
     setSession(null);
@@ -4643,6 +4657,7 @@ export default function App() {
 
   async function storeSessionTokens(tokens: SessionTokens) {
     accessTokenRef.current = tokens.accessToken;
+    refreshTokenRef.current = tokens.refreshToken;
     setSession(tokens);
     await writeStoredSession(tokens);
   }
@@ -4792,6 +4807,7 @@ export default function App() {
         }
 
         accessTokenRef.current = storedSession.accessToken;
+        refreshTokenRef.current = storedSession.refreshToken;
         const refreshed = await apiClient.refreshSession({
           refreshToken: storedSession.refreshToken
         });
@@ -5882,10 +5898,22 @@ export default function App() {
         publicData.status === "partial" ||
         publicData.status === "ambiguous"
       ) {
-        setPublicDataRefreshMessage({
-          tone: "success",
-          text: "BBR-oplysninger er opdateret."
-        });
+        if (publicData.refresh?.status === "temporarily_unavailable") {
+          setPublicDataRefreshMessage({
+            tone: "warning",
+            text: "BBR-servicen er ikke tilgængelig lige nu. Du ser de senest hentede oplysninger."
+          });
+        } else if (publicData.refresh?.status === "failed") {
+          setPublicDataRefreshMessage({
+            tone: "warning",
+            text: "BBR-oplysninger kunne ikke opdateres lige nu. Du ser de senest hentede oplysninger."
+          });
+        } else {
+          setPublicDataRefreshMessage({
+            tone: "success",
+            text: "BBR-oplysninger er opdateret."
+          });
+        }
       } else if (publicData.status === "not_found") {
         setPublicDataRefreshMessage({
           tone: "warning",

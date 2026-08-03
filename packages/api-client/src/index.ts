@@ -98,6 +98,7 @@ import {
   type SavedHouseResponse,
   type SavedHousesResponse,
   type SelectedAddressInput,
+  type SessionTokens,
   type TaskId,
   type DocumentId,
   type HouseDocumentResponse,
@@ -117,6 +118,9 @@ export type MatrivaApiClientOptions = {
   baseUrl: string;
   fetchImpl?: typeof fetch;
   getAccessToken?: () => string | null | undefined;
+  getRefreshToken?: () => string | null | undefined;
+  onSessionRefreshed?: (tokens: SessionTokens) => void | Promise<void>;
+  onSessionExpired?: () => void | Promise<void>;
 };
 
 export type AdminListRequest<Sort extends string> = {
@@ -545,7 +549,8 @@ export function createMatrivaApiClient(
   options: MatrivaApiClientOptions
 ): MatrivaApiClient {
   const normalizedBaseUrl = options.baseUrl.replace(/\/$/, "");
-  const fetcher = options.fetchImpl ?? fetch;
+  const rawFetcher = options.fetchImpl ?? fetch;
+  let sessionRefreshPromise: Promise<boolean> | null = null;
 
   function authHeaders(extra?: HeadersInit): HeadersInit {
     const token = options.getAccessToken?.();
@@ -555,6 +560,95 @@ export function createMatrivaApiClient(
       ...(token ? { authorization: `Bearer ${token}` } : {})
     };
   }
+
+  async function refreshAccessToken() {
+    if (!options.getRefreshToken) {
+      return false;
+    }
+
+    if (!sessionRefreshPromise) {
+      sessionRefreshPromise = (async () => {
+        const refreshToken = options.getRefreshToken?.();
+
+        if (!refreshToken) {
+          return false;
+        }
+
+        const response = await rawFetcher(`${normalizedBaseUrl}/v1/auth/refresh`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ refreshToken })
+        });
+
+        if (!response.ok) {
+          return false;
+        }
+
+        const payload = authSessionResponseSchema.parse(await response.json());
+        await options.onSessionRefreshed?.(payload.tokens);
+        return true;
+      })()
+        .catch(() => false)
+        .finally(() => {
+          sessionRefreshPromise = null;
+        });
+    }
+
+    const refreshed = await sessionRefreshPromise;
+
+    if (!refreshed) {
+      await options.onSessionExpired?.();
+    }
+
+    return refreshed;
+  }
+
+  const fetcher: typeof fetch = async (input, init) => {
+    const response = await rawFetcher(input, init);
+
+    if (response.status !== 401 || !options.getRefreshToken) {
+      return response;
+    }
+
+    let code: string | null = null;
+
+    try {
+      const payload = await response.clone().json();
+      if (
+        typeof payload === "object" &&
+        payload !== null &&
+        "code" in payload &&
+        typeof payload.code === "string"
+      ) {
+        code = payload.code;
+      }
+    } catch {
+      return response;
+    }
+
+    if (code !== "auth_required") {
+      return response;
+    }
+
+    if (!(await refreshAccessToken())) {
+      throw new MatrivaApiError(
+        401,
+        "session_invalid",
+        "Din session er udløbet. Log ind igen."
+      );
+    }
+
+    const retryHeaders = new Headers(init?.headers);
+    const accessToken = options.getAccessToken?.();
+
+    if (accessToken) {
+      retryHeaders.set("authorization", `Bearer ${accessToken}`);
+    } else {
+      retryHeaders.delete("authorization");
+    }
+
+    return rawFetcher(input, { ...init, headers: retryHeaders });
+  };
 
   async function parseApiResponse(response: Response, fallbackMessage: string) {
     if (response.ok) {

@@ -832,7 +832,12 @@ function HouseStatusCard({
     <Card variant="plain">
       <View style={styles.houseHeroTop}>
         <View style={styles.houseGlyph}>
-          <Text style={styles.houseGlyphText}>M</Text>
+          <Image
+            accessibilityElementsHidden
+            resizeMode="contain"
+            source={matrivaSymbol}
+            style={styles.houseGlyphImage}
+          />
         </View>
         <View style={styles.houseHeroText}>
           <Text style={styles.houseAddress}>{formatHouseAddressLabel(house.addressLabel)}</Text>
@@ -1044,13 +1049,15 @@ function MaintenanceSummary({
   overdueTasks,
   upcomingTasks,
   onCreateTask,
-  onOpenTasks
+  onOpenTasks,
+  onOpenTask
 }: {
   activeTasks: MaintenanceTask[];
   overdueTasks: MaintenanceTask[];
   upcomingTasks: MaintenanceTask[];
   onCreateTask: () => void;
   onOpenTasks: () => void;
+  onOpenTask: (task: MaintenanceTask) => void;
 }) {
   const taskPreview = overdueTasks[0] ?? upcomingTasks[0] ?? activeTasks[0] ?? null;
   const taskPreviewDescription = taskPreview ? visibleTaskDescription(taskPreview) : null;
@@ -1091,7 +1098,15 @@ function MaintenanceSummary({
       </View>
 
       {taskPreview ? (
-        <View style={styles.summaryTaskPreview}>
+        <Pressable
+          accessibilityLabel={`Åbn opgave: ${taskPreview.title}`}
+          accessibilityRole="button"
+          onPress={() => onOpenTask(taskPreview)}
+          style={({ pressed }) => [
+            styles.summaryTaskPreview,
+            pressed ? styles.summaryTaskPreviewPressed : null
+          ]}
+        >
           <View style={styles.cardHeaderRow}>
             <View style={styles.taskTitleGroup}>
               <Text style={styles.cardTitle}>{taskPreview.title}</Text>
@@ -1106,7 +1121,7 @@ function MaintenanceSummary({
           {taskPreviewDescription ? (
             <Text style={styles.compactBodyText}>{taskPreviewDescription}</Text>
           ) : null}
-        </View>
+        </Pressable>
       ) : (
         <View style={styles.summaryEmpty}>
           <Text style={styles.emptyTitle}>Ingen opgaver kræver opmærksomhed</Text>
@@ -1763,7 +1778,8 @@ function DashboardScreen({
   tasks,
   onboarding,
   onCreateTask,
-  onOpenTasks
+  onOpenTasks,
+  onOpenTask
 }: {
   house: SavedHouse | null;
   publicDataSummary: HousePublicDataSummary | null;
@@ -1771,6 +1787,7 @@ function DashboardScreen({
   onboarding: React.ComponentProps<typeof HouseOnboarding>;
   onCreateTask: () => void;
   onOpenTasks: () => void;
+  onOpenTask: (task: MaintenanceTask) => void;
 }) {
   if (!house || onboarding.step === "progress" || onboarding.step === "publicDataIssue") {
     return (
@@ -1810,6 +1827,7 @@ function DashboardScreen({
         upcomingTasks={upcomingTasks}
         onCreateTask={onCreateTask}
         onOpenTasks={onOpenTasks}
+        onOpenTask={onOpenTask}
       />
     </View>
   );
@@ -3792,10 +3810,25 @@ function WelcomeScreen({
 
             </View>
 
-            <Text style={styles.welcomeLegal}>
-              Ved at fortsætte accepterer du Matri­vas brugsvilkår og
-              privatlivspolitik.
-            </Text>
+            <View style={styles.welcomeLegalContainer}>
+              <Text style={styles.welcomeLegal}>
+                Ved at fortsætte accepterer du Matrivas{" "}
+                <Text
+                  accessibilityRole="link"
+                  onPress={() => void Linking.openURL("https://matriva.dk")}
+                  style={styles.welcomeLegalLink}
+                >
+                  brugsvilkår
+                </Text>{" "}og{" "}
+                <Text
+                  accessibilityRole="link"
+                  onPress={() => void Linking.openURL("https://matriva.dk")}
+                  style={styles.welcomeLegalLink}
+                >
+                  privatlivspolitik
+                </Text>.
+              </Text>
+            </View>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -4094,6 +4127,7 @@ function DocumentsScreen({
   const [showExpiryDatePicker, setShowExpiryDatePicker] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<HouseDocument | null>(null);
   const [isDocumentNoteExpanded, setIsDocumentNoteExpanded] = useState(false);
+  const documentFormScrollRef = useRef<ScrollView | null>(null);
   useEffect(() => {
     setIsDocumentNoteExpanded(false);
   }, [selectedDocument?.id]);
@@ -4129,47 +4163,50 @@ function DocumentsScreen({
         <SafeAreaView style={styles.modalSurface}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.keyboardFrame}>
             <NumericKeyboardAccessory />
-            <ScrollView
-              automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
-              contentContainerStyle={styles.modalContent}
-              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-              keyboardShouldPersistTaps="handled"
-            >
-              <View style={styles.screenTitleRow}><Text style={styles.modalTitle}>Tilføj dokument</Text><Pressable accessibilityRole="button" onPress={resetForm}><Text style={styles.cancelText}>Annuller</Text></Pressable></View>
-              {fileName ? <Text style={styles.selectedFile}>Valgt: {fileName}</Text> : null}
-              <Text style={styles.label}>Titel</Text><TextInput accessibilityLabel="Titel" value={title} onChangeText={setTitle} placeholder="F.eks. Købsaftale" placeholderTextColor={theme.subtle} style={styles.input} />
-              <Text style={styles.label}>Dokumentdato</Text>
-              <Pressable accessibilityRole="button" accessibilityLabel="Dokumentdato" onPress={() => setShowDocumentDatePicker(true)} style={styles.dateField}><Text style={documentDate ? styles.dateFieldValue : styles.dateFieldPlaceholder}>{documentDate ? formatDisplayDate(documentDate) : "Vælg dato"}</Text><Text style={styles.dateFieldIcon}>⌄</Text></Pressable>
-              {documentDate ? <Pressable accessibilityRole="button" onPress={() => setDocumentDate("")}><Text style={styles.clearDateText}>Fjern dato</Text></Pressable> : null}
-              <DeadlineDatePicker title="Vælg dokumentdato" visible={showDocumentDatePicker} selectedDate={documentDate} onClose={() => setShowDocumentDatePicker(false)} onClear={() => { setDocumentDate(""); setShowDocumentDatePicker(false); }} onSelect={(value) => { setDocumentDate(value); setShowDocumentDatePicker(false); }} />
-              <Text style={styles.label}>Dokumenttype</Text><DocumentTypeSelector value={documentType} onChange={setDocumentType} />
-              {documentTypeHasAmount(documentType) ? <><Text style={styles.label}>Beløb i DKK</Text><TextInput accessibilityLabel="Beløb i DKK" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" inputAccessoryViewID={Platform.OS === "ios" ? numericKeyboardAccessoryId : undefined} placeholder="0,00" placeholderTextColor={theme.subtle} style={styles.input} /></> : null}
-              {relatedPartyLabel ? <><Text style={styles.label}>{relatedPartyLabel}</Text><TextInput accessibilityLabel={relatedPartyLabel} value={relatedParty} onChangeText={setRelatedParty} style={styles.input} /></> : null}
-              {hasExpiry ? <><Text style={styles.label}>{expiryLabel}</Text><Pressable accessibilityRole="button" accessibilityLabel={expiryLabel} onPress={() => setShowExpiryDatePicker(true)} style={styles.dateField}><Text style={expiresAt ? styles.dateFieldValue : styles.dateFieldPlaceholder}>{expiresAt ? formatDisplayDate(expiresAt) : "Vælg dato"}</Text><Text style={styles.dateFieldIcon}>⌄</Text></Pressable>{expiresAt ? <Pressable accessibilityRole="button" onPress={() => setExpiresAt("")}><Text style={styles.clearDateText}>Fjern dato</Text></Pressable> : null}<DeadlineDatePicker title={expiryLabel} visible={showExpiryDatePicker} selectedDate={expiresAt} onClose={() => setShowExpiryDatePicker(false)} onClear={() => { setExpiresAt(""); setShowExpiryDatePicker(false); }} onSelect={(value) => { setExpiresAt(value); setShowExpiryDatePicker(false); }} /></> : null}
-              <View style={styles.switchRow}><Text style={styles.label}>Markér som vigtigt</Text><Switch accessibilityLabel="Markér som vigtigt" value={isImportant} onValueChange={setIsImportant} trackColor={{ true: theme.primary }} /></View>
-              <Text style={styles.label}>Notat</Text><TextInput value={note} onChangeText={setNote} multiline style={[styles.input, styles.textArea]} />
-              <PrimaryButton
-                label="Gem"
-                disabled={!fileName || !title.trim() || !documentType || isSaving}
-                loading={isSaving}
-                onPress={async () => {
-                  const saved = await onSaveDocument({
-                    title: title.trim(),
-                    documentDate: documentDate || null,
-                    category: houseDocumentCategoryForType(documentType),
-                    documentType,
-                    relatedParty: relatedParty || null,
-                    amountMinor: amount ? Math.round(Number(amount.replace(",", ".")) * 100) : null,
-                    expiresAt: expiresAt || null,
-                    isImportant,
-                    note: note || null
-                  });
-                  if (saved) {
-                    resetForm();
-                  }
-                }}
-              />
-            </ScrollView>
+            <KeyboardAwareScrollContext.Provider value={documentFormScrollRef}>
+              <ScrollView
+                automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+                contentContainerStyle={[styles.modalContent, styles.keyboardContent]}
+                keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+                keyboardShouldPersistTaps="handled"
+                ref={documentFormScrollRef}
+              >
+                <View style={styles.screenTitleRow}><Text style={styles.modalTitle}>Tilføj dokument</Text><Pressable accessibilityRole="button" onPress={resetForm}><Text style={styles.cancelText}>Annuller</Text></Pressable></View>
+                {fileName ? <Text style={styles.selectedFile}>Valgt: {fileName}</Text> : null}
+                <Text style={styles.label}>Titel</Text><TextInput accessibilityLabel="Titel" value={title} onChangeText={setTitle} placeholder="F.eks. Købsaftale" placeholderTextColor={theme.subtle} style={styles.input} />
+                <Text style={styles.label}>Dokumentdato</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel="Dokumentdato" onPress={() => setShowDocumentDatePicker(true)} style={styles.dateField}><Text style={documentDate ? styles.dateFieldValue : styles.dateFieldPlaceholder}>{documentDate ? formatDisplayDate(documentDate) : "Vælg dato"}</Text><Text style={styles.dateFieldIcon}>⌄</Text></Pressable>
+                {documentDate ? <Pressable accessibilityRole="button" onPress={() => setDocumentDate("")}><Text style={styles.clearDateText}>Fjern dato</Text></Pressable> : null}
+                <DeadlineDatePicker title="Vælg dokumentdato" visible={showDocumentDatePicker} selectedDate={documentDate} onClose={() => setShowDocumentDatePicker(false)} onClear={() => { setDocumentDate(""); setShowDocumentDatePicker(false); }} onSelect={(value) => { setDocumentDate(value); setShowDocumentDatePicker(false); }} />
+                <Text style={styles.label}>Dokumenttype</Text><DocumentTypeSelector value={documentType} onChange={setDocumentType} />
+                {documentTypeHasAmount(documentType) ? <><Text style={styles.label}>Beløb i DKK</Text><TextInput accessibilityLabel="Beløb i DKK" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" inputAccessoryViewID={Platform.OS === "ios" ? numericKeyboardAccessoryId : undefined} placeholder="0,00" placeholderTextColor={theme.subtle} style={styles.input} /></> : null}
+                {relatedPartyLabel ? <><Text style={styles.label}>{relatedPartyLabel}</Text><TextInput accessibilityLabel={relatedPartyLabel} value={relatedParty} onChangeText={setRelatedParty} style={styles.input} /></> : null}
+                {hasExpiry ? <><Text style={styles.label}>{expiryLabel}</Text><Pressable accessibilityRole="button" accessibilityLabel={expiryLabel} onPress={() => setShowExpiryDatePicker(true)} style={styles.dateField}><Text style={expiresAt ? styles.dateFieldValue : styles.dateFieldPlaceholder}>{expiresAt ? formatDisplayDate(expiresAt) : "Vælg dato"}</Text><Text style={styles.dateFieldIcon}>⌄</Text></Pressable>{expiresAt ? <Pressable accessibilityRole="button" onPress={() => setExpiresAt("")}><Text style={styles.clearDateText}>Fjern dato</Text></Pressable> : null}<DeadlineDatePicker title={expiryLabel} visible={showExpiryDatePicker} selectedDate={expiresAt} onClose={() => setShowExpiryDatePicker(false)} onClear={() => { setExpiresAt(""); setShowExpiryDatePicker(false); }} onSelect={(value) => { setExpiresAt(value); setShowExpiryDatePicker(false); }} /></> : null}
+                <View style={styles.switchRow}><Text style={styles.label}>Markér som vigtigt</Text><Switch accessibilityLabel="Markér som vigtigt" value={isImportant} onValueChange={setIsImportant} trackColor={{ true: theme.primary }} /></View>
+                <Text style={styles.label}>Notat</Text><TextInput value={note} onChangeText={setNote} multiline style={[styles.input, styles.textArea]} />
+                <PrimaryButton
+                  label="Gem"
+                  disabled={!fileName || !title.trim() || !documentType || isSaving}
+                  loading={isSaving}
+                  onPress={async () => {
+                    const saved = await onSaveDocument({
+                      title: title.trim(),
+                      documentDate: documentDate || null,
+                      category: houseDocumentCategoryForType(documentType),
+                      documentType,
+                      relatedParty: relatedParty || null,
+                      amountMinor: amount ? Math.round(Number(amount.replace(",", ".")) * 100) : null,
+                      expiresAt: expiresAt || null,
+                      isImportant,
+                      note: note || null
+                    });
+                    if (saved) {
+                      resetForm();
+                    }
+                  }}
+                />
+              </ScrollView>
+            </KeyboardAwareScrollContext.Provider>
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
@@ -5227,9 +5264,13 @@ export default function App() {
     finally { setLoadingAction(null); }
   }
 
-  async function runImprovementAction(action: Exclude<LoadingAction, "app" | "auth" | "profile" | "address" | "house" | "task" | "publicData" | "improvement" | "photo" | "recommendation" | "logout">, work: () => Promise<unknown>) {
+  async function runImprovementAction(
+    action: Exclude<LoadingAction, "app" | "auth" | "profile" | "address" | "house" | "task" | "publicData" | "improvement" | "photo" | "recommendation" | "logout">,
+    work: () => Promise<unknown>,
+    onSuccess?: () => Promise<void> | void
+  ) {
     setLoadingAction(action); setImprovementActionError(null);
-    try { await work(); await reloadImprovementDetail(); }
+    try { await work(); await reloadImprovementDetail(); await onSuccess?.(); }
     catch (caughtError) { setImprovementActionError(userFacingError(caughtError)); }
     finally { setLoadingAction(null); }
   }
@@ -5924,6 +5965,13 @@ export default function App() {
             setActiveTab("maintenance");
             setShowTaskForm(false);
           }}
+          onOpenTask={(task) => {
+            setActiveTab("maintenance");
+            setShowTaskForm(false);
+            setSelectedTaskId(task.id);
+            setMaintenanceView("taskDetail");
+            requestAnimationFrame(() => mainScrollRef.current?.scrollTo({ y: 0, animated: false }));
+          }}
         />
       );
     }
@@ -5989,7 +6037,18 @@ export default function App() {
               { text: "Arkivér", style: "destructive", onPress: () => void runImprovementAction("improvementProject", async () => { await apiClient.deleteHouseImprovement(selectedHouse.id, selectedImprovement.id); await loadHouseImprovements(selectedHouse.id); setHouseView("improvements"); }) }
             ]);
           }}
-          onUpdateProject={(input) => { if (selectedHouse && selectedImprovement) void runImprovementAction("improvementProject", () => apiClient.updateHouseImprovement(selectedHouse.id, selectedImprovement.id, input)); }}
+          onUpdateProject={(input) => {
+            if (!selectedHouse || !selectedImprovement) return;
+            void runImprovementAction(
+              "improvementProject",
+              () => apiClient.updateHouseImprovement(selectedHouse.id, selectedImprovement.id, input),
+              async () => {
+                await loadHouseImprovements(selectedHouse.id);
+                setHouseView("overview");
+                requestAnimationFrame(() => mainScrollRef.current?.scrollTo({ y: 0, animated: false }));
+              }
+            );
+          }}
           onCreateItem={() => undefined}
           onUpdateItem={() => undefined}
           onDeleteItem={() => undefined}
@@ -6665,11 +6724,22 @@ const styles = StyleSheet.create({
     fontWeight: "800"
   },
   welcomeLegal: {
-    color: theme.muted,
-    fontSize: 12,
-    lineHeight: 17,
-    paddingHorizontal: 12,
+    color: theme.text,
+    fontSize: 13,
+    fontWeight: "600",
+    lineHeight: 19,
+    paddingHorizontal: 10,
     textAlign: "center"
+  },
+  welcomeLegalContainer: {
+    alignSelf: "center",
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 8
+  },
+  welcomeLegalLink: {
+    color: theme.primary,
+    textDecorationLine: "underline"
   },
   loginTextActionPressed: {
     opacity: 0.65
@@ -7292,6 +7362,9 @@ const styles = StyleSheet.create({
     padding: 14,
     rowGap: 8
   },
+  summaryTaskPreviewPressed: {
+    backgroundColor: theme.primarySoft
+  },
   summaryEmpty: {
     backgroundColor: theme.primaryFaint,
     borderRadius: 8,
@@ -7346,6 +7419,10 @@ const styles = StyleSheet.create({
     height: 48,
     justifyContent: "center",
     width: 48
+  },
+  houseGlyphImage: {
+    height: 32,
+    width: 32
   },
   houseGlyphText: {
     color: theme.primary,

@@ -1,12 +1,24 @@
 import { StatusBar } from "expo-status-bar";
 
 import { theme } from "./theme";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  type RefObject,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import {
   ActivityIndicator,
   Alert,
+  findNodeHandle,
   Image,
   ImageBackground,
+  InputAccessoryView,
+  Keyboard,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -17,7 +29,8 @@ import {
   StyleSheet,
   Switch,
   Text,
-  TextInput,
+  TextInput as NativeTextInput,
+  type TextInputProps,
   useWindowDimensions,
   View
 } from "react-native";
@@ -110,6 +123,50 @@ const houseHeroPlaceholder = require("../assets/onboarding/house-hero-placeholde
 const welcomeHeroImage = require("../assets/onboarding/welcome-hero.png");
 const matrivaSymbol = require("../assets/onboarding/matriva-symbol.png");
 const welcomeBottomFadeImage = require("../assets/onboarding/welcome-bottom-fade.png");
+const numericKeyboardAccessoryId = "matriva-numeric-keyboard";
+const keyboardInputVisibilityOffset = 96;
+const KeyboardAwareScrollContext = createContext<RefObject<ScrollView | null> | null>(null);
+
+function TextInput(props: TextInputProps) {
+  const scrollRef = useContext(KeyboardAwareScrollContext);
+  const inputRef = useRef<NativeTextInput | null>(null);
+
+  const scrollFocusedInputIntoView = () => {
+    if (Platform.OS !== "ios" || !scrollRef?.current || !inputRef.current) {
+      return;
+    }
+
+    const inputHandle = findNodeHandle(inputRef.current);
+    if (inputHandle === null) {
+      return;
+    }
+
+    scrollRef.current
+      .getScrollResponder()
+      .scrollResponderScrollNativeHandleToKeyboard(
+        inputHandle,
+        keyboardInputVisibilityOffset,
+        true
+      );
+  };
+
+  return (
+    <NativeTextInput
+      {...props}
+      onContentSizeChange={(event) => {
+        props.onContentSizeChange?.(event);
+        if (props.multiline) {
+          requestAnimationFrame(scrollFocusedInputIntoView);
+        }
+      }}
+      onFocus={(event) => {
+        props.onFocus?.(event);
+        requestAnimationFrame(scrollFocusedInputIntoView);
+      }}
+      ref={inputRef}
+    />
+  );
+}
 
 function selectedAddressInput(
   suggestion: AddressSuggestion
@@ -476,6 +533,29 @@ function SecondaryButton({
   );
 }
 
+function NumericKeyboardAccessory() {
+  if (Platform.OS !== "ios") {
+    return null;
+  }
+
+  return (
+    <InputAccessoryView
+      backgroundColor={theme.surface}
+      nativeID={numericKeyboardAccessoryId}
+    >
+      <View style={styles.numericKeyboardAccessory}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => Keyboard.dismiss()}
+          style={styles.numericKeyboardDoneButton}
+        >
+          <Text style={styles.numericKeyboardDoneText}>Færdig</Text>
+        </Pressable>
+      </View>
+    </InputAccessoryView>
+  );
+}
+
 function DeadlineDatePicker({
   visible,
   selectedDate,
@@ -550,6 +630,7 @@ function DeadlineDatePicker({
             locale="da-DK"
             mode="date"
             onChange={handleDateChange}
+            themeVariant={isIos ? "light" : undefined!}
             value={pickerValue}
           />
 
@@ -1804,8 +1885,8 @@ function ImprovementDetailPanel({
       <Text style={styles.label}>Beskrivelse</Text><TextInput editable={!saving} value={description} onChangeText={setDescription} multiline style={[styles.input, styles.textArea]} />
       <Text style={styles.label}>Status</Text><View style={styles.choiceWrap}>{(Object.keys(improvementStatusLabels) as Array<keyof typeof improvementStatusLabels>).map((key) => <Pressable key={key} onPress={() => setStatus(key)} style={[styles.choiceChip, status === key ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>{improvementStatusLabels[key]}</Text></Pressable>)}</View>
       <Text style={styles.label}>Kategori</Text><View style={styles.choiceWrap}>{improvementCategories.map(([key, label]) => <Pressable key={key} onPress={() => setCategory(category === key ? null : key)} style={[styles.choiceChip, category === key ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>{label}</Text></Pressable>)}</View>
-      <Text style={styles.label}>Periode</Text><View style={styles.choiceWrap}><Pressable onPress={() => setDatePrecision("year")} style={[styles.choiceChip, datePrecision === "year" ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>År</Text></Pressable><Pressable onPress={() => setDatePrecision("exact")} style={[styles.choiceChip, datePrecision === "exact" ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>Eksakt dato</Text></Pressable></View>{datePrecision === "year" ? <TextInput value={startDate.slice(0, 4)} onChangeText={(value) => setStartDate(`${value}-01-01`)} keyboardType="number-pad" maxLength={4} placeholder="År" style={styles.input} /> : <><SecondaryButton label={startDate || "Vælg startdato"} onPress={() => setShowDatePicker(true)} />{showDatePicker ? <DateTimePicker value={startDate ? new Date(`${startDate}T12:00:00`) : new Date()} mode="date" onChange={(event, date) => { if (date) setStartDate(date.toISOString().slice(0, 10)); setShowDatePicker(false); }} /> : null}</>}
-      <Text style={styles.label}>Budget (DKK)</Text><TextInput editable={!saving} value={budget} onChangeText={setBudget} keyboardType="decimal-pad" placeholder="Valgfrit budget" style={styles.input} />
+      <Text style={styles.label}>Periode</Text><View style={styles.choiceWrap}><Pressable onPress={() => setDatePrecision("year")} style={[styles.choiceChip, datePrecision === "year" ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>År</Text></Pressable><Pressable onPress={() => setDatePrecision("exact")} style={[styles.choiceChip, datePrecision === "exact" ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>Eksakt dato</Text></Pressable></View>{datePrecision === "year" ? <TextInput value={startDate.slice(0, 4)} onChangeText={(value) => setStartDate(`${value}-01-01`)} keyboardType="number-pad" inputAccessoryViewID={Platform.OS === "ios" ? numericKeyboardAccessoryId : undefined} maxLength={4} placeholder="År" style={styles.input} /> : <><SecondaryButton label={startDate || "Vælg startdato"} onPress={() => setShowDatePicker(true)} />{showDatePicker ? <DateTimePicker value={startDate ? new Date(`${startDate}T12:00:00`) : new Date()} mode="date" onChange={(event, date) => { if (date) setStartDate(date.toISOString().slice(0, 10)); setShowDatePicker(false); }} /> : null}</>}
+      <Text style={styles.label}>Budget (DKK)</Text><TextInput editable={!saving} value={budget} onChangeText={setBudget} keyboardType="decimal-pad" inputAccessoryViewID={Platform.OS === "ios" ? numericKeyboardAccessoryId : undefined} placeholder="Valgfrit budget" style={styles.input} />
       <PrimaryButton label={busyAction === "improvementProject" ? "Gemmer..." : "Gem projekt"} disabled={saving} onPress={saveProject} />
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
     </Card>
@@ -1816,7 +1897,7 @@ function ImprovementDetailPanel({
     <Card><Text style={styles.cardTitle}>Udgifter</Text>
       {project.expenses.map((expense: any) => <View key={expense.id} style={styles.improvementCard}><Text style={styles.taskRowTitle}>{expense.description}</Text><Text style={styles.metaText}>{expenseTypeLabels[expense.expenseType as keyof typeof expenseTypeLabels]} · {formatDkkPrice(expense.amountMinor)}</Text><View style={styles.summaryActions}><SecondaryButton label="Rediger" onPress={() => { setEditingExpenseId(expense.id); setExpenseDescription(expense.description); setExpenseAmount(formatDkkPrice(expense.amountMinor).replace(/\s?kr\.$/, "")); setExpenseType(expense.expenseType); setExpenseDate(expense.expenseDate ?? ""); setExpenseSupplier(expense.supplier ?? ""); setExpenseNote(expense.note ?? ""); setExpenseItemId(expense.improvementItemId); }} /><SecondaryButton label="Slet" onPress={() => Alert.alert("Slet udgift?", "Udgiften arkiveres.", [{ text: "Annuller", style: "cancel" }, { text: "Slet", style: "destructive", onPress: () => onDeleteExpense(expense.id) }])} /></View></View>)}
       <SecondaryButton label={expenseDate || "Vælg dato"} onPress={() => setShowExpenseDatePicker(true)} />{showExpenseDatePicker ? <DateTimePicker value={expenseDate ? new Date(`${expenseDate}T12:00:00`) : new Date()} mode="date" onChange={(event, date) => { if (date) setExpenseDate(date.toISOString().slice(0, 10)); setShowExpenseDatePicker(false); }} /> : null}
-      <TextInput placeholder="Beskrivelse" value={expenseDescription} onChangeText={setExpenseDescription} style={styles.input} /><TextInput placeholder="Leverandør (valgfrit)" value={expenseSupplier} onChangeText={setExpenseSupplier} style={styles.input} /><TextInput placeholder="Beløb i DKK" value={expenseAmount} onChangeText={setExpenseAmount} keyboardType="decimal-pad" style={styles.input} /><TextInput placeholder="Note (valgfrit)" value={expenseNote} onChangeText={setExpenseNote} multiline style={[styles.input, styles.textArea]} /><Text style={styles.label}>Underopgave (valgfrit)</Text><View style={styles.choiceWrap}><Pressable onPress={() => setExpenseItemId(null)} style={[styles.choiceChip, expenseItemId === null ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>Projekt</Text></Pressable>{project.items.map((item: any) => <Pressable key={item.id} onPress={() => setExpenseItemId(item.id)} style={[styles.choiceChip, expenseItemId === item.id ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>{item.title}</Text></Pressable>)}</View><View style={styles.choiceWrap}>{(Object.keys(expenseTypeLabels) as Array<keyof typeof expenseTypeLabels>).map((key) => <Pressable key={key} onPress={() => setExpenseType(key)} style={[styles.choiceChip, expenseType === key ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>{expenseTypeLabels[key]}</Text></Pressable>)}</View><PrimaryButton label={editingExpenseId ? "Gem udgift" : "Registrer udgift"} disabled={saving} onPress={saveExpense} />
+      <TextInput placeholder="Beskrivelse" value={expenseDescription} onChangeText={setExpenseDescription} style={styles.input} /><TextInput placeholder="Leverandør (valgfrit)" value={expenseSupplier} onChangeText={setExpenseSupplier} style={styles.input} /><TextInput placeholder="Beløb i DKK" value={expenseAmount} onChangeText={setExpenseAmount} keyboardType="decimal-pad" inputAccessoryViewID={Platform.OS === "ios" ? numericKeyboardAccessoryId : undefined} style={styles.input} /><TextInput placeholder="Note (valgfrit)" value={expenseNote} onChangeText={setExpenseNote} multiline style={[styles.input, styles.textArea]} /><Text style={styles.label}>Underopgave (valgfrit)</Text><View style={styles.choiceWrap}><Pressable onPress={() => setExpenseItemId(null)} style={[styles.choiceChip, expenseItemId === null ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>Projekt</Text></Pressable>{project.items.map((item: any) => <Pressable key={item.id} onPress={() => setExpenseItemId(item.id)} style={[styles.choiceChip, expenseItemId === item.id ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>{item.title}</Text></Pressable>)}</View><View style={styles.choiceWrap}>{(Object.keys(expenseTypeLabels) as Array<keyof typeof expenseTypeLabels>).map((key) => <Pressable key={key} onPress={() => setExpenseType(key)} style={[styles.choiceChip, expenseType === key ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>{expenseTypeLabels[key]}</Text></Pressable>)}</View><PrimaryButton label={editingExpenseId ? "Gem udgift" : "Registrer udgift"} disabled={saving} onPress={saveExpense} />
     </Card>
     <Card><Text style={styles.cardTitle}>Dokumenter</Text>{project.documents.map((relation) => <View key={`${relation.documentId}-${relation.relationType}`} style={styles.summaryActions}><Text style={styles.compactBodyText}>{relation.documentId} · {relation.relationType === "project" ? "Projekt" : relation.relationType === "item" ? "Underopgave" : "Udgift"}</Text><SecondaryButton label="Fjern" onPress={() => Alert.alert("Fjern dokumentrelation?", "Dokumentet slettes ikke.", [{ text: "Annuller", style: "cancel" }, { text: "Fjern", style: "destructive", onPress: () => onUnlinkDocument(relation.documentId) }])} /></View>)}<Text style={styles.label}>Tilknytning</Text><View style={styles.choiceWrap}><Pressable onPress={() => setRelationTarget({})} style={[styles.choiceChip, !relationTarget.improvementItemId && !relationTarget.expenseId ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>Projekt</Text></Pressable>{project.items.map((item) => <Pressable key={item.id} onPress={() => setRelationTarget({ improvementItemId: item.id })} style={[styles.choiceChip, relationTarget.improvementItemId === item.id ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>Opgave: {item.title}</Text></Pressable>)}{project.expenses.map((expense) => <Pressable key={expense.id} onPress={() => setRelationTarget({ expenseId: expense.id })} style={[styles.choiceChip, relationTarget.expenseId === expense.id ? styles.choiceChipSelected : null]}><Text style={styles.choiceChipText}>Udgift: {expense.description}</Text></Pressable>)}</View>{documents.filter((doc) => !project.documents.some((relation) => relation.documentId === doc.id)).slice(0, 8).map((doc) => <SecondaryButton key={doc.id} label={`Tilknyt ${doc.title ?? doc.originalFilename}`} disabled={saving} onPress={() => onLinkDocument({ documentId: doc.id, ...relationTarget })} />)}<Text style={styles.metaText}>Dokumenter uploades fortsat via dokumentarkivet.</Text></Card>
     <SecondaryButton label="Arkivér projekt" onPress={onArchive} />
@@ -1849,7 +1930,7 @@ function SimpleImprovementDetail({ project, documents, onUpdate, onDelete, onAtt
       <Text style={styles.label}>Beskrivelse</Text>
       <TextInput value={description} onChangeText={setDescription} placeholder="Valgfrit" placeholderTextColor={theme.muted} multiline style={[styles.input, styles.textArea]} />
       <Text style={styles.label}>Beløb i DKK</Text>
-      <TextInput accessibilityLabel="Beløb i DKK" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0,00" placeholderTextColor={theme.subtle} style={styles.input} />
+      <TextInput accessibilityLabel="Beløb i DKK" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" inputAccessoryViewID={Platform.OS === "ios" ? numericKeyboardAccessoryId : undefined} placeholder="0,00" placeholderTextColor={theme.subtle} style={styles.input} />
       <PrimaryButton label="Gem ændringer" onPress={() => { const parsed = parseDanishPriceInput(amount); if (parsed.ok && completedDate) onUpdate({ title: title.trim(), completedDate, description: description.trim() || null, category, totalAmountMinor: parsed.amountMinor }); }} />
     </Card>
     <Card>
@@ -2198,6 +2279,7 @@ function HouseScreen({
               accessibilityLabel="Beløb i DKK"
               editable={!isSavingImprovement}
               keyboardType="decimal-pad"
+              inputAccessoryViewID={Platform.OS === "ios" ? numericKeyboardAccessoryId : undefined}
               onChangeText={onImprovementCostChange}
               placeholder="0,00"
               placeholderTextColor={theme.subtle}
@@ -2887,6 +2969,7 @@ function MaintenanceScreen({
               <TextInput
                 accessibilityLabel="Pris"
                 keyboardType="decimal-pad"
+                inputAccessoryViewID={Platform.OS === "ios" ? numericKeyboardAccessoryId : undefined}
                 onChangeText={setDetailPrice}
                 placeholder="0,00"
                 placeholderTextColor={theme.muted}
@@ -3343,6 +3426,7 @@ function MaintenanceScreen({
                 accessibilityLabel="Pris"
                 editable={!isSaving}
                 keyboardType="decimal-pad"
+                inputAccessoryViewID={Platform.OS === "ios" ? numericKeyboardAccessoryId : undefined}
                 onChangeText={onPriceChange}
                 placeholder="0,00"
                 placeholderTextColor={theme.muted}
@@ -4047,7 +4131,13 @@ function DocumentsScreen({
       <Modal visible={showForm} animationType="slide" onRequestClose={resetForm}>
         <SafeAreaView style={styles.modalSurface}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.keyboardFrame}>
-            <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
+            <NumericKeyboardAccessory />
+            <ScrollView
+              automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+              contentContainerStyle={styles.modalContent}
+              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+              keyboardShouldPersistTaps="handled"
+            >
               <View style={styles.screenTitleRow}><Text style={styles.modalTitle}>Tilføj dokument</Text><Pressable accessibilityRole="button" onPress={resetForm}><Text style={styles.cancelText}>Annuller</Text></Pressable></View>
               {fileName ? <Text style={styles.selectedFile}>Valgt: {fileName}</Text> : null}
               <Text style={styles.label}>Titel</Text><TextInput accessibilityLabel="Titel" value={title} onChangeText={setTitle} placeholder="F.eks. Købsaftale" placeholderTextColor={theme.subtle} style={styles.input} />
@@ -4056,7 +4146,7 @@ function DocumentsScreen({
               {documentDate ? <Pressable accessibilityRole="button" onPress={() => setDocumentDate("")}><Text style={styles.clearDateText}>Fjern dato</Text></Pressable> : null}
               <DeadlineDatePicker title="Vælg dokumentdato" visible={showDocumentDatePicker} selectedDate={documentDate} onClose={() => setShowDocumentDatePicker(false)} onClear={() => { setDocumentDate(""); setShowDocumentDatePicker(false); }} onSelect={(value) => { setDocumentDate(value); setShowDocumentDatePicker(false); }} />
               <Text style={styles.label}>Dokumenttype</Text><DocumentTypeSelector value={documentType} onChange={setDocumentType} />
-              {documentTypeHasAmount(documentType) ? <><Text style={styles.label}>Beløb i DKK</Text><TextInput accessibilityLabel="Beløb i DKK" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0,00" placeholderTextColor={theme.subtle} style={styles.input} /></> : null}
+              {documentTypeHasAmount(documentType) ? <><Text style={styles.label}>Beløb i DKK</Text><TextInput accessibilityLabel="Beløb i DKK" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" inputAccessoryViewID={Platform.OS === "ios" ? numericKeyboardAccessoryId : undefined} placeholder="0,00" placeholderTextColor={theme.subtle} style={styles.input} /></> : null}
               {relatedPartyLabel ? <><Text style={styles.label}>{relatedPartyLabel}</Text><TextInput accessibilityLabel={relatedPartyLabel} value={relatedParty} onChangeText={setRelatedParty} style={styles.input} /></> : null}
               {hasExpiry ? <><Text style={styles.label}>{expiryLabel}</Text><Pressable accessibilityRole="button" accessibilityLabel={expiryLabel} onPress={() => setShowExpiryDatePicker(true)} style={styles.dateField}><Text style={expiresAt ? styles.dateFieldValue : styles.dateFieldPlaceholder}>{expiresAt ? formatDisplayDate(expiresAt) : "Vælg dato"}</Text><Text style={styles.dateFieldIcon}>⌄</Text></Pressable>{expiresAt ? <Pressable accessibilityRole="button" onPress={() => setExpiresAt("")}><Text style={styles.clearDateText}>Fjern dato</Text></Pressable> : null}<DeadlineDatePicker title={expiryLabel} visible={showExpiryDatePicker} selectedDate={expiresAt} onClose={() => setShowExpiryDatePicker(false)} onClear={() => { setExpiresAt(""); setShowExpiryDatePicker(false); }} onSelect={(value) => { setExpiresAt(value); setShowExpiryDatePicker(false); }} /></> : null}
               <View style={styles.switchRow}><Text style={styles.label}>Markér som vigtigt</Text><Switch accessibilityLabel="Markér som vigtigt" value={isImportant} onValueChange={setIsImportant} trackColor={{ true: theme.primary }} /></View>
@@ -6141,7 +6231,9 @@ export default function App() {
           style={styles.keyboardFrame}
         >
           <ScrollView
+            automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
             contentContainerStyle={styles.content}
+            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
             keyboardShouldPersistTaps="handled"
           >
             {error ? (
@@ -6176,7 +6268,12 @@ export default function App() {
     return (
       <SafeAreaView style={styles.screen}>
         <StatusBar style="dark" />
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+          contentContainerStyle={styles.content}
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+          keyboardShouldPersistTaps="handled"
+        >
           {error ? (
             <Card>
               <Text style={styles.errorTitle}>Der opstod et problem</Text>
@@ -6196,7 +6293,12 @@ export default function App() {
     return (
       <SafeAreaView style={styles.screen}>
         <StatusBar style="dark" />
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+          contentContainerStyle={styles.content}
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+          keyboardShouldPersistTaps="handled"
+        >
           {error ? (
             <Card>
               <Text style={styles.errorTitle}>Der opstod et problem</Text>
@@ -6222,7 +6324,12 @@ export default function App() {
     return (
       <SafeAreaView style={styles.screen}>
         <StatusBar style="dark" />
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+          contentContainerStyle={styles.content}
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+          keyboardShouldPersistTaps="handled"
+        >
           {error ? (
             <Card>
               <Text style={styles.errorTitle}>Der opstod et problem</Text>
@@ -6239,19 +6346,29 @@ export default function App() {
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
       <View style={styles.appFrame}>
-        <ScrollView
-          ref={mainScrollRef}
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
+        {activeTab === "documents" ? null : <NumericKeyboardAccessory />}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.keyboardFrame}
         >
-          {error ? (
-            <Card>
-              <Text style={styles.errorTitle}>Der opstod et problem</Text>
-              <Text style={styles.errorText}>{error}</Text>
-            </Card>
-          ) : null}
-          {renderActiveScreen()}
-        </ScrollView>
+          <KeyboardAwareScrollContext.Provider value={mainScrollRef}>
+            <ScrollView
+              automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+              ref={mainScrollRef}
+              contentContainerStyle={[styles.content, styles.keyboardContent]}
+              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+              keyboardShouldPersistTaps="handled"
+            >
+              {error ? (
+                <Card>
+                  <Text style={styles.errorTitle}>Der opstod et problem</Text>
+                  <Text style={styles.errorText}>{error}</Text>
+                </Card>
+              ) : null}
+              {renderActiveScreen()}
+            </ScrollView>
+          </KeyboardAwareScrollContext.Provider>
+        </KeyboardAvoidingView>
         <Modal
           animationType="fade"
           visible={Boolean(documentPreview)}
@@ -6347,11 +6464,31 @@ const styles = StyleSheet.create({
   keyboardFrame: {
     flex: 1
   },
+  numericKeyboardAccessory: {
+    alignItems: "flex-end",
+    backgroundColor: theme.surface,
+    borderTopColor: theme.border,
+    borderTopWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8
+  },
+  numericKeyboardDoneButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4
+  },
+  numericKeyboardDoneText: {
+    color: theme.primary,
+    fontSize: 16,
+    fontWeight: "700"
+  },
   content: {
     paddingBottom: 108,
     paddingHorizontal: 18,
     paddingTop: 18,
     rowGap: 14
+  },
+  keyboardContent: {
+    flexGrow: 1
   },
   stack: {
     rowGap: 12

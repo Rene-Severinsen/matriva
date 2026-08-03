@@ -2531,9 +2531,6 @@ function ImprovementCard({ improvement, onPress = () => undefined }: { improveme
       <View style={styles.cardHeaderRow}>
         <View style={styles.taskTitleGroup}>
           <Text style={styles.taskRowTitle}>{improvement.title}</Text>
-          {improvement.description ? (
-            <Text style={styles.compactBodyText}>{improvement.description}</Text>
-          ) : null}
           <Text style={styles.metaText}>{improvementMeta(improvement)}</Text>
         </View>
         {improvement.category ? (

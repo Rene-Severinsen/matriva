@@ -586,7 +586,12 @@ export function createMatrivaApiClient(
 ): MatrivaApiClient {
   const normalizedBaseUrl = options.baseUrl.replace(/\/$/, "");
   const rawFetcher = options.fetchImpl ?? fetch;
-  let sessionRefreshPromise: Promise<boolean> | null = null;
+  type SessionRefreshResult = {
+    refreshed: boolean;
+    expired: boolean;
+    sourceRefreshToken: string | null;
+  };
+  let sessionRefreshPromise: Promise<SessionRefreshResult> | null = null;
 
   function authHeaders(extra?: HeadersInit): HeadersInit {
     const token = options.getAccessToken?.();
@@ -597,9 +602,9 @@ export function createMatrivaApiClient(
     };
   }
 
-  async function refreshAccessToken() {
+  async function refreshAccessToken(): Promise<SessionRefreshResult> {
     if (!options.getRefreshToken) {
-      return false;
+      return { refreshed: false, expired: true, sourceRefreshToken: null };
     }
 
     if (!sessionRefreshPromise) {
@@ -607,7 +612,7 @@ export function createMatrivaApiClient(
         const refreshToken = options.getRefreshToken?.();
 
         if (!refreshToken) {
-          return false;
+          return { refreshed: false, expired: true, sourceRefreshToken: null };
         }
 
         const response = await rawFetcher(`${normalizedBaseUrl}/v1/auth/refresh`, {
@@ -617,14 +622,14 @@ export function createMatrivaApiClient(
         });
 
         if (!response.ok) {
-          return false;
+          return { refreshed: false, expired: response.status === 401, sourceRefreshToken: refreshToken };
         }
 
         const payload = authSessionResponseSchema.parse(await response.json());
         await options.onSessionRefreshed?.(payload.tokens);
-        return true;
+        return { refreshed: true, expired: false, sourceRefreshToken: refreshToken };
       })()
-        .catch(() => false)
+        .catch(() => ({ refreshed: false, expired: false, sourceRefreshToken: null }))
         .finally(() => {
           sessionRefreshPromise = null;
         });
@@ -632,7 +637,11 @@ export function createMatrivaApiClient(
 
     const refreshed = await sessionRefreshPromise;
 
-    if (!refreshed) {
+    if (
+      !refreshed.refreshed &&
+      refreshed.expired &&
+      options.getRefreshToken?.() === refreshed.sourceRefreshToken
+    ) {
       await options.onSessionExpired?.();
     }
 
@@ -666,7 +675,19 @@ export function createMatrivaApiClient(
       return response;
     }
 
-    if (!(await refreshAccessToken())) {
+    const refreshResult = await refreshAccessToken();
+    if (!refreshResult.refreshed) {
+      const currentRefreshToken = options.getRefreshToken?.();
+      const currentAccessToken = options.getAccessToken?.();
+      if (
+        currentAccessToken &&
+        refreshResult.sourceRefreshToken !== null &&
+        currentRefreshToken !== refreshResult.sourceRefreshToken
+      ) {
+        const retryHeaders = new Headers(init?.headers);
+        retryHeaders.set("authorization", `Bearer ${currentAccessToken}`);
+        return rawFetcher(input, { ...init, headers: retryHeaders });
+      }
       throw new MatrivaApiError(
         401,
         "session_invalid",

@@ -1221,6 +1221,10 @@ const server = createServer((request, response) => {
           return;
         }
         const house = await createSavedHouse(userId, parsedRequest.data.selectedAddress, identity.bfeNumber);
+        if (!(await hasActiveHouseMembership(userId, house.id))) {
+          writeJson(response, 200, { status: "claim_required", house: { id: house.id, bfeNumber: house.bfeNumber }, message: "Ejendommen findes allerede i Matriva. For at beskytte boligens oplysninger skal din adgang bekræftes." });
+          return;
+        }
         startHousePublicDataRefreshAfterHouseCreated(userId, house.id);
         writeJson(
           response,

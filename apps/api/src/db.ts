@@ -1449,8 +1449,8 @@ export async function createSavedHouse(userId: string, input: SelectedAddressInp
   try {
     await client.query("begin");
     const existing = await client.query<HouseRow>(
-      `select h.* from houses h left join house_memberships hm on hm.house_id = h.id and hm.user_id = $1 and hm.status = 'active'
-       where h.bfe_number = $2 and h.status = 'saved' limit 1`, [userId, bfeNumber]
+      `select h.* from houses h
+       where h.bfe_number = $1 and h.status = 'saved' limit 1`, [bfeNumber]
     );
     if (existing.rowCount) {
       await client.query("commit");
@@ -1472,7 +1472,9 @@ export async function createSavedHouse(userId: string, input: SelectedAddressInp
     }
     const house = result.rows[0] as HouseRow;
     await client.query(
-      `insert into house_memberships (id, house_id, user_id, role, status) values ($1, $2, $3, 'owner', 'active')`,
+      `insert into house_memberships (id, house_id, user_id, role, status)
+       values ($1, $2, $3, 'owner', 'active')
+       on conflict (house_id, user_id) where status = 'active' do nothing`,
       [createOpaqueId("hm"), house.id, userId]
     );
     await client.query("commit");

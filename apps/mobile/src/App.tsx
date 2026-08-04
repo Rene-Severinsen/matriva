@@ -1589,6 +1589,7 @@ function TaskRow({
 }
 
 function HouseOnboarding({
+  isAddHouse,
   step,
   query,
   suggestions,
@@ -1608,10 +1609,12 @@ function HouseOnboarding({
   onRequestAccess,
   canRequestAccess,
   onStopSession,
+  onCancel,
   pendingClaimNotice,
   pendingHouseInvitations,
   onAcceptInvitation
 }: {
+  isAddHouse?: boolean;
   step: HouseOnboardingStep;
   query: string;
   suggestions: AddressSuggestion[];
@@ -1631,6 +1634,7 @@ function HouseOnboarding({
   onRequestAccess: () => void;
   canRequestAccess: boolean;
   onStopSession: () => void;
+  onCancel?: () => void;
   pendingClaimNotice: string | null;
   pendingHouseInvitations: AppBootstrapResponse["pendingHouseInvitations"];
   onAcceptInvitation: (invitationId: string) => void;
@@ -1712,10 +1716,11 @@ function HouseOnboarding({
       {pendingHouseInvitations.length > 0 ? <Card variant="soft"><Text style={styles.eyebrow}>DU ER INVITERET</Text><Text style={styles.cardTitle}>Du har adgang til invitationer</Text><Text style={styles.bodyText}>Du behøver ikke oprette en bolig selv. Accepter en invitation for at få huset tilføjet.</Text>{pendingHouseInvitations.map((invitation) => <View key={invitation.id} style={styles.invitationCard}><View style={styles.invitationText}><Text style={styles.menuText}>{invitation.addressLabel}</Text><Text style={styles.menuMeta}>Inviteret af {invitation.inviterName}</Text></View><PrimaryButton compact label="Accepter" onPress={() => onAcceptInvitation(invitation.id)} /></View>)}</Card> : null}
       {pendingClaimNotice ? <Card><Text style={styles.cardTitle}>Adgangsanmodning afventer</Text><Text style={styles.bodyText}>{pendingClaimNotice}</Text></Card> : null}
       <Card>
-        <Text style={styles.emptyTitle}>Kom i gang med dit hus</Text>
+        <Text style={styles.emptyTitle}>{isAddHouse ? "Tilføj bolig" : "Kom i gang med dit hus"}</Text>
         <Text style={styles.bodyText}>
-          Find din adresse og gem huset, så Matriva kan samle dit overblik og dine
-          vedligeholdelsesopgaver.
+          {isAddHouse
+            ? "Find en adresse for at tilføje endnu en bolig til din profil."
+            : "Find din adresse og gem huset, så Matriva kan samle dit overblik og dine vedligeholdelsesopgaver."}
         </Text>
       </Card>
 
@@ -1781,9 +1786,9 @@ function HouseOnboarding({
       ) : null}
 
       <SecondaryButton
-        label="Log ud og start forfra"
+        label={isAddHouse ? "Annuller" : "Log ud og start forfra"}
         disabled={isSearching || isSaving}
-        onPress={onStopSession}
+        onPress={isAddHouse ? (onCancel ?? onStopSession) : onStopSession}
       />
     </View>
   );
@@ -1796,6 +1801,7 @@ function DashboardScreen({
   tasks,
   onboarding,
   onSelectHouse,
+  onAddHouse,
   onCreateTask,
   onOpenTasks,
   onOpenTask
@@ -1809,6 +1815,7 @@ function DashboardScreen({
   onOpenTasks: () => void;
   onOpenTask: (task: MaintenanceTask) => void;
   onSelectHouse: (houseId: HouseId) => void;
+  onAddHouse: () => void;
 }) {
   if (!house || onboarding.step === "progress" || onboarding.step === "publicDataIssue") {
     return (
@@ -1836,7 +1843,7 @@ function DashboardScreen({
     <View style={styles.stack}>
       <View style={styles.dashboardHeaderRow}>
         <View style={styles.dashboardHeaderSection}><SectionHeader title="Overblik" eyebrow="Matriva" subtitle="Det vigtigste om dit hus lige nu." /></View>
-        <HouseSelector compact houses={houses} selectedHouse={house} onSelectHouse={onSelectHouse} />
+        <HouseSelector compact houses={houses} selectedHouse={house} onSelectHouse={onSelectHouse} onAddHouse={onAddHouse} />
       </View>
 
       <HouseStatusCard house={house} publicDataSummary={publicDataSummary} />
@@ -1853,7 +1860,7 @@ function DashboardScreen({
   );
 }
 
-function HouseSelector({ houses, selectedHouse, onSelectHouse, compact = false }: { houses: SavedHouse[]; selectedHouse: SavedHouse | null; onSelectHouse: (houseId: HouseId) => void; compact?: boolean }) {
+function HouseSelector({ houses, selectedHouse, onSelectHouse, onAddHouse, compact = false }: { houses: SavedHouse[]; selectedHouse: SavedHouse | null; onSelectHouse: (houseId: HouseId) => void; onAddHouse: () => void; compact?: boolean }) {
   const [visible, setVisible] = useState(false);
   return <>
     <Pressable accessibilityRole="button" accessibilityLabel="Vælg aktiv bolig" onPress={() => setVisible(true)} style={({ pressed }) => [styles.houseSelector, compact ? styles.houseSelectorCompact : null, pressed ? styles.secondaryButtonPressed : null]}>
@@ -1865,6 +1872,7 @@ function HouseSelector({ houses, selectedHouse, onSelectHouse, compact = false }
         <Pressable style={styles.houseSelectorModal} onPress={(event) => event.stopPropagation()}>
           <View style={styles.houseSelectorModalHeader}><Text style={styles.ownerClaimTitle}>Vælg bolig</Text><Pressable accessibilityRole="button" accessibilityLabel="Luk boligvælger" onPress={() => setVisible(false)}><Text style={styles.houseSelectorClose}>Luk</Text></Pressable></View>
           {houses.map((house) => <Pressable key={house.id} accessibilityRole="button" onPress={() => { setVisible(false); onSelectHouse(house.id); }} style={({ pressed }) => [styles.houseOption, house.id === selectedHouse?.id ? styles.houseOptionSelected : null, pressed ? styles.secondaryButtonPressed : null]}><View style={styles.houseSelectorText}><Text style={styles.houseOptionAddress}>{house.addressLabel}</Text><Text style={styles.menuMeta}>{house.bfeNumber ? `BFE ${house.bfeNumber}` : "BFE ikke registreret"}</Text></View>{house.id === selectedHouse?.id ? <Text style={styles.houseOptionCheck}>✓</Text> : null}</Pressable>)}
+          <Pressable accessibilityRole="button" onPress={() => { setVisible(false); onAddHouse(); }} style={({ pressed }) => [styles.houseOption, styles.houseOptionAdd, pressed ? styles.secondaryButtonPressed : null]}><Text style={styles.houseOptionAddText}>Tilføj bolig</Text><Text style={styles.menuMeta}>Søg efter en ny adresse</Text></Pressable>
         </Pressable>
       </Pressable>
     </Modal>
@@ -4683,6 +4691,7 @@ export default function App() {
   const [hasAddressSearched, setHasAddressSearched] = useState(false);
   const [houseOnboardingStep, setHouseOnboardingStep] =
     useState<HouseOnboardingStep>("search");
+  const [isAddingHouse, setIsAddingHouse] = useState(false);
   const [houseOnboardingProgressText, setHouseOnboardingProgressText] =
     useState<string | null>(null);
   const [houseOnboardingPublicDataIssueText, setHouseOnboardingPublicDataIssueText] =
@@ -4789,6 +4798,7 @@ export default function App() {
     setSelectedAddress(null);
     setHasAddressSearched(false);
     setHouseOnboardingStep("search");
+    setIsAddingHouse(false);
     setHouseOnboardingProgressText(null);
     setHouseOnboardingPublicDataIssueText(null);
     setClaimRequiredHouseId(null);
@@ -5341,6 +5351,7 @@ export default function App() {
       setSelectedAddress(null);
       setHasAddressSearched(false);
       setHouseOnboardingStep("search");
+      setIsAddingHouse(false);
       setHouseOnboardingProgressText(null);
       setHouseOnboardingPublicDataIssueText(null);
       setActiveTab("dashboard");
@@ -5391,6 +5402,7 @@ export default function App() {
       await loadApp({ showGlobalLoading: false });
       setSelectedHouseId(onboardingHouseId);
       setHouseOnboardingStep("search");
+      setIsAddingHouse(false);
       setHouseOnboardingProgressText(null);
       setHouseOnboardingPublicDataIssueText(null);
       setQuery("");
@@ -5423,6 +5435,7 @@ export default function App() {
     setSelectedAddress(null);
     setHasAddressSearched(false);
     setHouseOnboardingStep("search");
+    setIsAddingHouse(false);
     setHouseOnboardingProgressText(null);
     setHouseOnboardingPublicDataIssueText(null);
     setActiveTab("dashboard");
@@ -5439,6 +5452,33 @@ export default function App() {
     setHouseOnboardingPublicDataIssueText(null);
     setError(null);
     void logout();
+  }
+
+  function startAddingHouse() {
+    setIsAddingHouse(true);
+    setQuery("");
+    setSuggestions([]);
+    setSelectedAddress(null);
+    setHasAddressSearched(false);
+    setHouseOnboardingStep("search");
+    setHouseOnboardingProgressText(null);
+    setHouseOnboardingPublicDataIssueText(null);
+    setClaimRequiredHouseId(null);
+    setError(null);
+  }
+
+  function cancelAddingHouse() {
+    if (loadingAction === "house" || loadingAction === "address") return;
+    setIsAddingHouse(false);
+    setQuery("");
+    setSuggestions([]);
+    setSelectedAddress(null);
+    setHasAddressSearched(false);
+    setHouseOnboardingStep("search");
+    setHouseOnboardingProgressText(null);
+    setHouseOnboardingPublicDataIssueText(null);
+    setClaimRequiredHouseId(null);
+    setError(null);
   }
 
   function resolveOwnerClaim(claimId: string, decision: "approve" | "reject") {
@@ -5471,8 +5511,7 @@ export default function App() {
       loadMaintenanceV1(nextHouse.id),
       loadHouseImprovements(nextHouse.id),
       loadHousePhoto(nextHouse.id),
-      loadHouseDocuments(nextHouse.id),
-      apiClient.getHousePublicData(nextHouse.id).then((response) => setPublicDataProfile(response.profile))
+      loadHouseDocuments(nextHouse.id)
     ]).catch((caughtError) => setError(userFacingError(caughtError))).finally(() => setLoadingAction(null));
   }
 
@@ -6333,6 +6372,7 @@ export default function App() {
   }
 
   const onboardingProps: React.ComponentProps<typeof HouseOnboarding> = {
+    isAddHouse: isAddingHouse,
     step: houseOnboardingStep,
     query,
     suggestions,
@@ -6356,6 +6396,7 @@ export default function App() {
       }).catch(() => setHouseOnboardingPublicDataIssueText("Adgangsanmodningen kunne ikke oprettes lige nu.")).finally(() => setLoadingAction(null));
     },
     onStopSession: stopHouseOnboardingSession,
+    onCancel: cancelAddingHouse,
     onQueryChange: (nextQuery) => {
       setQuery(nextQuery);
       setError(null);
@@ -6390,6 +6431,10 @@ export default function App() {
       );
     }
 
+    if (isAddingHouse) {
+      return <HouseOnboarding {...onboardingProps} />;
+    }
+
     if (activeTab === "dashboard") {
       return (
         <DashboardScreen
@@ -6399,6 +6444,7 @@ export default function App() {
           tasks={tasks}
           onboarding={onboardingProps}
           onSelectHouse={selectActiveHouse}
+          onAddHouse={startAddingHouse}
           onCreateTask={() => {
             setActiveTab("maintenance");
             setShowTaskForm(true);
@@ -8539,6 +8585,15 @@ const styles = StyleSheet.create({
     backgroundColor: theme.primarySoft,
     borderRadius: 10,
     paddingHorizontal: 10
+  },
+  houseOptionAdd: {
+    borderBottomWidth: 0,
+    marginTop: 4
+  },
+  houseOptionAddText: {
+    color: theme.primary,
+    fontSize: 15,
+    fontWeight: "800"
   },
   houseOptionAddress: {
     color: theme.text,

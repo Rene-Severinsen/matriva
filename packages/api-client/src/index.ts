@@ -23,6 +23,7 @@ import {
   maintenanceHistoryDetailResponseSchema,
   reverseMaintenanceCompletionResponseSchema,
   maintenanceRecommendationsResponseSchema,
+  dismissMaintenanceRecommendationResponseSchema,
   maintenanceTaskResponseSchema,
   maintenanceTasksResponseSchema,
   houseDocumentResponseSchema,
@@ -91,6 +92,7 @@ import {
   type MaintenanceRecommendationId,
   type DismissMaintenanceRecommendationRequest,
   type MaintenanceRecommendationsResponse,
+  type DismissMaintenanceRecommendationResponse,
   type MoveMaintenanceTaskRequest,
   type RefreshSessionRequest,
   type RequestMagicLinkRequest,
@@ -331,7 +333,8 @@ export type MatrivaApiClient = {
     input: UpdateHouseDocumentRequest
   ) => Promise<HouseDocumentResponse>;
   listMaintenanceRecommendations: (
-    houseId: HouseId
+    houseId: HouseId,
+    status?: "pending" | "dismissed"
   ) => Promise<MaintenanceRecommendationsResponse>;
   acceptMaintenanceRecommendation: (
     houseId: HouseId,
@@ -343,6 +346,10 @@ export type MatrivaApiClient = {
     recommendationId: MaintenanceRecommendationId,
     input?: DismissMaintenanceRecommendationRequest
   ) => Promise<unknown>;
+  restoreMaintenanceRecommendation: (
+    houseId: HouseId,
+    recommendationId: MaintenanceRecommendationId
+  ) => Promise<DismissMaintenanceRecommendationResponse>;
   listHouseImprovements: (
     houseId: HouseId
   ) => Promise<HouseImprovementsResponse>;
@@ -1247,9 +1254,9 @@ export function createMatrivaApiClient(
         await parseApiResponse(response, "Could not update house document.")
       );
     },
-    async listMaintenanceRecommendations(houseId) {
+    async listMaintenanceRecommendations(houseId, status = "pending") {
       const response = await fetcher(
-        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-recommendations`,
+        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-recommendations?status=${status}`,
         { headers: authHeaders() }
       );
 
@@ -1286,6 +1293,16 @@ export function createMatrivaApiClient(
       );
 
       return parseApiResponse(response, "Could not dismiss maintenance recommendation.");
+    },
+    async restoreMaintenanceRecommendation(houseId, recommendationId) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-recommendations/${recommendationId}/restore`,
+        { method: "POST", headers: authHeaders() }
+      );
+
+      return dismissMaintenanceRecommendationResponseSchema.parse(
+        await parseApiResponse(response, "Could not restore maintenance recommendation.")
+      );
     },
     async listHouseImprovements(houseId) {
       const response = await fetcher(

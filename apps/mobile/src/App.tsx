@@ -94,7 +94,7 @@ import {
 type TabKey = "dashboard" | "house" | "maintenance" | "documents" | "more";
 type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" | "publicData" | "improvement" | "improvementProject" | "improvementItem" | "improvementExpense" | "improvementDocument" | "photo" | "recommendation" | "logout";
 type MaintenanceFilter = "current" | "spring" | "summer" | "autumn" | "winter" | "all";
-type MaintenanceView = "main" | "history" | "historyDetail" | "taskDetail" | "recommendations";
+type MaintenanceView = "main" | "history" | "historyDetail" | "taskDetail" | "recommendations" | "dismissedRecommendations" | "recommendationDetail";
 type AuthStatus = "restoring" | "anonymous" | "authenticated";
 type MoreView = "menu" | "profile" | "settings";
 type HouseView = "overview" | "details" | "improvements" | "improvementDetail" | "addImprovement";
@@ -2669,6 +2669,29 @@ function RecommendationCard({
   );
 }
 
+function DismissedRecommendationRow({
+  recommendation,
+  onPress
+}: {
+  recommendation: MaintenanceRecommendation;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={`Åbn anbefaling: ${recommendation.title}`} onPress={onPress}>
+      <View style={styles.taskRow}>
+        <View style={styles.taskRowBody}>
+          <Text style={styles.taskRowTitle}>{recommendation.title}</Text>
+          <Text style={styles.taskTiming}>
+            {recommendation.dismissedAt ? `Afvist ${formatDisplayDate(recommendation.dismissedAt.slice(0, 10))}` : recommendation.recommendedTimingLabel}
+          </Text>
+          <Text style={styles.compactBodyText}>{recommendation.description}</Text>
+        </View>
+        <Text style={styles.linkRowIcon}>›</Text>
+      </View>
+    </Pressable>
+  );
+}
+
 function MaintenanceHistoryRow({
   entry,
   onPress
@@ -2760,6 +2783,7 @@ function MaintenanceScreen({
   historyDetail,
   selectedTask,
   recommendations,
+  dismissedRecommendations,
   filter,
   historyYearFilter,
   view,
@@ -2767,6 +2791,10 @@ function MaintenanceScreen({
   onHistoryYearFilterChange,
   onOpenFullHistory,
   onOpenAllRecommendations,
+  onOpenDismissedRecommendations,
+  selectedRecommendation,
+  onOpenRecommendationDetail,
+  onRestoreRecommendation,
   onBackToMaintenance,
   onOpenTaskDetail,
   onOpenHistoryDetail,
@@ -2817,6 +2845,7 @@ function MaintenanceScreen({
   historyDetail: MaintenanceHistoryDetail | null;
   selectedTask: MaintenanceTask | null;
   recommendations: MaintenanceRecommendation[];
+  dismissedRecommendations: MaintenanceRecommendation[];
   filter: MaintenanceFilter;
   historyYearFilter: number | null;
   view: MaintenanceView;
@@ -2824,6 +2853,10 @@ function MaintenanceScreen({
   onHistoryYearFilterChange: (year: number | null) => void;
   onOpenFullHistory: () => void;
   onOpenAllRecommendations: () => void;
+  onOpenDismissedRecommendations: () => void;
+  selectedRecommendation: MaintenanceRecommendation | null;
+  onOpenRecommendationDetail: (recommendation: MaintenanceRecommendation) => void;
+  onRestoreRecommendation: (recommendation: MaintenanceRecommendation) => void;
   onBackToMaintenance: () => void;
   onOpenTaskDetail: (task: MaintenanceTask) => void;
   onOpenHistoryDetail: (entry: MaintenanceHistoryEntry) => void;
@@ -3137,14 +3170,51 @@ function MaintenanceScreen({
     );
   }
 
+  if (view === "recommendationDetail" && selectedRecommendation) {
+    return (
+      <View style={styles.stack}>
+        <SecondaryButton label="Tilbage" onPress={() => onOpenDismissedRecommendations()} />
+        <SectionHeader title={selectedRecommendation.title} subtitle="Afvist anbefaling" />
+        <Card>
+          <Text style={styles.taskTiming}>{selectedRecommendation.recommendedTimingLabel}</Text>
+          <Text style={styles.compactBodyText}>{selectedRecommendation.description}</Text>
+          {selectedRecommendation.dismissedAt ? (
+            <Text style={styles.metaText}>Afvist {formatDisplayDate(selectedRecommendation.dismissedAt.slice(0, 10))}</Text>
+          ) : null}
+          <PrimaryButton label="Gendan anbefaling" onPress={() => onRestoreRecommendation(selectedRecommendation)} loading={isSaving} />
+        </Card>
+      </View>
+    );
+  }
+
+  if (view === "dismissedRecommendations") {
+    return (
+      <View style={styles.stack}>
+        <SecondaryButton label="Tilbage" onPress={onBackToMaintenance} />
+        <SectionHeader title="Afviste anbefalinger" subtitle="Forslag, du tidligere har afvist." />
+        {dismissedRecommendations.length > 0 ? (
+          <View style={styles.taskList}>
+            {dismissedRecommendations.map((recommendation) => (
+              <DismissedRecommendationRow key={recommendation.id} recommendation={recommendation} onPress={() => onOpenRecommendationDetail(recommendation)} />
+            ))}
+          </View>
+        ) : (
+          <EmptyState title="Du har ingen afviste anbefalinger." body="Afviste forslag, som kan gendannes, vises her." />
+        )}
+      </View>
+    );
+  }
+
   if (view === "recommendations") {
     return (
       <View style={styles.stack}>
         <SecondaryButton label="Tilbage" onPress={onBackToMaintenance} />
-        <SectionHeader
-          title="Anbefalet til dit hus"
-          subtitle="Generelle forslag fra Matriva-kataloget."
-        />
+        <View style={styles.screenTitleRow}>
+          <SectionHeader title="Anbefalet til dit hus" subtitle="Generelle forslag fra Matriva-kataloget." />
+          <Pressable accessibilityRole="button" accessibilityLabel="Flere anbefalingsvalg" onPress={() => Alert.alert("Anbefalinger", undefined, [{ text: "Se afviste anbefalinger", onPress: onOpenDismissedRecommendations }, { text: "Annuller", style: "cancel" }])} style={styles.iconAction}>
+            <Text style={styles.iconActionText}>⋯</Text>
+          </Pressable>
+        </View>
         <Text style={styles.compactBodyText}>
           Matrivas anbefalinger er generelle forslag. Følg altid producentens anvisninger,
           og kontakt en fagperson ved tvivl.
@@ -4454,6 +4524,7 @@ export default function App() {
   const [maintenanceRecommendations, setMaintenanceRecommendations] = useState<
     MaintenanceRecommendation[]
   >([]);
+  const [dismissedRecommendations, setDismissedRecommendations] = useState<MaintenanceRecommendation[]>([]);
   const [maintenanceSwipeHintSeen, setMaintenanceSwipeHintSeen] = useState<boolean | null>(null);
   const [houseDocuments, setHouseDocuments] = useState<HouseDocument[]>([]);
   const [documentPreview, setDocumentPreview] = useState<{
@@ -4470,6 +4541,7 @@ export default function App() {
   const [historyReversalInProgress, setHistoryReversalInProgress] = useState(false);
   const [historyReversalError, setHistoryReversalError] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<TaskId | null>(null);
+  const [selectedRecommendation, setSelectedRecommendation] = useState<MaintenanceRecommendation | null>(null);
   const [maintenanceFilter, setMaintenanceFilter] =
     useState<MaintenanceFilter>("current");
   const [historyYearFilter, setHistoryYearFilter] = useState<number | null>(null);
@@ -4572,6 +4644,8 @@ export default function App() {
     setPublicDataProfile(null);
     setSelectedHouseId(null);
     setTasks([]);
+    setMaintenanceRecommendations([]);
+    setDismissedRecommendations([]);
     setHouseDocuments([]);
     setImprovements([]);
     setHousePhoto(null);
@@ -4617,15 +4691,17 @@ export default function App() {
 
   const loadMaintenanceV1 = useCallback(
     async (houseId: HouseId) => {
-      const [taskResponse, historyResponse, recommendationResponse] =
+      const [taskResponse, historyResponse, recommendationResponse, dismissedRecommendationResponse] =
         await Promise.all([
           apiClient.listMaintenanceTasks(houseId),
           apiClient.listMaintenanceHistory(houseId),
-          apiClient.listMaintenanceRecommendations(houseId)
+          apiClient.listMaintenanceRecommendations(houseId, "pending"),
+          apiClient.listMaintenanceRecommendations(houseId, "dismissed")
         ]);
       setTasks(taskResponse.tasks);
       setMaintenanceHistory(historyResponse.history);
       setMaintenanceRecommendations(recommendationResponse.recommendations);
+      setDismissedRecommendations(dismissedRecommendationResponse.recommendations);
     },
     [apiClient]
   );
@@ -5630,6 +5706,27 @@ export default function App() {
     }
   }
 
+  async function restoreRecommendation(recommendation: MaintenanceRecommendation) {
+    if (!selectedHouse) {
+      return;
+    }
+
+    setLoadingAction("recommendation");
+    setError(null);
+
+    try {
+      await apiClient.restoreMaintenanceRecommendation(selectedHouse.id, recommendation.id);
+      await loadMaintenanceV1(selectedHouse.id);
+      setSelectedRecommendation(null);
+      setMaintenanceView("dismissedRecommendations");
+      Alert.alert("Anbefaling gendannet", "Anbefalingen er gendannet.");
+    } catch (_caughtError) {
+      setError("Anbefalingen kunne ikke gendannes lige nu. Prøv igen.");
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
   async function openHistoryDetail(entry: MaintenanceHistoryEntry) {
     if (!selectedHouse) {
       return;
@@ -6138,6 +6235,7 @@ export default function App() {
           historyDetail={selectedHistoryDetail}
           selectedTask={selectedTask}
           recommendations={maintenanceRecommendations}
+          dismissedRecommendations={dismissedRecommendations}
           filter={maintenanceFilter}
           historyYearFilter={historyYearFilter}
           view={maintenanceView}
@@ -6145,10 +6243,18 @@ export default function App() {
           onHistoryYearFilterChange={setHistoryYearFilter}
           onOpenFullHistory={() => setMaintenanceView("history")}
           onOpenAllRecommendations={() => setMaintenanceView("recommendations")}
+          onOpenDismissedRecommendations={() => setMaintenanceView("dismissedRecommendations")}
+          selectedRecommendation={selectedRecommendation}
+          onOpenRecommendationDetail={(recommendation) => {
+            setSelectedRecommendation(recommendation);
+            setMaintenanceView("recommendationDetail");
+          }}
+          onRestoreRecommendation={(recommendation) => void restoreRecommendation(recommendation)}
           onBackToMaintenance={() => {
             setMaintenanceView("main");
             setSelectedHistoryDetail(null);
             setSelectedTaskId(null);
+            setSelectedRecommendation(null);
           }}
           onOpenTaskDetail={(task) => {
             setSelectedTaskId(task.id);

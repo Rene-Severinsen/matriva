@@ -1731,22 +1731,38 @@ async function ensureMaintenanceRecommendationInstancesForHouse(
 
 export async function listMaintenanceRecommendationsForHouse(
   userId: string,
-  houseId: string
+  houseId: string,
+  status: "pending" | "dismissed" = "pending"
 ) {
   const house = await getSavedHouse(userId, houseId);
-  await ensureMaintenanceRecommendationInstancesForHouse(userId, house.id);
+  if (status === "pending") {
+    await ensureMaintenanceRecommendationInstancesForHouse(userId, house.id);
+  }
   const result = await pool.query<MaintenanceRecommendationRow>(
     `
       select
         ${maintenanceRecommendationReturningColumns()}
       from maintenance_recommendations
-      where house_id = $1 and user_id = $2 and status = 'pending'
+      where house_id = $1 and user_id = $2 and status = $3
+        and (
+          $3 = 'pending'
+          or not exists (
+            select 1
+            from maintenance_recommendation_hides mh
+            where mh.house_id = maintenance_recommendations.house_id
+              and mh.catalog_key = coalesce(
+                maintenance_recommendations.catalog_key,
+                maintenance_recommendations.recommendation_key
+              )
+              and mh.unhidden_at is null
+          )
+        )
       order by
         suggested_due_date asc nulls last,
         case priority when 'high' then 1 when 'normal' then 2 else 3 end,
         created_at asc
     `,
-    [house.id, userId]
+    [house.id, userId, status]
   );
 
   return result.rows.map(toMaintenanceRecommendation);
@@ -1977,6 +1993,43 @@ export async function dismissMaintenanceRecommendationForHouse(
   } finally {
     client.release();
   }
+}
+
+export async function restoreMaintenanceRecommendationForHouse(
+  userId: string,
+  houseId: string,
+  recommendationId: string
+) {
+  const house = await getSavedHouse(userId, houseId);
+  const result = await pool.query<MaintenanceRecommendationRow>(
+    `
+      update maintenance_recommendations mr
+      set status = 'pending', dismissed_at = null, updated_at = now()
+      where mr.id = $1
+        and mr.house_id = $2
+        and mr.user_id = $3
+        and mr.status = 'dismissed'
+        and not exists (
+          select 1
+          from maintenance_recommendation_hides mh
+          where mh.house_id = mr.house_id
+            and mh.catalog_key = coalesce(mr.catalog_key, mr.recommendation_key)
+            and mh.unhidden_at is null
+        )
+      returning ${maintenanceRecommendationReturningColumns()}
+    `,
+    [recommendationId, house.id, userId]
+  );
+
+  if (!result.rows[0]) {
+    throw new ApiError(
+      409,
+      "maintenance_recommendation_not_restorable",
+      "Forslaget kan ikke gendannes."
+    );
+  }
+
+  return toMaintenanceRecommendation(result.rows[0]);
 }
 
 export async function completeMaintenanceTaskForHouse(

@@ -31,6 +31,7 @@ import {
   completeMaintenanceTaskRequestSchema,
   dismissMaintenanceRecommendationRequestSchema,
   dismissMaintenanceRecommendationResponseSchema,
+  maintenanceRecommendationStatusSchema,
   createSavedHouseRequestSchema,
   enrichHouseDraftRequestSchema,
   enrichHouseDraftResponseSchema,
@@ -134,6 +135,7 @@ import {
   removeHousePhoto,
   replaceHousePhoto,
   dismissMaintenanceRecommendationForHouse,
+  restoreMaintenanceRecommendationForHouse,
   moveMaintenanceTaskForHouse,
   updateMaintenanceTaskForHouse,
   updateMaintenanceTaskStatus,
@@ -1721,7 +1723,7 @@ const server = createServer((request, response) => {
   }
 
   const houseMaintenanceRecommendationsMatch =
-    /^\/v1\/houses\/([^/]+)\/maintenance-recommendations$/.exec(
+    /^\/v1\/houses\/([^/]+)\/maintenance-recommendations(?:\?.*)?$/.exec(
       request.url ?? ""
     );
 
@@ -1743,9 +1745,24 @@ const server = createServer((request, response) => {
 
       try {
         const userId = await requireUserId(request);
+        const url = new URL(request.url ?? "/", `http://${host}:${port}`);
+        const requestedStatus = url.searchParams.get("status") ?? "pending";
+        const parsedStatus = maintenanceRecommendationStatusSchema.safeParse(requestedStatus);
+
+        if (!parsedStatus.success || (parsedStatus.data !== "pending" && parsedStatus.data !== "dismissed")) {
+          writeApiError(
+            response,
+            400,
+            "maintenance_recommendation_status_invalid",
+            "Recommendation status must be pending or dismissed."
+          );
+          return;
+        }
+
         const recommendations = await listMaintenanceRecommendationsForHouse(
           userId,
-          parsedHouseId.data
+          parsedHouseId.data,
+          parsedStatus.data
         );
         writeJson(
           response,
@@ -2019,7 +2036,7 @@ const server = createServer((request, response) => {
   }
 
   const maintenanceRecommendationActionMatch =
-    /^\/v1\/houses\/([^/]+)\/maintenance-recommendations\/([^/]+)\/(accept|dismiss)$/.exec(
+    /^\/v1\/houses\/([^/]+)\/maintenance-recommendations\/([^/]+)\/(accept|dismiss|restore)$/.exec(
       request.url ?? ""
     );
 
@@ -2045,6 +2062,20 @@ const server = createServer((request, response) => {
 
       try {
         const userId = await requireUserId(request);
+
+        if (action === "restore") {
+          const recommendation = await restoreMaintenanceRecommendationForHouse(
+            userId,
+            parsedHouseId.data,
+            parsedRecommendationId.data
+          );
+          writeJson(
+            response,
+            200,
+            dismissMaintenanceRecommendationResponseSchema.parse({ recommendation })
+          );
+          return;
+        }
 
         if (action === "accept") {
           const payload = await readJsonBody(request);

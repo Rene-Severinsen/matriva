@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { MatrivaAdminApiClient } from "@matriva/api-client";
 import type {
   AdminHouseResponse,
+  AdminHouseClaimsResponse,
   AdminHousesResponse,
   AdminRecommendationCatalogItemResponse,
   AdminRecommendationCatalogResponse,
@@ -10,7 +11,7 @@ import type {
   AdminUsersResponse
 } from "@matriva/shared";
 
-type SectionKey = "users" | "houses" | "recommendations";
+type SectionKey = "users" | "houses" | "claims" | "recommendations";
 type DetailKey = { section: SectionKey; id: string } | null;
 type LoadState<T> =
   | { status: "loading" }
@@ -50,12 +51,16 @@ export function AdminDataPage({
   section: SectionKey;
 }) {
   if (detail) {
+    if (detail.section === "claims") {
+      return <ClaimDetail client={client} claimId={detail.id} onBack={() => onOpenDetail("claims")} onAuthorizationError={onAuthorizationError} />;
+    }
     return (
       <DetailPage
         client={client}
         detail={detail}
         onAuthorizationError={onAuthorizationError}
         onBack={() => onOpenDetail(detail.section)}
+        onOpenDetail={onOpenDetail}
       />
     );
   }
@@ -80,6 +85,10 @@ export function AdminDataPage({
     );
   }
 
+  if (section === "claims") {
+    return <ClaimsList client={client} onAuthorizationError={onAuthorizationError} onOpen={(id) => onOpenDetail("claims", id)} />;
+  }
+
   return (
     <UsersList
       client={client}
@@ -87,6 +96,26 @@ export function AdminDataPage({
       onOpen={(id) => onOpenDetail("users", id)}
     />
   );
+}
+
+function ClaimsList({ client, onAuthorizationError, onOpen }: { client: MatrivaAdminApiClient; onAuthorizationError: (error: unknown) => Promise<boolean>; onOpen: (id: string) => void }) {
+  const [status, setStatus] = useState<"all" | "pending" | "approved" | "rejected">("pending");
+  const { state, retry } = useListState<AdminHouseClaimsResponse>((signal) => client.getAdminHouseClaims({ status, signal }), onAuthorizationError, "Adgangskrav kunne ikke indlæses.", [client, status]);
+  return <DataSection title="Adgangskrav" description="Adgangskrav mellem brugere og fysiske ejendomme." filters={<FilterSelect label="Status" value={status} onChange={(value) => setStatus(value as typeof status)} options={[["pending", "Afventer"], ["approved", "Godkendt"], ["rejected", "Afvist"], ["all", "Alle"]]} />}>
+    <ListState state={state} retry={retry} empty="Ingen adgangskrav matcher filteret.">{(data) => <div className="table-scroll"><table className="data-table"><thead><tr><th>Bruger</th><th>Bolig</th><th>BFE</th><th>Type</th><th>Status</th><th>Anmodet</th></tr></thead><tbody>{data.claims.map((claim) => <tr key={claim.id} onClick={() => onOpen(claim.id)}><td><strong>{claim.userDisplayName ?? "Navn mangler"}</strong><span>{claim.userEmail}</span></td><td>{claim.addressLabel}</td><td>{claim.bfeNumber ?? "Ikke registreret"}</td><td>{claim.claimType}</td><td><StatusBadge label={claim.status} /></td><td>{formatDate(claim.requestedAt)}</td></tr>)}</tbody></table></div>}</ListState>
+  </DataSection>;
+}
+
+function ClaimDetail({ client, claimId, onBack, onAuthorizationError }: { client: MatrivaAdminApiClient; claimId: string; onBack: () => void; onAuthorizationError: (error: unknown) => Promise<boolean> }) {
+  const [state, setState] = useState<LoadState<AdminHouseClaimsResponse>>({ status: "loading" });
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { void client.getAdminHouseClaims({ status: "all" }).then((data) => setState({ status: "ready", data })).catch(async (error) => { if (!(await onAuthorizationError(error))) setState({ status: "error", message: errorMessage(error, "Adgangskrav kunne ikke indlæses.") }); }); }, [client, claimId, onAuthorizationError]);
+  if (state.status !== "ready") return <DataSection title="Adgangskrav" description=""><ListState state={state} retry={() => setState({ status: "loading" })} empty="Adgangskravet blev ikke fundet.">{() => null}</ListState></DataSection>;
+  const claim = state.data.claims.find((item) => item.id === claimId);
+  if (!claim) return <DataSection title="Adgangskrav" description=""><p>Adgangskravet blev ikke fundet.</p><button type="button" onClick={onBack}>Tilbage</button></DataSection>;
+  const selectedClaim = claim;
+  async function resolve(decision: "approve" | "reject") { setBusy(true); try { await client.resolveAdminHouseClaim(selectedClaim.id, decision); const data = await client.getAdminHouseClaims({ status: "all" }); setState({ status: "ready", data }); } finally { setBusy(false); } }
+  return <DataSection title="Adgangskrav" description="Detaljer og server-validerede handlinger."><DetailGrid title={claim.userDisplayName ?? claim.userEmail} subtitle={claim.addressLabel} rows={[["E-mail", claim.userEmail], ["BFE", claim.bfeNumber ?? "Ikke registreret"], ["Claim-type", claim.claimType], ["Status", claim.status], ["Anmodet", formatDate(claim.requestedAt)], ["Verification", claim.verificationMethod ?? "Ikke registreret"]]} extra={claim.resolutionNote ? [claim.resolutionNote] : []} />{claim.status === "pending" ? <div className="detail-actions"><button type="button" disabled={busy} onClick={() => void resolve("approve")}>Godkend adgang</button><button type="button" disabled={busy} onClick={() => void resolve("reject")}>Afvis adgang</button></div> : null}<button type="button" onClick={onBack}>Tilbage</button></DataSection>;
 }
 
 function useListState<T>(
@@ -146,7 +175,7 @@ function UsersList({
 
   return (
     <DataSection
-      description="Read-only oversigt over registrerede brugere og aktivitet."
+      description="Oversigt over registrerede brugere og deres boligrelationer."
       filters={
         <>
           <SearchField value={query} onChange={(value) => { setQuery(value); setPage(1); }} />
@@ -164,7 +193,7 @@ function UsersList({
             <div className="table-scroll">
               <table className="data-table users-table">
                 <thead>
-                  <tr><th>Bruger</th><th>Status</th><th>Oprettet</th><th>Senest aktiv</th><th>Boliger</th><th>Opgaver</th><th>Completions</th><th>Rolle</th></tr>
+                  <tr><th>Bruger</th><th>Status</th><th>Oprettet</th><th>Senest aktiv</th><th>Aktive boliger</th><th>Åbne adgangskrav</th><th>Opgaver</th><th>Rolle</th></tr>
                 </thead>
                 <tbody>
                   {data.users.map((user) => (
@@ -174,6 +203,7 @@ function UsersList({
                       <td>{formatDate(user.createdAt)}</td>
                       <td>{formatDate(user.latestSessionActivityAt ?? user.lastLoginAt)}</td>
                       <td>{numberFormatter.format(user.houseCount)}</td>
+                      <td>{numberFormatter.format(user.pendingClaimCount)}</td>
                       <td>{numberFormatter.format(user.taskCount)}</td>
                       <td>{numberFormatter.format(user.completionCount)}</td>
                       <td>{user.roles.join(", ") || "Bruger"}</td>
@@ -213,7 +243,7 @@ function HousesList({
 
   return (
     <DataSection
-      description="Read-only oversigt over boliger, ejere og BBR-status."
+      description="Én række pr. fysisk ejendom med BFE, brugere og BBR-status."
       filters={
         <>
           <SearchField value={query} onChange={(value) => { setQuery(value); setPage(1); }} />
@@ -231,18 +261,19 @@ function HousesList({
             <div className="table-scroll">
               <table className="data-table houses-table">
                 <thead>
-                  <tr><th>Adresse</th><th>Ejer</th><th>BBR-status</th><th>Warnings</th><th>Opgaver</th><th>Completions</th><th>Anbefalinger</th><th>Oprettet</th></tr>
+                  <tr><th>Adresse</th><th>BFE</th><th>Brugere</th><th>Åbne krav</th><th>BBR-status</th><th>Warnings</th><th>Opgaver</th><th>Completions</th><th>Oprettet</th></tr>
                 </thead>
                 <tbody>
                   {data.houses.map((house) => (
                     <tr key={house.id} onClick={() => onOpen(house.id)}>
                       <td><strong>{house.addressLabel}</strong><span>{house.id}</span></td>
-                      <td><strong>{house.owner.displayName ?? house.owner.email}</strong><span>{house.owner.email}</span></td>
+                      <td>{house.bfeNumber ?? "Ikke registreret"}</td>
+                      <td>{numberFormatter.format(house.activeUserCount)}</td>
+                      <td>{numberFormatter.format(house.openClaimCount)}</td>
                       <td><StatusBadge label={house.publicDataStatus} /></td>
                       <td>{numberFormatter.format(house.warningCount)}</td>
                       <td>{numberFormatter.format(house.taskCount)}</td>
                       <td>{numberFormatter.format(house.completionCount)}</td>
-                      <td>{numberFormatter.format(house.activeRecommendationCount)}</td>
                       <td>{formatDate(house.createdAt)}</td>
                     </tr>
                   ))}
@@ -328,12 +359,14 @@ function DetailPage({
   client,
   detail,
   onAuthorizationError,
-  onBack
+  onBack,
+  onOpenDetail
 }: {
   client: MatrivaAdminApiClient;
   detail: NonNullable<DetailKey>;
   onAuthorizationError: (error: unknown) => Promise<boolean>;
   onBack: () => void;
+  onOpenDetail: (section: SectionKey, id?: string) => void;
 }) {
   const { state, retry } = useListState<
     AdminUserResponse | AdminHouseResponse | AdminRecommendationCatalogItemResponse
@@ -352,24 +385,24 @@ function DetailPage({
     <DataSection title="Detalje" description="Read-only administrativ detaljevisning.">
       <button className="secondary-action" type="button" onClick={onBack}>Tilbage</button>
       <ListState state={state} retry={retry} empty="Detaljen findes ikke.">
-        {(data) => <DetailContent data={data} />}
+        {(data) => <DetailContent data={data} onOpenDetail={onOpenDetail} />}
       </ListState>
     </DataSection>
   );
 }
 
-function DetailContent({ data }: { data: AdminUserResponse | AdminHouseResponse | AdminRecommendationCatalogItemResponse }) {
+function DetailContent({ data, onOpenDetail }: { data: AdminUserResponse | AdminHouseResponse | AdminRecommendationCatalogItemResponse; onOpenDetail: (section: SectionKey, id?: string) => void }) {
   if ("user" in data) {
     const user = data.user;
     return <DetailGrid title={user.displayName ?? user.email} subtitle={user.id} rows={[
       ["Status", user.status], ["E-mail", user.email], ["Onboarding", user.onboardingState], ["Roller", user.roles.join(", ") || "Bruger"], ["Oprettet", formatDate(user.createdAt)], ["Senest aktiv", formatDate(user.latestActivityAt)], ["Boliger", numberFormatter.format(user.houseCount)], ["Opgaver", numberFormatter.format(user.taskSummary.total)], ["Completions", numberFormatter.format(user.completionSummary.total)], ["Anbefalinger", `${user.recommendationSummary.pending} pending / ${user.recommendationSummary.accepted} accepted / ${user.recommendationSummary.permanentHidden} skjult`]
-    ]} extra={user.houses.map((house) => `${house.addressLabel} (${house.id})`)} />;
+    ]} extra={[...user.memberships.map((membership) => <button type="button" key={`${membership.houseId}:${membership.validFrom}`} onClick={() => onOpenDetail("houses", membership.houseId)}>{membership.addressLabel} · {membership.role} · {membership.status}</button>), `Åbne adgangskrav: ${user.pendingClaimCount}`]} />;
   }
   if ("house" in data) {
     const house = data.house;
     return <DetailGrid title={house.addressLabel} subtitle={house.id} rows={[
-      ["Ejer", `${house.owner.displayName ?? house.owner.email} (${house.owner.email})`], ["Status", house.status], ["BBR-status", house.publicDataStatus], ["Warnings", numberFormatter.format(house.warningCount)], ["Data confidence", house.dataConfidence], ["Opgaver", numberFormatter.format(house.taskSummary.total)], ["Completions", numberFormatter.format(house.completionSummary.total)], ["Anbefalinger", `${house.recommendationSummary.active} aktive / ${house.recommendationSummary.permanentHidden} skjult`], ["Dokumenter", numberFormatter.format(house.assetCounts.documents)], ["Forbedringer", numberFormatter.format(house.assetCounts.improvements)], ["Medier", numberFormatter.format(house.assetCounts.media)], ["BBR enheder", numberFormatter.format(house.bbr.unitCount)], ["BBR bygninger", numberFormatter.format(house.bbr.buildings.length)]
-    ]} extra={house.bbr.warnings.map((warning) => `${warning.code}: ${warning.message}`)} />;
+      ["BFE", house.bfeNumber ?? "Ikke registreret"], ["Brugere", numberFormatter.format(house.activeUserCount)], ["Åbne adgangskrav", numberFormatter.format(house.openClaimCount)], ["Status", house.status], ["BBR-status", house.publicDataStatus], ["Warnings", numberFormatter.format(house.warningCount)], ["Opgaver", numberFormatter.format(house.taskSummary.total)], ["Completions", numberFormatter.format(house.completionSummary.total)], ["Anbefalinger", `${house.recommendationSummary.active} aktive / ${house.recommendationSummary.permanentHidden} skjult`], ["Dokumenter", numberFormatter.format(house.assetCounts.documents)], ["Forbedringer", numberFormatter.format(house.assetCounts.improvements)], ["Medier", numberFormatter.format(house.assetCounts.media)], ["BBR enheder", numberFormatter.format(house.bbr.unitCount)], ["BBR bygninger", numberFormatter.format(house.bbr.buildings.length)]
+    ]} extra={[...house.members.map((member) => <button type="button" key={member.userId} onClick={() => onOpenDetail("users", member.userId)}>{member.displayName ?? member.email} · {member.role} · {member.status}</button>), ...house.invitations.map((invitation) => `Invitation: ${invitation.email} · ${invitation.status}`), ...house.claims.map((claim) => <button type="button" key={claim.id} onClick={() => onOpenDetail("claims", claim.id)}>Adgangskrav: {claim.claimType} · {claim.status}</button>), ...house.bbr.warnings.map((warning) => `${warning.code}: ${warning.message}`)]} />;
   }
   const item = data.item;
   return <DetailGrid title={item.title} subtitle={item.catalogKey} rows={[
@@ -377,12 +410,12 @@ function DetailContent({ data }: { data: AdminUserResponse | AdminHouseResponse 
   ]} extra={[item.shortDescription]} />;
 }
 
-function DetailGrid({ title, subtitle, rows, extra = [] }: { title: string; subtitle: string; rows: Array<[string, string]>; extra?: string[] }) {
+function DetailGrid({ title, subtitle, rows, extra = [] }: { title: string; subtitle: string; rows: Array<[string, string]>; extra?: ReactNode[] }) {
   return (
     <section className="detail-panel">
       <header><h3>{title}</h3><span>{subtitle}</span></header>
       <dl>{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-      {extra.length > 0 ? <ul>{extra.map((line) => <li key={line}>{line}</li>)}</ul> : null}
+      {extra.length > 0 ? <ul>{extra.map((line, index) => <li key={index}>{line}</li>)}</ul> : null}
     </section>
   );
 }

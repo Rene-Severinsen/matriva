@@ -116,6 +116,7 @@ type UserProfileRow = {
 type HouseRow = {
   id: string;
   user_id: string;
+  bfe_number: string | null;
   address_label: string;
   dawa_address_id: string | null;
   source_access_address_id: string | null;
@@ -306,6 +307,9 @@ export function createOpaqueId(
     | "usr"
     | "profile"
     | "house"
+    | "hm"
+    | "claim"
+    | "invite"
     | "task"
     | "mlt"
     | "sess"
@@ -615,8 +619,10 @@ function toSavedHouse(row: HouseRow): SavedHouse {
   return savedHouseSchema.parse({
     id: row.id,
     ownerUserId: row.user_id,
+    bfeNumber: row.bfe_number,
     addressLabel: row.address_label,
     ...(row.dawa_address_id ? { dawaAddressId: row.dawa_address_id } : {}),
+    ...(row.source_access_address_id ? { dawaAccessAddressId: row.source_access_address_id } : {}),
     status: row.status,
     dataConfidence: row.data_confidence,
     createdAt: row.created_at.toISOString(),
@@ -1230,35 +1236,256 @@ export async function updateMaintenanceSettings(
   return toProfile(result.rows[0]);
 }
 
-export async function createSavedHouse(userId: string, input: SelectedAddressInput) {
-  const result = await pool.query<HouseRow>(
-    `
-      insert into houses (
-        id,
-        user_id,
-        dev_user_id,
-        address_label,
-        dawa_address_id,
-        source_access_address_id
-      )
-      values ($1, $2, null, $3, $4, $5)
-      returning *
-    `,
-    [
-      createOpaqueId("house"),
-      userId,
-      input.label,
-      input.sourceAddressId,
-      input.sourceAccessAddressId ?? null
-    ]
+export async function requireHouseMembership(userId: string, houseId: string) {
+  const result = await pool.query<{ id: string }>(
+    `select h.id from houses h join house_memberships hm on hm.house_id = h.id
+     where h.id = $1 and hm.user_id = $2 and hm.status = 'active' and h.status = 'saved'`,
+    [houseId, userId]
   );
+  if (!result.rowCount) {
+    throw new ApiError(404, "house_not_found", "Saved house was not found.");
+  }
+}
 
-  return toSavedHouse(result.rows[0] as HouseRow);
+export async function findHouseByBfe(bfeNumber: string) {
+  const result = await pool.query<HouseRow>(
+    "select * from houses where bfe_number = $1 and status = 'saved' limit 1", [bfeNumber]
+  );
+  return result.rows[0] ? toSavedHouse(result.rows[0]) : null;
+}
+
+export async function hasActiveHouseMembership(userId: string, houseId: string) {
+  const result = await pool.query("select 1 from house_memberships where house_id = $1 and user_id = $2 and status = 'active'", [houseId, userId]);
+  return Boolean(result.rowCount);
+}
+
+export async function createHouseClaim(userId: string, houseId: string, claimType: "owner" | "resident" | "household_member") {
+  const ownerActionToken = createToken();
+  const result = await pool.query(
+    `insert into house_claims (id, house_id, user_id, claim_type) values ($1, $2, $3, $4)
+     on conflict (house_id, user_id) where status = 'pending' do update set updated_at = now()
+     returning id, house_id, user_id, claim_type, status, requested_at, resolved_at, resolution_note`,
+    [createOpaqueId("claim"), houseId, userId, claimType]
+  );
+  const row = result.rows[0];
+  await pool.query(
+    `update house_claims set owner_action_token_hash = $1, owner_action_expires_at = now() + interval '7 days', updated_at = now() where id = $2`,
+    [hashSecret(ownerActionToken), row.id]
+  );
+  const notifications = await pool.query(
+    `select c.id, c.claim_type, c.requested_at, h.address_label, h.bfe_number,
+            requester.email as requester_email, coalesce(requester_profile.display_name, requester.email) as requester_name,
+            owner.email as owner_email, coalesce(owner_profile.display_name, owner.email) as owner_name
+     from house_claims c
+     join houses h on h.id = c.house_id
+     join users requester on requester.id = c.user_id
+     left join user_profiles requester_profile on requester_profile.user_id = requester.id
+     join house_memberships membership on membership.house_id = c.house_id and membership.role = 'owner' and membership.status = 'active'
+     join users owner on owner.id = membership.user_id
+     left join user_profiles owner_profile on owner_profile.user_id = owner.id
+     where c.id = $1`,
+    [row.id]
+  );
+  return {
+    claim: { id: row.id, houseId: row.house_id, userId: row.user_id, claimType: row.claim_type, status: row.status, requestedAt: new Date(row.requested_at).toISOString(), resolvedAt: row.resolved_at ? new Date(row.resolved_at).toISOString() : null, resolutionNote: row.resolution_note },
+    ownerActionToken,
+    ownerActionExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    notifications: notifications.rows
+  };
+}
+
+export async function approveHouseClaimByOwnerToken(userId: string, token: string) {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const result = await client.query(
+      `select c.*, h.address_label from house_claims c join houses h on h.id = c.house_id
+       where c.owner_action_token_hash = $1 and c.status = 'pending' and c.owner_action_expires_at > now() for update`,
+      [hashSecret(token)]
+    );
+    const claim = result.rows[0];
+    if (!claim) throw new ApiError(404, "house_claim_action_invalid", "Adgangsanmodningen er ugyldig eller udløbet.");
+    const owner = await client.query("select 1 from house_memberships where house_id = $1 and user_id = $2 and role = 'owner' and status = 'active'", [claim.house_id, userId]);
+    if (!owner.rowCount) throw new ApiError(403, "house_owner_required", "Kun en aktiv ejer kan godkende adgang.");
+    await client.query("insert into house_memberships (id, house_id, user_id, role, status, invited_by_user_id) values ($1, $2, $3, 'member', 'active', $4) on conflict (house_id, user_id) where status = 'active' do nothing", [createOpaqueId("hm"), claim.house_id, claim.user_id, userId]);
+    await client.query("update house_claims set status = 'approved', resolved_at = now(), resolved_by_owner_user_id = $1, resolution_note = 'Godkendt af ejer', owner_action_token_hash = null, owner_action_expires_at = null, updated_at = now() where id = $2", [userId, claim.id]);
+    await client.query("commit");
+    return { id: claim.id, status: "approved" as const, houseId: claim.house_id };
+  } catch (error) { await client.query("rollback"); throw error; }
+  finally { client.release(); }
+}
+
+export async function resolveHouseClaimByOwner(userId: string, claimId: string, decision: "approve" | "reject") {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const claimResult = await client.query("select * from house_claims where id = $1 and status = 'pending' for update", [claimId]);
+    const claim = claimResult.rows[0];
+    if (!claim) throw new ApiError(404, "house_claim_not_found", "Adgangsanmodningen blev ikke fundet.");
+    const owner = await client.query("select 1 from house_memberships where house_id = $1 and user_id = $2 and role = 'owner' and status = 'active'", [claim.house_id, userId]);
+    if (!owner.rowCount) throw new ApiError(403, "house_owner_required", "Kun en aktiv ejer kan håndtere adgang.");
+    if (decision === "approve") {
+      await client.query("insert into house_memberships (id, house_id, user_id, role, status, invited_by_user_id) values ($1, $2, $3, 'member', 'active', $4) on conflict (house_id, user_id) where status = 'active' do nothing", [createOpaqueId("hm"), claim.house_id, claim.user_id, userId]);
+    }
+    await client.query("update house_claims set status = $1, resolved_at = now(), resolved_by_owner_user_id = $2, resolution_note = $3, owner_action_token_hash = null, owner_action_expires_at = null, updated_at = now() where id = $4", [decision === "approve" ? "approved" : "rejected", userId, decision === "approve" ? "Godkendt af ejer" : "Afvist af ejer", claimId]);
+    await client.query("commit");
+    return { id: claimId, status: decision === "approve" ? "approved" as const : "rejected" as const, houseId: claim.house_id };
+  } catch (error) { await client.query("rollback"); throw error; }
+  finally { client.release(); }
+}
+
+export async function listHouseMembers(userId: string, houseId: string) {
+  await requireHouseMembership(userId, houseId);
+  const current = await pool.query<{ role: "owner" | "member" }>("select role from house_memberships where house_id = $1 and user_id = $2 and status = 'active'", [houseId, userId]);
+  const result = await pool.query(`select hm.id, hm.house_id, hm.user_id, hm.role, hm.status, hm.valid_from, hm.valid_to, up.display_name
+    from house_memberships hm left join user_profiles up on up.user_id = hm.user_id
+    where hm.house_id = $1 and hm.status = 'active' order by hm.valid_from`, [houseId]);
+  const invitations = await pool.query(`select id, house_id, email, role, status, expires_at from house_invitations where house_id = $1 and status = 'pending' and expires_at > now() order by created_at desc`, [houseId]);
+  return {
+    canManage: current.rows[0]?.role === "owner",
+    members: result.rows.map((row) => ({ id: row.id, houseId: row.house_id, userId: row.user_id, role: row.role, status: row.status, validFrom: new Date(row.valid_from).toISOString(), validTo: row.valid_to ? new Date(row.valid_to).toISOString() : null, displayName: row.display_name })),
+    invitations: invitations.rows.map((row) => ({ id: row.id, houseId: row.house_id, email: row.email, role: row.role, status: row.status, expiresAt: new Date(row.expires_at).toISOString() }))
+  };
+}
+
+export async function revokeHouseInvitation(userId: string, houseId: string, invitationId: string) {
+  const owner = await pool.query("select 1 from house_memberships where house_id = $1 and user_id = $2 and role = 'owner' and status = 'active'", [houseId, userId]);
+  if (!owner.rowCount) throw new ApiError(403, "house_owner_required", "Only an owner can revoke invitations.");
+  const result = await pool.query("update house_invitations set status = 'revoked', updated_at = now() where id = $1 and house_id = $2 and status = 'pending' returning id", [invitationId, houseId]);
+  if (!result.rowCount) throw new ApiError(404, "house_invitation_not_found", "Invitationen blev ikke fundet.");
+  return { id: invitationId, status: "revoked" as const };
+}
+
+export async function createHouseInvitation(userId: string, houseId: string, email: string, role: "owner" | "member") {
+  await requireHouseMembership(userId, houseId);
+  const owner = await pool.query("select 1 from house_memberships where house_id = $1 and user_id = $2 and role = 'owner' and status = 'active'", [houseId, userId]);
+  if (!owner.rowCount) throw new ApiError(403, "house_owner_required", "Only an owner can invite members.");
+  const normalized = normalizeEmail(email);
+  const existingMember = await pool.query("select hm.house_id from house_memberships hm join users u on u.id = hm.user_id where hm.house_id = $1 and u.email = $2 and hm.status = 'active'", [houseId, normalized]);
+  if (existingMember.rowCount) return { alreadyMember: true as const, houseId };
+  const existingInvitation = await pool.query("select id, house_id, email, role, status, expires_at from house_invitations where house_id = $1 and email = $2 and status = 'pending' and expires_at > now()", [houseId, normalized]);
+  if (existingInvitation.rowCount) {
+    const pending = existingInvitation.rows[0];
+    return {
+      alreadyPending: true as const,
+      invitation: {
+        id: pending.id,
+        houseId: pending.house_id,
+        email: pending.email,
+        role: pending.role,
+        status: pending.status,
+        expiresAt: new Date(pending.expires_at).toISOString()
+      }
+    };
+  }
+  const token = createToken();
+  const result = await pool.query(`insert into house_invitations (id, house_id, email, role, token_hash, expires_at, invited_by_user_id)
+    values ($1, $2, $3, $4, $5, now() + interval '7 days', $6) returning id, house_id, email, role, status, expires_at`, [createOpaqueId("invite"), houseId, normalized, role, hashSecret(token), userId]);
+  return { ...result.rows[0], token };
+}
+
+export async function acceptHouseInvitation(userId: string, token: string) {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const result = await client.query(`select i.*, u.email as accepting_email from house_invitations i cross join users u
+      where u.id = $1 and i.token_hash = $2 and i.status = 'pending' and i.expires_at > now() for update`, [userId, hashSecret(token)]);
+    const invitation = result.rows[0];
+    if (!invitation) {
+      const tokenResult = await client.query("select email, status, expires_at, accepted_by_user_id, house_id from house_invitations where token_hash = $1", [hashSecret(token)]);
+      if (tokenResult.rows[0]?.status === "accepted" && tokenResult.rows[0].accepted_by_user_id === userId) { await client.query("commit"); return { houseId: tokenResult.rows[0].house_id }; }
+      if (tokenResult.rows[0]?.status === "pending" && new Date(tokenResult.rows[0].expires_at) > new Date()) throw new ApiError(403, "invitation_email_mismatch", "Invitationen er knyttet til en anden e-mailadresse.");
+      throw new ApiError(404, "invitation_not_found", "Invitationen er ugyldig eller udløbet.");
+    }
+    if (invitation.email !== invitation.accepting_email) throw new ApiError(403, "invitation_email_mismatch", "Invitationen er knyttet til en anden e-mailadresse.");
+    await client.query(`insert into house_memberships (id, house_id, user_id, role, status, invited_by_user_id) values ($1, $2, $3, $4, 'active', $5)
+      on conflict (house_id, user_id) where status = 'active' do nothing`, [createOpaqueId("hm"), invitation.house_id, userId, invitation.role, invitation.invited_by_user_id]);
+    await client.query(`update house_invitations set status = 'accepted', accepted_by_user_id = $1, accepted_at = now(), updated_at = now() where id = $2`, [userId, invitation.id]);
+    await client.query("commit");
+    return { houseId: invitation.house_id };
+  } catch (error) { await client.query("rollback"); throw error; }
+  finally { client.release(); }
+}
+
+export async function acceptHouseInvitationById(userId: string, invitationId: string) {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const result = await client.query(
+      `select i.*, u.email as accepting_email from house_invitations i cross join users u
+       where u.id = $1 and i.id = $2 and i.status = 'pending' and i.expires_at > now() for update`,
+      [userId, invitationId]
+    );
+    const invitation = result.rows[0];
+    if (!invitation) throw new ApiError(404, "invitation_not_found", "Invitationen er ugyldig eller udløbet.");
+    if (normalizeEmail(invitation.email) !== normalizeEmail(invitation.accepting_email)) throw new ApiError(403, "invitation_email_mismatch", "Invitationen er knyttet til en anden e-mailadresse.");
+    await client.query("insert into house_memberships (id, house_id, user_id, role, status, invited_by_user_id) values ($1, $2, $3, $4, 'active', $5) on conflict (house_id, user_id) where status = 'active' do nothing", [createOpaqueId("hm"), invitation.house_id, userId, invitation.role, invitation.invited_by_user_id]);
+    await client.query("update house_invitations set status = 'accepted', accepted_by_user_id = $1, accepted_at = now(), updated_at = now() where id = $2", [userId, invitation.id]);
+    await client.query("commit");
+    return { houseId: invitation.house_id };
+  } catch (error) { await client.query("rollback"); throw error; }
+  finally { client.release(); }
+}
+
+export async function resolveHouseClaim(claimId: string, adminUserId: string, decision: "approve" | "reject", note: string | null) {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const claimResult = await client.query("select * from house_claims where id = $1 and status = 'pending' for update", [claimId]);
+    const claim = claimResult.rows[0];
+    if (!claim) throw new ApiError(404, "house_claim_not_found", "Adgangskravet blev ikke fundet.");
+    if (decision === "approve") {
+      await client.query(`insert into house_memberships (id, house_id, user_id, role, status) values ($1, $2, $3, 'member', 'active') on conflict (house_id, user_id) where status = 'active' do nothing`, [createOpaqueId("hm"), claim.house_id, claim.user_id]);
+    }
+    await client.query(`update house_claims set status = $1, resolved_at = now(), resolved_by_admin_user_id = $2, resolution_note = $3, updated_at = now() where id = $4`, [decision === "approve" ? "approved" : "rejected", adminUserId, note, claimId]);
+    await client.query("commit");
+    return { id: claimId, status: decision === "approve" ? "approved" : "rejected" };
+  } catch (error) { await client.query("rollback"); throw error; }
+  finally { client.release(); }
+}
+
+export async function createSavedHouse(userId: string, input: SelectedAddressInput, bfeNumber: string) {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const existing = await client.query<HouseRow>(
+      `select h.* from houses h left join house_memberships hm on hm.house_id = h.id and hm.user_id = $1 and hm.status = 'active'
+       where h.bfe_number = $2 and h.status = 'saved' limit 1`, [userId, bfeNumber]
+    );
+    if (existing.rowCount) {
+      await client.query("commit");
+      return toSavedHouse(existing.rows[0] as HouseRow);
+    }
+    let result: { rows: HouseRow[] };
+    try {
+      result = await client.query<HouseRow>(
+        `insert into houses (id, user_id, dev_user_id, bfe_number, address_label, dawa_address_id, source_access_address_id, dawa_access_address_id)
+         values ($1, $2, null, $3, $4, $5, $6, $6) returning *`,
+        [createOpaqueId("house"), userId, bfeNumber, input.label, input.sourceAddressId, input.sourceAccessAddressId ?? null]
+      );
+    } catch (error) {
+      if ((error as { code?: string }).code !== "23505") throw error;
+      const raced = await client.query<HouseRow>("select * from houses where bfe_number = $1 and status = 'saved'", [bfeNumber]);
+      if (!raced.rowCount) throw error;
+      await client.query("commit");
+      return toSavedHouse(raced.rows[0] as HouseRow);
+    }
+    const house = result.rows[0] as HouseRow;
+    await client.query(
+      `insert into house_memberships (id, house_id, user_id, role, status) values ($1, $2, $3, 'owner', 'active')`,
+      [createOpaqueId("hm"), house.id, userId]
+    );
+    await client.query("commit");
+    return toSavedHouse(house);
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally { client.release(); }
 }
 
 export async function listSavedHouses(userId: string) {
   const result = await pool.query<HouseRow>(
-    "select * from houses where user_id = $1 order by created_at desc",
+    "select h.* from houses h join house_memberships hm on hm.house_id = h.id where hm.user_id = $1 and hm.status = 'active' and h.status = 'saved' order by h.created_at desc",
     [userId]
   );
 
@@ -1267,7 +1494,7 @@ export async function listSavedHouses(userId: string) {
 
 export async function getSavedHouse(userId: string, houseId: string) {
   const result = await pool.query<HouseRow>(
-    "select * from houses where id = $1 and user_id = $2",
+    "select h.* from houses h join house_memberships hm on hm.house_id = h.id where h.id = $1 and hm.user_id = $2 and hm.status = 'active' and h.status = 'saved'",
     [houseId, userId]
   );
   const row = result.rows[0];
@@ -1392,6 +1619,10 @@ export async function updateMaintenanceTaskStatus(
 
 function nextDateForRecurrence(dateOnly: string, interval: string) {
   const date = new Date(`${dateOnly}T00:00:00.000Z`);
+  if (interval === "weekly") {
+    date.setUTCDate(date.getUTCDate() + 7);
+    return date.toISOString().slice(0, 10);
+  }
   const monthsByInterval: Record<string, number> = {
     monthly: 1,
     quarterly: 3,
@@ -1625,14 +1856,13 @@ async function ensureMaintenanceRecommendationInstancesForHouse(
         select t.id
         from maintenance_tasks t
         where t.house_id = $1
-          and t.user_id = $3
           and t.origin_catalog_key = $2
           and t.deleted_at is null
           and t.archived_at is null
           and t.status <> 'done'
         limit 1
       `,
-      [houseId, item.catalog_key, userId]
+      [houseId, item.catalog_key]
     );
 
     if (blockers.rows[0]) {
@@ -1743,9 +1973,9 @@ export async function listMaintenanceRecommendationsForHouse(
       select
         ${maintenanceRecommendationReturningColumns()}
       from maintenance_recommendations
-      where house_id = $1 and user_id = $2 and status = $3
+      where house_id = $1 and status = $2
         and (
-          $3 = 'pending'
+          $2 = 'pending'
           or not exists (
             select 1
             from maintenance_recommendation_hides mh
@@ -1762,7 +1992,7 @@ export async function listMaintenanceRecommendationsForHouse(
         case priority when 'high' then 1 when 'normal' then 2 else 3 end,
         created_at asc
     `,
-    [house.id, userId, status]
+    [house.id, status]
   );
 
   return result.rows.map(toMaintenanceRecommendation);
@@ -1784,10 +2014,10 @@ export async function acceptMaintenanceRecommendationForHouse(
         select
           ${maintenanceRecommendationReturningColumns()}
         from maintenance_recommendations
-        where id = $1 and house_id = $2 and user_id = $3
+        where id = $1 and house_id = $2
         for update
       `,
-      [recommendationId, house.id, userId]
+      [recommendationId, house.id]
     );
     const recommendation = recommendationResult.rows[0];
 
@@ -1945,10 +2175,10 @@ export async function dismissMaintenanceRecommendationForHouse(
         select
           ${maintenanceRecommendationReturningColumns()}
         from maintenance_recommendations
-        where id = $1 and house_id = $2 and user_id = $3
+        where id = $1 and house_id = $2
         for update
       `,
-      [recommendationId, house.id, userId]
+      [recommendationId, house.id]
     );
     const recommendation = existing.rows[0];
 
@@ -1978,11 +2208,11 @@ export async function dismissMaintenanceRecommendationForHouse(
       `
         update maintenance_recommendations
         set status = 'dismissed', dismissed_at = coalesce(dismissed_at, now()), updated_at = now()
-        where id = $1 and house_id = $2 and user_id = $3 and status = 'pending'
+        where id = $1 and house_id = $2 and status = 'pending'
         returning
           ${maintenanceRecommendationReturningColumns()}
       `,
-      [recommendationId, house.id, userId]
+      [recommendationId, house.id]
     );
 
     await client.query("commit");
@@ -2007,7 +2237,6 @@ export async function restoreMaintenanceRecommendationForHouse(
       set status = 'pending', dismissed_at = null, updated_at = now()
       where mr.id = $1
         and mr.house_id = $2
-        and mr.user_id = $3
         and mr.status = 'dismissed'
         and not exists (
           select 1
@@ -2018,7 +2247,7 @@ export async function restoreMaintenanceRecommendationForHouse(
         )
       returning ${maintenanceRecommendationReturningColumns()}
     `,
-    [recommendationId, house.id, userId]
+    [recommendationId, house.id]
   );
 
   if (!result.rows[0]) {
@@ -2136,23 +2365,21 @@ export async function completeMaintenanceTaskForHouse(
           select id
           from maintenance_tasks
           where house_id = $1
-            and user_id = $2
-            and title = $3
-            and source = $4
+            and title = $2
+            and source = $3
             and status <> 'done'
             and deleted_at is null
             and archived_at is null
-            and recurrence_interval = $5
-            and coalesce(recommendation_id, '') = coalesce($6, '')
+            and recurrence_interval = $4
+            and coalesce(recommendation_id, '') = coalesce($5, '')
             and (
-              ($7::date is not null and due_date = $7::date)
-              or ($7::date is null and due_date is null and season is not distinct from $8)
+              ($6::date is not null and due_date = $6::date)
+              or ($6::date is null and due_date is null and season is not distinct from $7)
             )
           limit 1
         `,
         [
           house.id,
-          userId,
           task.title,
           task.source,
           task.recurrence_interval,
@@ -2251,8 +2478,8 @@ export async function listMaintenanceHistoryForHouse(
   query: MaintenanceHistoryQuery = {}
 ) {
   const house = await getSavedHouse(userId, houseId);
-  const filters: string[] = ["c.house_id = $1", "c.user_id = $2", "c.reversed_at is null"];
-  const values: unknown[] = [house.id, userId];
+  const filters: string[] = ["c.house_id = $1", "c.reversed_at is null"];
+  const values: unknown[] = [house.id];
 
   if (query.year) {
     values.push(query.year);
@@ -2315,10 +2542,10 @@ export async function reverseMaintenanceCompletionForHouse(
           reversed_at,
           reversed_by_user_id
         from maintenance_completions
-        where id = $1 and house_id = $2 and user_id = $3
+        where id = $1 and house_id = $2
         for update
       `,
-      [completionId, house.id, userId]
+      [completionId, house.id]
     );
     const completion = completionResult.rows[0];
 
@@ -2463,9 +2690,9 @@ export async function getMaintenanceHistoryEntryForHouse(
         c.recurrence_anchor,
         c.created_at
       from maintenance_completions c
-      where c.id = $1 and c.house_id = $2 and c.user_id = $3 and c.reversed_at is null
+      where c.id = $1 and c.house_id = $2 and c.reversed_at is null
     `,
-    [completionId, house.id, userId]
+    [completionId, house.id]
   );
   const row = result.rows[0];
 
@@ -2486,9 +2713,9 @@ export async function getMaintenanceHistoryEntryForHouse(
         select
           ${maintenanceRecommendationReturningColumns()}
         from maintenance_recommendations
-        where id = $1 and house_id = $2 and user_id = $3
+        where id = $1 and house_id = $2
       `,
-      [recommendationId, house.id, userId]
+      [recommendationId, house.id]
     );
     recommendation = recommendationResult.rows[0]
       ? toMaintenanceRecommendation(recommendationResult.rows[0])
@@ -2505,11 +2732,10 @@ export async function listHouseDocumentsForHouse(userId: string, houseId: string
   const house = await getSavedHouse(userId, houseId);
   const where = [
     "house_id = $1",
-    "user_id = $2",
     "upload_status = 'uploaded'",
     "archived_at is null"
   ];
-  const values: unknown[] = [house.id, userId];
+  const values: unknown[] = [house.id];
 
   const result = await pool.query<HouseDocumentRow>(
     `
@@ -2634,11 +2860,10 @@ export async function getHouseDocumentForHouse(
       from house_documents
       where id = $1
         and house_id = $2
-        and user_id = $3
         and upload_status = 'uploaded'
         and archived_at is null
     `,
-    [documentId, house.id, userId]
+    [documentId, house.id]
   );
   const row = result.rows[0];
 
@@ -2654,6 +2879,7 @@ export async function archiveHouseDocumentForHouse(
   houseId: string,
   documentId: string
 ) {
+  const house = await getSavedHouse(userId, houseId);
   const { objectKey } = await getHouseDocumentForHouse(
     userId,
     houseId,
@@ -2663,7 +2889,7 @@ export async function archiveHouseDocumentForHouse(
     `
       update house_documents
       set upload_status = 'archived', archived_at = now(), updated_at = now()
-      where id = $1 and user_id = $2
+      where id = $1 and house_id = $2
       returning
         id,
         house_id,
@@ -2679,7 +2905,7 @@ export async function archiveHouseDocumentForHouse(
         created_at,
         updated_at
     `,
-    [documentId, userId]
+    [documentId, house.id]
   );
 
   return {
@@ -2717,7 +2943,7 @@ export async function updateHouseDocumentForHouse(
       is_important = case when $18::boolean then $19::boolean else is_important end,
       note = case when $20::boolean then $21::text else note end,
       updated_at = now()
-      where id = $1 and house_id = $2 and user_id = $3 and upload_status = 'uploaded' and archived_at is null
+      where id = $1 and house_id = $2 and upload_status = 'uploaded' and archived_at is null
       returning id, house_id, object_key, original_filename, mime_type, size_bytes, checksum_sha256, upload_status,
         title, category, document_type, document_date, related_party, amount_minor, currency, expires_at, is_important, note,
         analysis_status, analysis_version, analysis_requested_at, analysis_started_at, analysis_completed_at, analysis_error_code,
@@ -2766,17 +2992,18 @@ export async function countActiveDocumentObjectReferences(objectKey: string) {
 }
 
 export async function listHouseImprovements(userId: string, houseId: string) {
-  const result = await pool.query<HouseImprovementRow>(`${improvementSelect} order by i.completed_date desc, i.created_at desc`, [houseId, userId]);
+  const house = await getSavedHouse(userId, houseId);
+  const result = await pool.query<HouseImprovementRow>(`${improvementSelect} order by i.completed_date desc, i.created_at desc`, [house.id]);
   return result.rows.map(toHouseImprovement);
 }
 
 const improvementSelect = `select i.*, to_char(i.completed_date, 'YYYY-MM-DD') as completed_date,
   (select count(*) from house_improvement_documents d where d.improvement_id = i.id) as document_count
-  from house_improvements i where i.house_id = $1 and i.user_id = $2 and i.archived_at is null`;
+  from house_improvements i where i.house_id = $1 and i.archived_at is null`;
 
 async function requireImprovement(userId: string, houseId: string, improvementId: string) {
   await getSavedHouse(userId, houseId);
-  const result = await pool.query<HouseImprovementRow>(`${improvementSelect} and i.id = $3`, [houseId, userId, improvementId]);
+  const result = await pool.query<HouseImprovementRow>(`${improvementSelect} and i.id = $2`, [houseId, improvementId]);
   const row = result.rows[0];
   if (!row) throw new ApiError(404, "improvement_not_found", "Forbedringen blev ikke fundet.");
   return row;
@@ -2784,7 +3011,7 @@ async function requireImprovement(userId: string, houseId: string, improvementId
 
 export async function getHouseImprovement(userId: string, houseId: string, improvementId: string) {
   const row = await requireImprovement(userId, houseId, improvementId);
-  const documents = await pool.query(`select d.* from house_documents d join house_improvement_documents r on r.document_id=d.id and r.house_id=d.house_id and r.user_id=d.user_id where r.improvement_id=$1 and d.archived_at is null order by r.created_at desc`, [improvementId]);
+  const documents = await pool.query(`select d.* from house_documents d join house_improvement_documents r on r.document_id=d.id and r.house_id=d.house_id where r.improvement_id=$1 and d.archived_at is null order by r.created_at desc`, [improvementId]);
   return { ...toHouseImprovement(row), documents: documents.rows.map(toHouseDocument) };
 }
 
@@ -2802,12 +3029,12 @@ export async function updateHouseImprovement(userId: string, houseId: string, im
   await requireImprovement(userId, houseId, improvementId);
   const fields: string[] = []; const values: unknown[] = [];
   for (const [key, column] of [["title","title"],["description","description"],["category","category"],["completedDate","completed_date"],["totalAmountMinor","total_amount_minor"]] as const) if (key in input) { const raw = (input as any)[key]; values.push(raw ?? null); fields.push(`${column}=$${values.length}${column.endsWith("date") ? "::date" : ""}`); }
-  if (fields.length) { values.push(improvementId, houseId, userId); await pool.query(`update house_improvements set ${fields.join(",")}, updated_at=now() where id=$${values.length-2} and house_id=$${values.length-1} and user_id=$${values.length}`, values); }
+  if (fields.length) { values.push(improvementId, houseId); await pool.query(`update house_improvements set ${fields.join(",")}, updated_at=now() where id=$${values.length-1} and house_id=$${values.length}`, values); }
   return getHouseImprovement(userId, houseId, improvementId);
 }
-export async function archiveHouseImprovement(userId: string, houseId: string, improvementId: string) { await requireImprovement(userId, houseId, improvementId); await pool.query(`update house_improvements set archived_at=now(), updated_at=now() where id=$1 and house_id=$2 and user_id=$3`, [improvementId,houseId,userId]); }
-export async function createHouseImprovementDocumentRelation(userId:string,houseId:string,improvementId:string,input:AttachHouseImprovementDocumentRequest){await requireImprovement(userId,houseId,improvementId);const r=await pool.query(`select 1 from house_documents where id=$1 and house_id=$2 and user_id=$3 and archived_at is null`,[input.documentId,houseId,userId]);if(!r.rowCount)throw new ApiError(404,'house_document_not_found','Dokumentet blev ikke fundet.');await pool.query(`insert into house_improvement_documents(improvement_id,house_id,user_id,document_id) values($1,$2,$3,$4) on conflict do nothing`,[improvementId,houseId,userId,input.documentId]);return getHouseImprovement(userId,houseId,improvementId);}
-export async function deleteHouseImprovementDocumentRelation(userId:string,houseId:string,improvementId:string,documentId:string){await requireImprovement(userId,houseId,improvementId);await pool.query(`delete from house_improvement_documents where improvement_id=$1 and house_id=$2 and user_id=$3 and document_id=$4`,[improvementId,houseId,userId,documentId]);}
+export async function archiveHouseImprovement(userId: string, houseId: string, improvementId: string) { await requireImprovement(userId, houseId, improvementId); await pool.query(`update house_improvements set archived_at=now(), updated_at=now() where id=$1 and house_id=$2`, [improvementId,houseId]); }
+export async function createHouseImprovementDocumentRelation(userId:string,houseId:string,improvementId:string,input:AttachHouseImprovementDocumentRequest){await requireImprovement(userId,houseId,improvementId);const r=await pool.query(`select 1 from house_documents where id=$1 and house_id=$2 and archived_at is null`,[input.documentId,houseId]);if(!r.rowCount)throw new ApiError(404,'house_document_not_found','Dokumentet blev ikke fundet.');await pool.query(`insert into house_improvement_documents(improvement_id,house_id,user_id,document_id) values($1,$2,$3,$4) on conflict do nothing`,[improvementId,houseId,userId,input.documentId]);return getHouseImprovement(userId,houseId,improvementId);}
+export async function deleteHouseImprovementDocumentRelation(userId:string,houseId:string,improvementId:string,documentId:string){await requireImprovement(userId,houseId,improvementId);await pool.query(`delete from house_improvement_documents where improvement_id=$1 and house_id=$2 and document_id=$3`,[improvementId,houseId,documentId]);}
 
 export async function getCurrentHousePhoto(userId: string, houseId: string) {
   const house = await getSavedHouse(userId, houseId);
@@ -2825,11 +3052,11 @@ export async function getCurrentHousePhoto(userId: string, houseId: string) {
         created_at,
         updated_at
       from house_media
-      where house_id = $1 and user_id = $2 and is_current_house_photo
+      where house_id = $1 and is_current_house_photo
       order by created_at desc
       limit 1
     `,
-    [house.id, userId]
+    [house.id]
   );
   const row = result.rows[0];
 
@@ -2856,9 +3083,9 @@ export async function replaceHousePhoto(
       `
         update house_media
         set is_current_house_photo = false, updated_at = now()
-        where house_id = $1 and user_id = $2 and is_current_house_photo
+        where house_id = $1 and is_current_house_photo
       `,
-      [house.id, userId]
+      [house.id]
     );
     const result = await client.query<HouseMediaRow>(
       `
@@ -2915,17 +3142,52 @@ export async function removeHousePhoto(userId: string, houseId: string) {
     `
       update house_media
       set is_current_house_photo = false, updated_at = now()
-      where house_id = $1 and user_id = $2 and is_current_house_photo
+      where house_id = $1 and is_current_house_photo
     `,
-    [house.id, userId]
+    [house.id]
   );
 }
 
 export async function buildAppBootstrap(userId: string): Promise<AppBootstrapResponse> {
-  const [user, profile, houses] = await Promise.all([
+  const [user, profile, houses, pendingClaims, ownerPendingClaims, pendingInvitations] = await Promise.all([
     getUserById(userId),
     getProfileForUser(userId),
-    listSavedHouses(userId)
+    listSavedHouses(userId),
+    pool.query(
+      `select c.id, c.house_id, h.address_label, h.bfe_number, c.claim_type, c.status, c.requested_at
+       from house_claims c
+       join houses h on h.id = c.house_id
+       where c.user_id = $1 and c.status = 'pending'
+       order by c.requested_at desc`,
+      [userId]
+    ),
+    pool.query(
+      `select c.id, c.house_id, c.claim_type, c.status, c.requested_at,
+              h.address_label, h.bfe_number,
+              coalesce(requester_profile.display_name, requester.email) as requester_name,
+              requester.email as requester_email
+       from house_claims c
+       join houses h on h.id = c.house_id
+       join users requester on requester.id = c.user_id
+       left join user_profiles requester_profile on requester_profile.user_id = requester.id
+       where c.status = 'pending'
+         and exists (select 1 from house_memberships owner_membership where owner_membership.house_id = c.house_id and owner_membership.user_id = $1 and owner_membership.role = 'owner' and owner_membership.status = 'active')
+       order by c.requested_at desc`,
+      [userId]
+    ),
+    pool.query(
+      `select i.id, i.house_id, i.email, i.role, i.status, i.expires_at,
+              h.address_label, h.bfe_number,
+              coalesce(inviter_profile.display_name, inviter.email) as inviter_name
+       from house_invitations i
+       join houses h on h.id = i.house_id
+       join users invited_user on invited_user.id = $1 and lower(invited_user.email) = lower(i.email)
+       join users inviter on inviter.id = i.invited_by_user_id
+       left join user_profiles inviter_profile on inviter_profile.user_id = inviter.id
+       where i.status = 'pending' and i.expires_at > now()
+       order by i.created_at desc`,
+      [userId]
+    )
   ]);
   const now = new Date().toISOString();
   const onboardingState = !profile.displayName
@@ -2942,6 +3204,37 @@ export async function buildAppBootstrap(userId: string): Promise<AppBootstrapRes
     },
     houses,
     activeHouseId: houses[0]?.id ?? null,
+    pendingHouseClaims: pendingClaims.rows.map((claim) => ({
+      id: claim.id,
+      houseId: claim.house_id,
+      addressLabel: claim.address_label,
+      bfeNumber: claim.bfe_number,
+      claimType: claim.claim_type,
+      status: claim.status,
+      requestedAt: new Date(claim.requested_at).toISOString()
+    })),
+    ownerPendingHouseClaims: ownerPendingClaims.rows.map((claim) => ({
+      id: claim.id,
+      houseId: claim.house_id,
+      requesterName: claim.requester_name,
+      requesterEmail: claim.requester_email,
+      addressLabel: claim.address_label,
+      bfeNumber: claim.bfe_number,
+      claimType: claim.claim_type,
+      status: claim.status,
+      requestedAt: new Date(claim.requested_at).toISOString()
+    })),
+    pendingHouseInvitations: pendingInvitations.rows.map((invitation) => ({
+      id: invitation.id,
+      houseId: invitation.house_id,
+      addressLabel: invitation.address_label,
+      bfeNumber: invitation.bfe_number,
+      email: invitation.email,
+      inviterName: invitation.inviter_name,
+      role: invitation.role,
+      status: invitation.status,
+      expiresAt: new Date(invitation.expires_at).toISOString()
+    })),
     entitlements: {
       plan: "free",
       status: "free",

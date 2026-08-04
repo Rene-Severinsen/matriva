@@ -27,10 +27,11 @@ type AuthState =
   | { status: "unauthorized"; message: string }
   | { status: "error"; message: string };
 
-type ViewKey = "dashboard" | "users" | "houses" | "recommendations" | "settings";
+type ViewKey = "dashboard" | "users" | "houses" | "claims" | "recommendations" | "settings";
 type DetailRoute =
   | { view: "users"; id: string }
   | { view: "houses"; id: string }
+  | { view: "claims"; id: string }
   | { view: "recommendations"; id: string };
 
 const navigation: Array<{
@@ -42,6 +43,7 @@ const navigation: Array<{
   { key: "dashboard", label: "Dashboard", icon: "dashboard" },
   { key: "users", label: "Brugere", icon: "users" },
   { key: "houses", label: "Boliger", icon: "houses" },
+  { key: "claims", label: "Adgangskrav", icon: "users" },
   {
     key: "recommendations",
     label: "Anbefalinger",
@@ -54,6 +56,7 @@ const routePaths: Record<ViewKey, string> = {
   dashboard: "/admin",
   users: "/admin/users",
   houses: "/admin/houses",
+  claims: "/admin/claims",
   recommendations: "/admin/recommendations",
   settings: "/admin/settings"
 };
@@ -82,6 +85,10 @@ function routeFromLocation(): { view: ViewKey; detail: DetailRoute | null } {
         ? { view: "houses", id: decodeURIComponent(parts[2]) }
         : null
     };
+  }
+
+  if (parts[1] === "claims") {
+    return { view: "claims", detail: parts[2] ? { view: "claims", id: decodeURIComponent(parts[2]) } : null };
   }
 
   if (parts[1] === "recommendations") {
@@ -452,6 +459,7 @@ function AdminShell({
             />
           ) : activeView === "users" ||
             activeView === "houses" ||
+            activeView === "claims" ||
             activeView === "recommendations" ? (
             <AdminDataPage
               client={client}

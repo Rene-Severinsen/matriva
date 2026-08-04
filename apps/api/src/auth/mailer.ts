@@ -11,6 +11,24 @@ export type MagicLinkDeliveryResult = {
   devMagicLink?: string;
 };
 
+export type HouseInvitationEmail = {
+  to: string;
+  invitationLink: string;
+  addressLabel: string;
+  expiresAt: Date;
+};
+
+export type HouseClaimOwnerEmail = {
+  to: string;
+  ownerName: string;
+  requesterName: string;
+  requesterEmail: string;
+  addressLabel: string;
+  bfeNumber: string | null;
+  approvalLink: string;
+  expiresAt: Date;
+};
+
 type SmtpConfig = {
   host: string;
   port: number;
@@ -260,4 +278,86 @@ export function createMagicLinkUrl(token: string) {
   const url = new URL(baseUrl);
   url.searchParams.set("token", token);
   return url.toString();
+}
+
+export function createHouseInvitationUrl(token: string) {
+  const baseUrl = process.env.MATRIVA_HOUSE_INVITATION_BASE_URL ?? "matriva://house-invitation";
+  const url = new URL(baseUrl);
+  url.searchParams.set("token", token);
+  return url.toString();
+}
+
+export function createHouseClaimApprovalUrl(token: string) {
+  const baseUrl = process.env.MATRIVA_HOUSE_CLAIM_APPROVAL_BASE_URL ?? "matriva://house-claim/approve";
+  const url = new URL(baseUrl);
+  url.searchParams.set("token", token);
+  return url.toString();
+}
+
+export async function sendHouseClaimOwnerEmail(email: HouseClaimOwnerEmail) {
+  const transport = mailTransport();
+  const expiresAt = email.expiresAt.toLocaleString("da-DK", { dateStyle: "short", timeStyle: "short" });
+  const body = [
+    `Hej ${email.ownerName},`, "",
+    `${email.requesterName} (${email.requesterEmail}) anmoder om adgang til et hus, du ejer i Matriva.`,
+    "",
+    `Adresse: ${email.addressLabel}`,
+    `Matrikel/BFE: ${email.bfeNumber ?? "Ikke registreret"}`,
+    "",
+    `Giv adgang direkte her: ${email.approvalLink}`,
+    `Linket udløber ${expiresAt}. Du kan også håndtere anmodningen i Matriva.`,
+    "", "Venlig hilsen", "Matriva"
+  ].join("\n");
+  if (transport === "console") {
+    console.info(JSON.stringify({ event: "house.claim_owner.dev_email", to: email.to, subject: "Ny adgangsanmodning til dit hus i Matriva", body, devApprovalLink: email.approvalLink }));
+    return { devApprovalLink: email.approvalLink };
+  }
+  if (transport === "disabled") return {};
+  if (transport !== "smtp") throw new Error("MATRIVA_MAIL_TRANSPORT must be console, disabled, or smtp.");
+  const config = smtpConfig();
+  const socket = await connectSmtp(config);
+  try {
+    const message = [`From: Matriva <${config.from}>`, `To: <${email.to}>`, `Subject: ${encodeHeader("Ny adgangsanmodning til dit hus i Matriva")}`, "MIME-Version: 1.0", 'Content-Type: text/plain; charset="UTF-8"', "Content-Transfer-Encoding: 8bit", "", body].join("\r\n");
+    const authPlain = Buffer.from(`\u0000${config.user}\u0000${config.password}`, "utf8").toString("base64");
+    await expectSmtp(socket, `AUTH PLAIN ${authPlain}`, [235]);
+    await expectSmtp(socket, `MAIL FROM:<${config.from}>`, [250]);
+    await expectSmtp(socket, `RCPT TO:<${email.to}>`, [250, 251]);
+    await expectSmtp(socket, "DATA", [354]);
+    await expectSmtp(socket, `${dotStuff(message)}\r\n.`, [250]);
+    await expectSmtp(socket, "QUIT", [221]);
+  } finally { socket.end(); }
+  return {};
+}
+
+export async function sendHouseInvitationEmail(email: HouseInvitationEmail) {
+  const transport = mailTransport();
+  const expiresAt = email.expiresAt.toLocaleString("da-DK", { dateStyle: "short", timeStyle: "short" });
+  const body = [
+    "Hej,", "", "Du er inviteret til at få adgang til en bolig i Matriva.",
+    "Når du accepterer invitationen, får du adgang til boligens fælles vedligeholdelse, dokumenter og historik.",
+    "", `Bolig: ${email.addressLabel}`, `Acceptér invitationen her: ${email.invitationLink}`,
+    `Invitationen udløber ${expiresAt}.`, "", "Venlig hilsen", "Matriva"
+  ].join("\n");
+  if (transport === "console") {
+    console.info(JSON.stringify({ event: "house.invitation.dev_email", to: email.to, subject: "Invitation til en bolig i Matriva", devInvitationLink: email.invitationLink }));
+    return { devInvitationLink: email.invitationLink };
+  }
+  if (transport === "disabled") return {};
+  if (transport !== "smtp") throw new Error("MATRIVA_MAIL_TRANSPORT must be console, disabled, or smtp.");
+  const config = smtpConfig();
+  const socket = await connectSmtp(config);
+  try {
+    const message = [
+      `From: Matriva <${config.from}>`, `To: <${email.to}>`, `Subject: ${encodeHeader("Invitation til en bolig i Matriva")}`,
+      "MIME-Version: 1.0", 'Content-Type: text/plain; charset="UTF-8"', "Content-Transfer-Encoding: 8bit", "", body
+    ].join("\r\n");
+    const authPlain = Buffer.from(`\u0000${config.user}\u0000${config.password}`, "utf8").toString("base64");
+    await expectSmtp(socket, `AUTH PLAIN ${authPlain}`, [235]);
+    await expectSmtp(socket, `MAIL FROM:<${config.from}>`, [250]);
+    await expectSmtp(socket, `RCPT TO:<${email.to}>`, [250, 251]);
+    await expectSmtp(socket, "DATA", [354]);
+    await expectSmtp(socket, `${dotStuff(message)}\r\n.`, [250]);
+    await expectSmtp(socket, "QUIT", [221]);
+  } finally { socket.end(); }
+  return {};
 }

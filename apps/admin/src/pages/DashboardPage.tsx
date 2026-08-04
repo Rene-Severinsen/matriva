@@ -157,6 +157,27 @@ function DashboardContent({ dashboard }: { dashboard: AdminDashboardResponse }) 
       tone: "green"
     },
     {
+      label: "Aktive medlemskaber",
+      value: dashboard.relationshipMetrics.activeMemberships,
+      note: "Adgang til fælles boliger",
+      icon: "users" as IconName,
+      tone: "teal"
+    },
+    {
+      label: "Boliger med flere brugere",
+      value: dashboard.relationshipMetrics.housesWithMultipleMembers,
+      note: "Fysiske boliger med aktiv deling",
+      icon: "houses" as IconName,
+      tone: "purple"
+    },
+    {
+      label: "Afventende adgangskrav",
+      value: dashboard.relationshipMetrics.pendingClaims,
+      note: "Kræver adminbehandling",
+      icon: "activity" as IconName,
+      tone: "orange"
+    },
+    {
       label: "BBR warnings",
       value: dashboard.totals.publicDataWarnings,
       note: "Warnings på tværs af boliger",

@@ -5,6 +5,7 @@ import {
   adminDashboardResponseSchema,
   adminHouseResponseSchema,
   adminHousesResponseSchema,
+  adminHouseClaimsResponseSchema,
   adminRecommendationCatalogItemResponseSchema,
   adminRecommendationCatalogResponseSchema,
   adminPasswordLoginRequestSchema,
@@ -34,6 +35,8 @@ import {
   updateMaintenanceSettingsResponseSchema,
   savedHouseResponseSchema,
   savedHousesResponseSchema,
+  houseMembershipSchema,
+  houseInvitationSchema,
   healthResponseSchema,
   houseDraftOverviewPreviewResponseSchema,
   houseDraftResponseSchema,
@@ -45,6 +48,8 @@ import {
   type AdminDashboardResponse,
   type AdminHousePublicDataStatusFilter,
   type AdminHouseResponse,
+  type AdminHouseClaimsResponse,
+  type AdminHouseClaimStatusFilter,
   type AdminHouseSort,
   type AdminHousesResponse,
   type AdminRecommendationActiveFilter,
@@ -75,6 +80,8 @@ import {
   type HouseDraftOverviewPreviewResponse,
   type HouseDraftResponse,
   type HouseId,
+  type HouseMembership,
+  type HouseInvitation,
   type HouseImprovementResponse,
   type HouseImprovementsResponse,
   type HousePhotoResponse,
@@ -235,6 +242,8 @@ export type MatrivaApiClient = {
     houseId: string,
     input?: { signal?: AbortSignal }
   ) => Promise<AdminHouseResponse>;
+  getAdminHouseClaims: (input?: { status?: AdminHouseClaimStatusFilter; signal?: AbortSignal }) => Promise<AdminHouseClaimsResponse>;
+  resolveAdminHouseClaim: (claimId: string, decision: "approve" | "reject", note?: string) => Promise<unknown>;
   getAdminRecommendationCatalog: (
     input?: AdminListRequest<AdminRecommendationCatalogSort> & {
       active?: AdminRecommendationActiveFilter;
@@ -262,6 +271,14 @@ export type MatrivaApiClient = {
     input: CreateSavedHouseRequest
   ) => Promise<SavedHouseResponse>;
   getHouse: (houseId: HouseId) => Promise<SavedHouseResponse>;
+  createHouseClaim: (houseId: HouseId, claimType?: "owner" | "resident" | "household_member") => Promise<unknown>;
+  approveHouseClaimByToken: (token: string) => Promise<unknown>;
+  resolveHouseClaimAsOwner: (claimId: string, decision: "approve" | "reject") => Promise<unknown>;
+  listHouseMembers: (houseId: HouseId) => Promise<{ members: HouseMembership[]; invitations: HouseInvitation[]; canManage: boolean }>;
+  inviteHouseMember: (houseId: HouseId, input: { email: string; role?: "owner" | "member" }) => Promise<unknown>;
+  revokeHouseInvitation: (houseId: HouseId, invitationId: string) => Promise<unknown>;
+  acceptHouseInvitation: (token: string) => Promise<{ houseId: HouseId }>;
+  acceptHouseInvitationById: (invitationId: string) => Promise<{ houseId: HouseId }>;
   getHousePublicData: (
     houseId: HouseId
   ) => Promise<HousePublicDataWithProfileResponseV1>;
@@ -382,6 +399,8 @@ export type MatrivaAdminApiClient = Pick<
   | "getAdminUser"
   | "getAdminHouses"
   | "getAdminHouse"
+  | "getAdminHouseClaims"
+  | "resolveAdminHouseClaim"
   | "getAdminRecommendationCatalog"
   | "getAdminRecommendationCatalogItem"
 >;
@@ -512,6 +531,16 @@ export function createMatrivaAdminApiClient(
       return adminHouseResponseSchema.parse(
         await parseApiResponse(response, "Could not load admin house.")
       );
+    },
+    async getAdminHouseClaims(input = {}) {
+      const params = new URLSearchParams();
+      if (input.status && input.status !== "all") params.set("status", input.status);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/house-claims${params.toString() ? `?${params}` : ""}`, { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) });
+      return adminHouseClaimsResponseSchema.parse(await parseApiResponse(response, "Could not load access claims."));
+    },
+    async resolveAdminHouseClaim(claimId, decision, note) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/house-claims/${encodeURIComponent(claimId)}/${decision}`, { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ note: note ?? null }) });
+      return parseApiResponse(response, "Could not resolve access claim.");
     },
     async getAdminRecommendationCatalog(input = {}) {
       const response = await fetcher(
@@ -876,6 +905,16 @@ export function createMatrivaApiClient(
         await parseApiResponse(response, "Could not load admin house.")
       );
     },
+    async getAdminHouseClaims(input = {}) {
+      const params = new URLSearchParams();
+      if (input.status && input.status !== "all") params.set("status", input.status);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/house-claims${params.toString() ? `?${params}` : ""}`, { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) });
+      return adminHouseClaimsResponseSchema.parse(await parseApiResponse(response, "Could not load access claims."));
+    },
+    async resolveAdminHouseClaim(claimId, decision, note) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/house-claims/${encodeURIComponent(claimId)}/${decision}`, { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ note: note ?? null }) });
+      return parseApiResponse(response, "Could not resolve access claim.");
+    },
     async getAdminRecommendationCatalog(input = {}) {
       const response = await fetcher(
         `${normalizedBaseUrl}/v1/admin/recommendations/catalog${adminListSearchParams(
@@ -1022,6 +1061,39 @@ export function createMatrivaApiClient(
       return savedHouseResponseSchema.parse(
         await parseApiResponse(response, "Could not load house.")
       );
+    },
+    async createHouseClaim(houseId, claimType = "resident") {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/houses/${houseId}/claims`, { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ claimType }) });
+      return parseApiResponse(response, "Could not create access claim.");
+    },
+    async approveHouseClaimByToken(token) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/house-claims/owner-approve`, { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ token }) });
+      return parseApiResponse(response, "Could not approve access claim.");
+    },
+    async resolveHouseClaimAsOwner(claimId, decision) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/house-claims/${encodeURIComponent(claimId)}/${decision}`, { method: "POST", headers: authHeaders() });
+      return parseApiResponse(response, "Could not resolve access claim.");
+    },
+    async listHouseMembers(houseId) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/houses/${houseId}/members`, { headers: authHeaders() });
+      const payload = await parseApiResponse(response, "Could not load house members.") as { members?: unknown; invitations?: unknown; canManage?: boolean };
+      return { canManage: payload.canManage === true, members: Array.isArray(payload.members) ? payload.members.map((member) => houseMembershipSchema.parse(member)) : [], invitations: Array.isArray(payload.invitations) ? payload.invitations.map((invitation) => houseInvitationSchema.parse(invitation)) : [] };
+    },
+    async inviteHouseMember(houseId, input) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/houses/${houseId}/members`, { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) });
+      return parseApiResponse(response, "Could not create invitation.");
+    },
+    async revokeHouseInvitation(houseId, invitationId) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/houses/${encodeURIComponent(houseId)}/invitations/${encodeURIComponent(invitationId)}`, { method: "DELETE", headers: authHeaders() });
+      return parseApiResponse(response, "Could not revoke invitation.");
+    },
+    async acceptHouseInvitation(token) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/house-invitations/accept`, { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ token }) });
+      return parseApiResponse(response, "Could not accept invitation.") as Promise<{ houseId: HouseId }>;
+    },
+    async acceptHouseInvitationById(invitationId) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/house-invitations/${encodeURIComponent(invitationId)}/accept`, { method: "POST", headers: authHeaders() });
+      return parseApiResponse(response, "Could not accept invitation.") as Promise<{ houseId: HouseId }>;
     },
     async getHousePublicData(houseId) {
       const response = await fetcher(

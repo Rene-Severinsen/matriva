@@ -37,17 +37,9 @@ export async function getPublicDataTargetForHouse(
   userId: string,
   houseId: string
 ): Promise<PublicDataTarget> {
-  const result = await pool.query<HouseRow>(
-    "select * from houses where id = $1 and user_id = $2",
-    [houseId, userId]
-  );
-  const house = result.rows[0];
+  const house = await getSavedHouse(userId, houseId);
 
-  if (!house) {
-    throw new ApiError(404, "house_not_found", "Saved house was not found.");
-  }
-
-  if (!house.dawa_address_id) {
+  if (!house.dawaAddressId) {
     throw new ApiError(
       409,
       "house_public_data_address_missing",
@@ -59,9 +51,9 @@ export async function getPublicDataTargetForHouse(
     kind: "house",
     id: house.id,
     userId,
-    addressLabel: house.address_label,
-    darAddressId: house.dawa_address_id,
-    darAccessAddressId: house.source_access_address_id
+    addressLabel: house.addressLabel,
+    darAddressId: house.dawaAddressId,
+    darAccessAddressId: house.dawaAccessAddressId ?? null
   };
 }
 

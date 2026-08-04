@@ -34,6 +34,7 @@
     "smoke:bbr:live:complex": "npm run build && node tools/smoke-bbr-live-complex.mjs",
     "check": "npm run check:no-firebase && npm run check:secrets && npm run check:bbr-codebooks && npm run check:bbr-public-data-parity && npm run typecheck && npm run lint",
     "smoke:auth": "node tools/smoke-auth.mjs",
+    "db:reset-test": "node tools/reset-test-db.mjs",
     "check:bbr-codebooks": "node tools/check-bbr-codebooks.mjs",
     "dev:website": "npm run dev -w @matriva/website",
     "build:website": "npm run build -w @matriva/website"

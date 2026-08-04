@@ -95,11 +95,14 @@ function mapHouse(row: Record<string, any>) {
   return {
     id: row.id,
     addressLabel: row.address_label,
+    bfeNumber: row.bfe_number,
     owner: {
       id: row.user_id,
       displayName: row.display_name,
       email: row.email
     },
+    activeUserCount: count(row.active_user_count),
+    openClaimCount: count(row.open_claim_count),
     status: row.status,
     dataConfidence: row.data_confidence,
     createdAt: row.created_at.toISOString(),
@@ -164,6 +167,8 @@ export async function listAdminHouses(
       filtered as (
         select
           h.*,
+          (select count(*)::int from house_memberships hm where hm.house_id = h.id and hm.status = 'active') as active_user_count,
+          (select count(*)::int from house_claims hcl where hcl.house_id = h.id and hcl.status = 'pending') as open_claim_count,
           u.email,
           up.display_name,
           coalesce(s.status, 'not_started') as public_data_status,
@@ -221,6 +226,8 @@ export async function getAdminHouse(houseId: string): Promise<AdminHouseResponse
       )
       select
         h.*,
+        (select count(*)::int from house_memberships where house_id = h.id and status = 'active') as active_user_count,
+        (select count(*)::int from house_claims where house_id = h.id and status = 'pending') as open_claim_count,
         u.email,
         up.display_name,
         coalesce(s.status, 'not_started') as public_data_status,
@@ -250,7 +257,7 @@ export async function getAdminHouse(houseId: string): Promise<AdminHouseResponse
     throw new ApiError(404, "admin_house_not_found", "Admin house was not found.");
   }
 
-  const [buildings, units, floors, parcels, tasks, completions, recs, assets] =
+  const [buildings, units, floors, parcels, tasks, completions, recs, assets, members, invitations, claims] =
     await Promise.all([
       pool.query(
         `
@@ -313,7 +320,14 @@ export async function getAdminHouse(houseId: string): Promise<AdminHouseResponse
             (select count(*)::int from house_media where house_id = $1) as media
         `,
         [houseId]
-      )
+      ),
+      pool.query(
+        `select hm.user_id, up.display_name, u.email, hm.role, hm.status, hm.valid_from, hm.valid_to
+         from house_memberships hm join users u on u.id = hm.user_id left join user_profiles up on up.user_id = u.id
+         where hm.house_id = $1 order by hm.status, hm.valid_from`, [houseId]
+      ),
+      pool.query(`select id, email, role, status, expires_at from house_invitations where house_id = $1 order by created_at desc`, [houseId]),
+      pool.query(`select id, user_id, claim_type, status, requested_at, resolution_note from house_claims where house_id = $1 order by requested_at desc`, [houseId])
     ]);
 
   const task = tasks.rows[0] ?? {};
@@ -329,6 +343,14 @@ export async function getAdminHouse(houseId: string): Promise<AdminHouseResponse
         warning_count: warningCount(normalizedPayload)
       }),
       updatedAt: row.updated_at.toISOString(),
+      members: members.rows.map((member) => ({
+        userId: member.user_id, displayName: member.display_name, email: member.email,
+        role: member.role, status: member.status,
+        validFrom: new Date(member.valid_from).toISOString(),
+        validTo: member.valid_to ? new Date(member.valid_to).toISOString() : null
+      })),
+      invitations: invitations.rows.map((invitation) => ({ id: invitation.id, email: invitation.email, role: invitation.role, status: invitation.status, expiresAt: new Date(invitation.expires_at).toISOString() })),
+      claims: claims.rows.map((claim) => ({ id: claim.id, userId: claim.user_id, claimType: claim.claim_type, status: claim.status, requestedAt: new Date(claim.requested_at).toISOString(), resolutionNote: claim.resolution_note })),
       sourceReferences: {
         dawaAddressId: row.dawa_address_id,
         sourceAccessAddressId: row.source_access_address_id

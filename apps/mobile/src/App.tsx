@@ -53,6 +53,8 @@ import {
   type CreateMaintenanceTaskRequest,
   type CurrentUser,
   type HouseId,
+  type HouseMembership,
+  type HouseInvitation,
   type HouseDocument,
   type HouseDocumentCategory,
   type HouseDocumentType,
@@ -96,7 +98,7 @@ type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" |
 type MaintenanceFilter = "current" | "spring" | "summer" | "autumn" | "winter" | "all";
 type MaintenanceView = "main" | "history" | "historyDetail" | "taskDetail" | "recommendations" | "dismissedRecommendations" | "recommendationDetail";
 type AuthStatus = "restoring" | "anonymous" | "authenticated";
-type MoreView = "menu" | "profile" | "settings";
+type MoreView = "menu" | "profile" | "settings" | "sharing";
 type HouseView = "overview" | "details" | "improvements" | "improvementDetail" | "addImprovement";
 type UnauthenticatedStep = "welcome" | "create" | "login";
 type HouseOnboardingStep = "search" | "confirm" | "progress" | "publicDataIssue";
@@ -1602,7 +1604,13 @@ function HouseOnboarding({
   onSave,
   onChooseAnotherAddress,
   onRetryPublicData,
-  onContinueWithoutPublicData
+  onContinueWithoutPublicData,
+  onRequestAccess,
+  canRequestAccess,
+  onStopSession,
+  pendingClaimNotice,
+  pendingHouseInvitations,
+  onAcceptInvitation
 }: {
   step: HouseOnboardingStep;
   query: string;
@@ -1620,6 +1628,12 @@ function HouseOnboarding({
   onChooseAnotherAddress: () => void;
   onRetryPublicData: () => void;
   onContinueWithoutPublicData: () => void;
+  onRequestAccess: () => void;
+  canRequestAccess: boolean;
+  onStopSession: () => void;
+  pendingClaimNotice: string | null;
+  pendingHouseInvitations: AppBootstrapResponse["pendingHouseInvitations"];
+  onAcceptInvitation: (invitationId: string) => void;
 }) {
   if (step === "progress") {
     return (
@@ -1644,22 +1658,17 @@ function HouseOnboarding({
     return (
       <View style={styles.stack}>
         <Card>
-          <Text style={styles.emptyTitle}>BBR-oplysninger mangler</Text>
+          <Text style={styles.emptyTitle}>{canRequestAccess ? "Adgang til boligen kræver godkendelse" : "BBR-oplysninger mangler"}</Text>
           <Text style={styles.bodyText}>
             {publicDataIssueText ??
               "Boligen er gemt, men vi kunne ikke hente BBR-oplysningerne lige nu."}
           </Text>
           <View style={styles.stack}>
-            <PrimaryButton
-              label="Prøv igen"
-              loading={isSaving}
-              onPress={onRetryPublicData}
-            />
-            <SecondaryButton
-              label="Fortsæt uden BBR-oplysninger"
-              disabled={isSaving}
-              onPress={onContinueWithoutPublicData}
-            />
+            {canRequestAccess ? <PrimaryButton label="Anmod om adgang" loading={isSaving} onPress={onRequestAccess} /> : <>
+              <PrimaryButton label="Prøv igen" loading={isSaving} onPress={onRetryPublicData} />
+              <SecondaryButton label="Fortsæt uden BBR-oplysninger" disabled={isSaving} onPress={onContinueWithoutPublicData} />
+            </>}
+            <SecondaryButton label="Log ud og start forfra" disabled={isSaving} onPress={onStopSession} />
           </View>
         </Card>
       </View>
@@ -1700,6 +1709,8 @@ function HouseOnboarding({
 
   return (
     <View style={styles.stack}>
+      {pendingHouseInvitations.length > 0 ? <Card variant="soft"><Text style={styles.eyebrow}>DU ER INVITERET</Text><Text style={styles.cardTitle}>Du har adgang til invitationer</Text><Text style={styles.bodyText}>Du behøver ikke oprette en bolig selv. Accepter en invitation for at få huset tilføjet.</Text>{pendingHouseInvitations.map((invitation) => <View key={invitation.id} style={styles.invitationCard}><View style={styles.invitationText}><Text style={styles.menuText}>{invitation.addressLabel}</Text><Text style={styles.menuMeta}>Inviteret af {invitation.inviterName}</Text></View><PrimaryButton compact label="Accepter" onPress={() => onAcceptInvitation(invitation.id)} /></View>)}</Card> : null}
+      {pendingClaimNotice ? <Card><Text style={styles.cardTitle}>Adgangsanmodning afventer</Text><Text style={styles.bodyText}>{pendingClaimNotice}</Text></Card> : null}
       <Card>
         <Text style={styles.emptyTitle}>Kom i gang med dit hus</Text>
         <Text style={styles.bodyText}>
@@ -1768,26 +1779,36 @@ function HouseOnboarding({
           />
         </View>
       ) : null}
+
+      <SecondaryButton
+        label="Log ud og start forfra"
+        disabled={isSearching || isSaving}
+        onPress={onStopSession}
+      />
     </View>
   );
 }
 
 function DashboardScreen({
   house,
+  houses,
   publicDataSummary,
   tasks,
   onboarding,
+  onSelectHouse,
   onCreateTask,
   onOpenTasks,
   onOpenTask
 }: {
   house: SavedHouse | null;
+  houses: SavedHouse[];
   publicDataSummary: HousePublicDataSummary | null;
   tasks: MaintenanceTask[];
   onboarding: React.ComponentProps<typeof HouseOnboarding>;
   onCreateTask: () => void;
   onOpenTasks: () => void;
   onOpenTask: (task: MaintenanceTask) => void;
+  onSelectHouse: (houseId: HouseId) => void;
 }) {
   if (!house || onboarding.step === "progress" || onboarding.step === "publicDataIssue") {
     return (
@@ -1813,11 +1834,10 @@ function DashboardScreen({
 
   return (
     <View style={styles.stack}>
-      <SectionHeader
-        title="Overblik"
-        eyebrow="Matriva"
-        subtitle="Det vigtigste om dit hus lige nu."
-      />
+      <View style={styles.dashboardHeaderRow}>
+        <View style={styles.dashboardHeaderSection}><SectionHeader title="Overblik" eyebrow="Matriva" subtitle="Det vigtigste om dit hus lige nu." /></View>
+        <HouseSelector compact houses={houses} selectedHouse={house} onSelectHouse={onSelectHouse} />
+      </View>
 
       <HouseStatusCard house={house} publicDataSummary={publicDataSummary} />
 
@@ -1831,6 +1851,61 @@ function DashboardScreen({
       />
     </View>
   );
+}
+
+function HouseSelector({ houses, selectedHouse, onSelectHouse, compact = false }: { houses: SavedHouse[]; selectedHouse: SavedHouse | null; onSelectHouse: (houseId: HouseId) => void; compact?: boolean }) {
+  const [visible, setVisible] = useState(false);
+  return <>
+    <Pressable accessibilityRole="button" accessibilityLabel="Vælg aktiv bolig" onPress={() => setVisible(true)} style={({ pressed }) => [styles.houseSelector, compact ? styles.houseSelectorCompact : null, pressed ? styles.secondaryButtonPressed : null]}>
+      <View style={styles.houseSelectorText}>{compact ? <Text style={styles.houseSelectorCompactValue}>Skift bolig</Text> : <><Text style={styles.houseSelectorLabel}>AKTIV BOLIG</Text><Text numberOfLines={1} style={styles.houseSelectorValue}>{selectedHouse?.addressLabel ?? "Vælg bolig"}</Text></>}</View>
+      <Text style={[styles.houseSelectorChevron, compact ? styles.houseSelectorChevronCompact : null]}>⌄</Text>
+    </Pressable>
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={() => setVisible(false)}>
+      <Pressable style={styles.houseSelectorBackdrop} onPress={() => setVisible(false)}>
+        <Pressable style={styles.houseSelectorModal} onPress={(event) => event.stopPropagation()}>
+          <View style={styles.houseSelectorModalHeader}><Text style={styles.ownerClaimTitle}>Vælg bolig</Text><Pressable accessibilityRole="button" accessibilityLabel="Luk boligvælger" onPress={() => setVisible(false)}><Text style={styles.houseSelectorClose}>Luk</Text></Pressable></View>
+          {houses.map((house) => <Pressable key={house.id} accessibilityRole="button" onPress={() => { setVisible(false); onSelectHouse(house.id); }} style={({ pressed }) => [styles.houseOption, house.id === selectedHouse?.id ? styles.houseOptionSelected : null, pressed ? styles.secondaryButtonPressed : null]}><View style={styles.houseSelectorText}><Text style={styles.houseOptionAddress}>{house.addressLabel}</Text><Text style={styles.menuMeta}>{house.bfeNumber ? `BFE ${house.bfeNumber}` : "BFE ikke registreret"}</Text></View>{house.id === selectedHouse?.id ? <Text style={styles.houseOptionCheck}>✓</Text> : null}</Pressable>)}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  </>;
+}
+
+function OwnerClaimInbox({ claims, onResolve }: { claims: AppBootstrapResponse["ownerPendingHouseClaims"]; onResolve: (claimId: string, decision: "approve" | "reject") => void }) {
+  return <Card variant="soft">
+    <Text style={styles.eyebrow}>NY ADGANGSANMODNING</Text>
+    <Text style={styles.cardTitle}>{claims.length === 1 ? "En bruger vil have adgang" : `${claims.length} brugere vil have adgang`}</Text>
+    {claims.map((claim) => <View key={claim.id} style={styles.stack}>
+      <Text style={styles.bodyText}><Text style={styles.cardTitle}>{claim.requesterName}</Text> ønsker adgang til {claim.addressLabel}.</Text>
+      <Text style={styles.metaText}>Matrikel/BFE: {claim.bfeNumber ?? "Ikke registreret"}</Text>
+      <View style={styles.inlineActions}>
+        <PrimaryButton compact label="Giv adgang" onPress={() => onResolve(claim.id, "approve")} />
+        <SecondaryButton compact label="Afvis" onPress={() => onResolve(claim.id, "reject")} />
+      </View>
+    </View>)}
+  </Card>;
+}
+
+function OwnerClaimModal({ claims, onResolve, onDefer }: { claims: AppBootstrapResponse["ownerPendingHouseClaims"]; onResolve: (claimId: string, decision: "approve" | "reject") => void; onDefer: (claimId: string) => void }) {
+  const claim = claims[0];
+  return <Modal animationType="fade" transparent visible={Boolean(claim)} onRequestClose={() => claim && onDefer(claim.id)}>
+    <View style={styles.ownerClaimBackdrop}>
+      <View style={styles.ownerClaimModal}>
+        <Text style={styles.eyebrow}>NY ADGANGSANMODNING</Text>
+        <Text style={styles.ownerClaimTitle}>En bruger ønsker adgang</Text>
+        {claim ? <>
+          <Text style={styles.bodyText}><Text style={styles.cardTitle}>{claim.requesterName}</Text> ønsker adgang til:</Text>
+          <View style={styles.ownerClaimAddress}><Text style={styles.ownerClaimAddressText}>{claim.addressLabel}</Text><Text style={styles.metaText}>Matrikel/BFE · {claim.bfeNumber ?? "Ikke registreret"}</Text></View>
+          <Text style={styles.compactBodyText}>Du kan give adgang nu eller finde anmodningen senere under Mere → Deling & adgang.</Text>
+          <View style={styles.ownerClaimActions}>
+            <SecondaryButton compact label="Senere" onPress={() => onDefer(claim.id)} />
+            <SecondaryButton compact label="Afvis" onPress={() => onResolve(claim.id, "reject")} />
+            <PrimaryButton compact label="Giv adgang" onPress={() => onResolve(claim.id, "approve")} />
+          </View>
+        </> : null}
+      </View>
+    </View>
+  </Modal>;
 }
 
 function ImprovementDetailPanel({
@@ -2737,6 +2812,7 @@ const maintenanceRecurrenceOptions: ReadonlyArray<{
   detailLabel: string | null;
 }> = [
   { key: "", label: "Gentages ikke", detailLabel: null },
+  { key: "weekly", label: "Ugentlig", detailLabel: "Gentages ugentligt" },
   { key: "monthly", label: "Månedligt", detailLabel: "Gentages månedligt" },
   { key: "quarterly", label: "Hver 3. måned", detailLabel: "Gentages hver 3. måned" },
   { key: "half_yearly", label: "Hvert halve år", detailLabel: "Gentages hvert halve år" },
@@ -4332,11 +4408,15 @@ function MoreScreen({
   isLoggingOut,
   onOpenProfile,
   onOpenSettings,
+  onOpenSharing,
+  attentionCount,
   onLogout
 }: {
   isLoggingOut: boolean;
   onOpenProfile: () => void;
   onOpenSettings: () => void;
+  onOpenSharing: () => void;
+  attentionCount: number;
   onLogout: () => void;
 }) {
   const rows = ["Profil", "Indstillinger", "Deling & adgang", "Hjælp", "Om Matriva"];
@@ -4345,24 +4425,25 @@ function MoreScreen({
     <View style={styles.stack}>
       <SectionHeader title="Mere" />
       <Card>
-        {rows.map((row, index) => {
+          {rows.map((row, index) => {
           const isProfile = row === "Profil";
           const isSettings = row === "Indstillinger";
-          const isEnabled = isProfile || isSettings;
+          const isSharing = row === "Deling & adgang";
+          const isEnabled = isProfile || isSettings || isSharing;
 
           return (
             <Pressable
               accessibilityRole="button"
               disabled={!isEnabled}
               key={row}
-              onPress={isProfile ? onOpenProfile : isSettings ? onOpenSettings : undefined}
+              onPress={isProfile ? onOpenProfile : isSettings ? onOpenSettings : isSharing ? onOpenSharing : undefined}
               style={({ pressed }) => [
                 styles.menuRow,
                 index === rows.length - 1 ? styles.menuRowLast : null,
                 pressed && isEnabled ? styles.secondaryButtonPressed : null
               ]}
             >
-              <Text style={styles.menuText}>{row}</Text>
+              <View style={styles.menuRowContent}><Text style={styles.menuText}>{row}</Text>{isSharing && attentionCount > 0 ? <View style={styles.attentionBadge}><Text style={styles.attentionBadgeText}>{attentionCount > 99 ? "99+" : attentionCount}</Text></View> : null}</View>
               <Text style={styles.menuMeta}>{isEnabled ? "Åbn" : "Kommer senere"}</Text>
             </Pressable>
           );
@@ -4386,6 +4467,52 @@ function MoreScreen({
       </Card>
     </View>
   );
+}
+
+function SharingScreen({
+  house,
+  apiClient,
+  onBack,
+  ownerPendingClaims,
+  onResolveOwnerClaim,
+  pendingHouseInvitations,
+  onAcceptInvitation
+}: { house: SavedHouse | null; apiClient: ReturnType<typeof createMatrivaApiClient>; onBack: () => void; ownerPendingClaims: AppBootstrapResponse["ownerPendingHouseClaims"]; onResolveOwnerClaim: (claimId: string, decision: "approve" | "reject") => void; pendingHouseInvitations: AppBootstrapResponse["pendingHouseInvitations"]; onAcceptInvitation: (invitationId: string) => void }) {
+  const [members, setMembers] = useState<HouseMembership[]>([]);
+  const [invitations, setInvitations] = useState<HouseInvitation[]>([]);
+  const [canManage, setCanManage] = useState(false);
+  const [email, setEmail] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function loadSharing() {
+    if (!house) return;
+    try { const result = await apiClient.listHouseMembers(house.id); setMembers(result.members); setInvitations(result.invitations); setCanManage(result.canManage); }
+    catch { setMessage("Medlemmer kunne ikke indlæses."); }
+  }
+  useEffect(() => { void loadSharing(); }, [apiClient, house]);
+  async function invite() {
+    if (!house || !email.trim()) return;
+    setBusy(true); setMessage(null);
+    try { await apiClient.inviteHouseMember(house.id, { email: email.trim(), role: "member" }); setEmail(""); setMessage("Invitationen er oprettet."); await loadSharing(); }
+    catch { setMessage("Invitationen kunne ikke oprettes."); }
+    finally { setBusy(false); }
+  }
+  async function revoke(invitationId: string) {
+    if (!house) return;
+    setBusy(true); setMessage(null);
+    try { await apiClient.revokeHouseInvitation(house.id, invitationId); setMessage("Invitationen er tilbagekaldt."); await loadSharing(); }
+    catch { setMessage("Invitationen kunne ikke tilbagekaldes."); }
+    finally { setBusy(false); }
+  }
+  return <View style={styles.stack}>
+    <SectionHeader title="Deling & adgang" />
+    <SecondaryButton label="Tilbage" onPress={onBack} />
+    {ownerPendingClaims.length > 0 ? <OwnerClaimInbox claims={ownerPendingClaims} onResolve={onResolveOwnerClaim} /> : null}
+    {pendingHouseInvitations.length > 0 ? <Card><Text style={styles.cardTitle}>Dine invitationer</Text><Text style={styles.compactBodyText}>Du kan få adgang til flere huse uden at oprette en ny bolig.</Text>{pendingHouseInvitations.map((invitation) => <View key={invitation.id} style={styles.invitationCard}><View style={styles.invitationText}><Text style={styles.menuText}>{invitation.addressLabel}</Text><Text style={styles.menuMeta}>Inviteret af {invitation.inviterName}</Text></View><PrimaryButton compact label="Accepter" onPress={() => onAcceptInvitation(invitation.id)} /></View>)}</Card> : null}
+    <Card><Text style={styles.cardTitle}>Aktive medlemmer</Text>{members.map((member) => <View key={member.id} style={styles.menuRow}><Text style={styles.menuText}>{member.displayName ?? "Medlem"}</Text><Text style={styles.menuMeta}>{member.role}</Text></View>)}</Card>
+    {canManage && invitations.length > 0 ? <Card><Text style={styles.cardTitle}>Afventende invitationer</Text>{invitations.map((invitation) => <View key={invitation.id} style={styles.invitationRow}><View style={styles.invitationText}><Text style={styles.menuText}>{invitation.email}</Text><Text style={styles.menuMeta}>Udløber {new Date(invitation.expiresAt).toLocaleDateString("da-DK")}</Text></View><SecondaryButton compact label="Tilbagekald" disabled={busy} onPress={() => void revoke(invitation.id)} /></View>)}</Card> : null}
+    {canManage ? <Card><Text style={styles.cardTitle}>Invitér via e-mail</Text><NativeTextInput style={styles.input} value={email} onChangeText={setEmail} placeholder="navn@eksempel.dk" autoCapitalize="none" keyboardType="email-address" /><PrimaryButton label={busy ? "Opretter..." : "Send invitation"} onPress={() => void invite()} disabled={busy || !email.trim()} />{message ? <Text style={styles.bodyText}>{message}</Text> : null}</Card> : <Card><Text style={styles.bodyText}>Kun ejere kan administrere adgang.</Text></Card>}
+  </View>;
 }
 
 function SettingsScreen({
@@ -4477,6 +4604,8 @@ export default function App() {
   const accessTokenRef = useRef<string | null>(null);
   const refreshTokenRef = useRef<string | null>(null);
   const consumedMagicLinkTokensRef = useRef<Set<string>>(new Set());
+  const pendingHouseInvitationTokenRef = useRef<string | null>(null);
+  const pendingOwnerClaimApprovalTokenRef = useRef<string | null>(null);
   const isConsumingMagicLinkRef = useRef(false);
   const apiClient = useMemo(
     () =>
@@ -4558,6 +4687,11 @@ export default function App() {
     useState<string | null>(null);
   const [houseOnboardingPublicDataIssueText, setHouseOnboardingPublicDataIssueText] =
     useState<string | null>(null);
+  const [claimRequiredHouseId, setClaimRequiredHouseId] = useState<HouseId | null>(null);
+  const [pendingClaimNotice, setPendingClaimNotice] = useState<string | null>(null);
+  const [ownerPendingClaims, setOwnerPendingClaims] = useState<AppBootstrapResponse["ownerPendingHouseClaims"]>([]);
+  const [pendingHouseInvitations, setPendingHouseInvitations] = useState<AppBootstrapResponse["pendingHouseInvitations"]>([]);
+  const [deferredOwnerClaimIds, setDeferredOwnerClaimIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [showDeadlinePicker, setShowDeadlinePicker] = useState(false);
@@ -4629,6 +4763,7 @@ export default function App() {
     refreshTokenRef.current = null;
     isConsumingMagicLinkRef.current = false;
     consumedMagicLinkTokensRef.current.clear();
+    pendingOwnerClaimApprovalTokenRef.current = null;
     setSession(null);
     setBootstrap(null);
     setUnauthenticatedStep("welcome");
@@ -4656,6 +4791,11 @@ export default function App() {
     setHouseOnboardingStep("search");
     setHouseOnboardingProgressText(null);
     setHouseOnboardingPublicDataIssueText(null);
+    setClaimRequiredHouseId(null);
+    setPendingClaimNotice(null);
+    setOwnerPendingClaims([]);
+    setPendingHouseInvitations([]);
+    setDeferredOwnerClaimIds(new Set());
     setError(null);
     setShowTaskForm(false);
     setShowDeadlinePicker(false);
@@ -4749,9 +4889,21 @@ export default function App() {
       setBootstrap(bootstrapResponse);
       setProfileName(bootstrapResponse.profile.displayName ?? "");
       setHouses(bootstrapResponse.houses);
+      setPendingClaimNotice(
+        bootstrapResponse.pendingHouseClaims.length > 0
+          ? bootstrapResponse.pendingHouseClaims
+              .map((claim) => `Din anmodning om adgang til ${claim.addressLabel} afventer stadig godkendelse.`)
+              .join("\n")
+          : null
+      );
+      setOwnerPendingClaims(bootstrapResponse.ownerPendingHouseClaims);
+      setPendingHouseInvitations(bootstrapResponse.pendingHouseInvitations);
       setPublicDataSummaries(bootstrapResponse.publicDataSummaries);
       setPublicDataProfile(null);
       const nextHouse =
+        bootstrapResponse.houses.find(
+          (house) => house.id === selectedHouseId
+        ) ??
         bootstrapResponse.houses.find(
           (house) => house.id === bootstrapResponse.activeHouseId
         ) ??
@@ -4793,7 +4945,7 @@ export default function App() {
         setLoadingAction(null);
       }
     }
-  }, [apiClient, loadHouseDocuments, loadHouseImprovements, loadHousePhoto, loadMaintenanceV1]);
+  }, [apiClient, loadHouseDocuments, loadHouseImprovements, loadHousePhoto, loadMaintenanceV1, selectedHouseId]);
 
   useEffect(() => {
     if (!selectedHouse || authStatus !== "authenticated") {
@@ -4838,6 +4990,42 @@ export default function App() {
 
       const token = parsedUrl.searchParams.get("token");
 
+      if (token && url.startsWith("matriva://house-claim/approve")) {
+        pendingOwnerClaimApprovalTokenRef.current = token;
+        if (authStatus !== "authenticated") {
+          setUnauthenticatedStep("login");
+          setLoginMessage("Log ind for at give adgang til boligen.");
+          return;
+        }
+        try {
+          await apiClient.approveHouseClaimByToken(token);
+          pendingOwnerClaimApprovalTokenRef.current = null;
+          setError("Adgangen er godkendt.");
+          await loadApp({ showGlobalLoading: false });
+        } catch {
+          setError("Adgangsanmodningen er ugyldig, udløbet eller allerede behandlet.");
+        }
+        return;
+      }
+
+      if (token && url.startsWith("matriva://house-invitation")) {
+        pendingHouseInvitationTokenRef.current = token;
+        if (authStatus !== "authenticated") {
+          setUnauthenticatedStep("login");
+          setLoginMessage("Log ind med den e-mailadresse, invitationen blev sendt til.");
+          return;
+        }
+        try {
+          await apiClient.acceptHouseInvitation(token);
+          pendingHouseInvitationTokenRef.current = null;
+          setError("Du har nu adgang til boligen.");
+          await loadApp({ showGlobalLoading: false });
+        } catch {
+          setError("Invitationen er ugyldig eller udløbet.");
+        }
+        return;
+      }
+
       if (!token || !url.startsWith("matriva://auth/magic-link")) {
         return;
       }
@@ -4859,6 +5047,28 @@ export default function App() {
         setBootstrap(null);
         setAuthStatus("authenticated");
         await loadApp();
+        const pendingInvitationToken = pendingHouseInvitationTokenRef.current;
+        if (pendingInvitationToken) {
+          try {
+            await apiClient.acceptHouseInvitation(pendingInvitationToken);
+            pendingHouseInvitationTokenRef.current = null;
+            setError("Du har nu adgang til boligen.");
+            await loadApp({ showGlobalLoading: false });
+          } catch {
+            setError("Invitationen er ugyldig eller udløbet.");
+          }
+        }
+        const pendingOwnerApprovalToken = pendingOwnerClaimApprovalTokenRef.current;
+        if (pendingOwnerApprovalToken) {
+          try {
+            await apiClient.approveHouseClaimByToken(pendingOwnerApprovalToken);
+            pendingOwnerClaimApprovalTokenRef.current = null;
+            setError("Adgangen er godkendt.");
+            await loadApp({ showGlobalLoading: false });
+          } catch {
+            setError("Adgangsanmodningen er ugyldig, udløbet eller allerede behandlet.");
+          }
+        }
       } catch (caughtError) {
         await clearStoredSession();
         resetUnauthenticatedFlowState();
@@ -4869,7 +5079,7 @@ export default function App() {
         setLoadingAction(null);
       }
     },
-    [apiClient, loadApp]
+    [apiClient, authStatus, loadApp]
   );
 
   useEffect(() => {
@@ -4909,6 +5119,34 @@ export default function App() {
 
     return () => subscription.remove();
   }, [consumeMagicLinkUrl]);
+
+  useEffect(() => {
+    const token = pendingHouseInvitationTokenRef.current;
+    if (authStatus !== "authenticated" || !token) return;
+    void apiClient.acceptHouseInvitation(token).then(() => {
+      pendingHouseInvitationTokenRef.current = null;
+      setError("Du har nu adgang til boligen.");
+      return loadApp({ showGlobalLoading: false });
+    }).catch(() => setError("Invitationen er ugyldig eller udløbet."));
+  }, [apiClient, authStatus, loadApp]);
+
+  useEffect(() => {
+    const token = pendingOwnerClaimApprovalTokenRef.current;
+    if (authStatus !== "authenticated" || !token) return;
+    void apiClient.approveHouseClaimByToken(token).then(() => {
+      pendingOwnerClaimApprovalTokenRef.current = null;
+      setError("Adgangen er godkendt.");
+      return loadApp({ showGlobalLoading: false });
+    }).catch(() => setError("Adgangsanmodningen er ugyldig, udløbet eller allerede behandlet."));
+  }, [apiClient, authStatus, loadApp]);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated") return;
+    const refresh = setInterval(() => {
+      void loadApp({ showGlobalLoading: false });
+    }, 30_000);
+    return () => clearInterval(refresh);
+  }, [authStatus, loadApp]);
 
   async function searchAddresses() {
     const trimmedQuery = query.trim();
@@ -5073,6 +5311,14 @@ export default function App() {
         houseDraftId: draft.houseDraft.id,
         selectedAddress: draft.houseDraft.selectedAddress
       });
+      if ("status" in response && response.status === "claim_required") {
+        setClaimRequiredHouseId(response.house.id);
+        setHouseOnboardingPublicDataIssueText(
+          "Ejendommen findes allerede i Matriva. For at beskytte boligens oplysninger skal din adgang bekræftes."
+        );
+        setHouseOnboardingStep("publicDataIssue");
+        return;
+      }
       savedHouseId = response.house.id;
       setSelectedHouseId(response.house.id);
       setHouseOnboardingProgressText("Vi henter boligoplysninger fra BBR");
@@ -5180,6 +5426,58 @@ export default function App() {
     setHouseOnboardingProgressText(null);
     setHouseOnboardingPublicDataIssueText(null);
     setActiveTab("dashboard");
+  }
+
+  function stopHouseOnboardingSession() {
+    setClaimRequiredHouseId(null);
+    setQuery("");
+    setSuggestions([]);
+    setSelectedAddress(null);
+    setHasAddressSearched(false);
+    setHouseOnboardingStep("search");
+    setHouseOnboardingProgressText(null);
+    setHouseOnboardingPublicDataIssueText(null);
+    setError(null);
+    void logout();
+  }
+
+  function resolveOwnerClaim(claimId: string, decision: "approve" | "reject") {
+    setLoadingAction("house");
+    void apiClient.resolveHouseClaimAsOwner(claimId, decision)
+      .then(() => loadApp({ showGlobalLoading: false }))
+      .catch((caughtError) => setError(userFacingError(caughtError)))
+      .finally(() => setLoadingAction(null));
+  }
+
+  function acceptPendingInvitation(invitationId: string) {
+    setLoadingAction("house");
+    void apiClient.acceptHouseInvitationById(invitationId)
+      .then(() => loadApp({ showGlobalLoading: false }))
+      .catch((caughtError) => setError(userFacingError(caughtError)))
+      .finally(() => setLoadingAction(null));
+  }
+
+  function selectActiveHouse(houseId: HouseId) {
+    const nextHouse = houses.find((house) => house.id === houseId);
+    if (!nextHouse || nextHouse.id === selectedHouseId) return;
+    setSelectedHouseId(nextHouse.id);
+    setPublicDataProfile(null);
+    setHouseView("overview");
+    setMaintenanceView("main");
+    setSelectedTaskId(null);
+    setSelectedHistoryDetail(null);
+    setLoadingAction("house");
+    void Promise.all([
+      loadMaintenanceV1(nextHouse.id),
+      loadHouseImprovements(nextHouse.id),
+      loadHousePhoto(nextHouse.id),
+      loadHouseDocuments(nextHouse.id),
+      apiClient.getHousePublicData(nextHouse.id).then((response) => setPublicDataProfile(response.profile))
+    ]).catch((caughtError) => setError(userFacingError(caughtError))).finally(() => setLoadingAction(null));
+  }
+
+  function deferOwnerClaim(claimId: string) {
+    setDeferredOwnerClaimIds((current) => new Set(current).add(claimId));
   }
 
   function resetTaskForm() {
@@ -6044,12 +6342,27 @@ export default function App() {
     isSaving: loadingAction === "house",
     progressText: houseOnboardingProgressText,
     publicDataIssueText: houseOnboardingPublicDataIssueText,
+    canRequestAccess: claimRequiredHouseId !== null,
+    pendingClaimNotice,
+    pendingHouseInvitations,
+    onAcceptInvitation: acceptPendingInvitation,
+    onRequestAccess: () => {
+      if (!claimRequiredHouseId) return;
+      setLoadingAction("house");
+      void apiClient.createHouseClaim(claimRequiredHouseId, "resident").then(() => {
+        setClaimRequiredHouseId(null);
+        setHouseOnboardingPublicDataIssueText("Din anmodning er sendt til manuel godkendelse.");
+        return loadApp({ showGlobalLoading: false });
+      }).catch(() => setHouseOnboardingPublicDataIssueText("Adgangsanmodningen kunne ikke oprettes lige nu.")).finally(() => setLoadingAction(null));
+    },
+    onStopSession: stopHouseOnboardingSession,
     onQueryChange: (nextQuery) => {
       setQuery(nextQuery);
       setError(null);
       setSelectedAddress(null);
       setHouseOnboardingStep("search");
       setHouseOnboardingPublicDataIssueText(null);
+      setClaimRequiredHouseId(null);
     },
     onSearch: () => void searchAddresses(),
     onSelect: (suggestion) => {
@@ -6065,6 +6378,8 @@ export default function App() {
     onContinueWithoutPublicData: () => void continueWithoutOnboardingPublicData()
   };
 
+  const moreAttentionCount = pendingHouseInvitations.length + ownerPendingClaims.length;
+
   function renderActiveScreen() {
     if (authStatus === "restoring" || loadingAction === "app") {
       return (
@@ -6079,9 +6394,11 @@ export default function App() {
       return (
         <DashboardScreen
           house={selectedHouse}
+          houses={houses}
           publicDataSummary={selectedPublicDataSummary}
           tasks={tasks}
           onboarding={onboardingProps}
+          onSelectHouse={selectActiveHouse}
           onCreateTask={() => {
             setActiveTab("maintenance");
             setShowTaskForm(true);
@@ -6372,11 +6689,17 @@ export default function App() {
       );
     }
 
+    if (moreView === "sharing") {
+      return <SharingScreen house={selectedHouse} apiClient={apiClient} onBack={() => setMoreView("menu")} ownerPendingClaims={ownerPendingClaims} onResolveOwnerClaim={resolveOwnerClaim} pendingHouseInvitations={pendingHouseInvitations} onAcceptInvitation={acceptPendingInvitation} />;
+    }
+
     return (
       <MoreScreen
         isLoggingOut={loadingAction === "logout"}
         onOpenProfile={() => setMoreView("profile")}
         onOpenSettings={() => setMoreView("settings")}
+        onOpenSharing={() => setMoreView("sharing")}
+        attentionCount={moreAttentionCount}
         onLogout={() => void logout()}
       />
     );
@@ -6599,6 +6922,11 @@ export default function App() {
             ) : null}
           </SafeAreaView>
         </Modal>
+        <OwnerClaimModal
+          claims={ownerPendingClaims.filter((claim) => !deferredOwnerClaimIds.has(claim.id))}
+          onResolve={resolveOwnerClaim}
+          onDefer={deferOwnerClaim}
+        />
         <View style={styles.tabBar}>
           {tabs.map((tab) => {
             const isActive = activeTab === tab.key;
@@ -6631,9 +6959,7 @@ export default function App() {
                     style={styles.tabIcon}
                   />
                 )}
-                <Text style={[styles.tabLabel, isActive ? styles.tabLabelActive : null]}>
-                  {tab.label}
-                </Text>
+                <View style={styles.tabLabelRow}><Text style={[styles.tabLabel, isActive ? styles.tabLabelActive : null]}>{tab.label}</Text>{tab.key === "more" && moreAttentionCount > 0 ? <View style={styles.tabBadge}><Text style={styles.tabBadgeText}>{moreAttentionCount > 99 ? "99+" : moreAttentionCount}</Text></View> : null}</View>
               </Pressable>
             );
           })}
@@ -7900,6 +8226,78 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     justifyContent: "flex-end"
   },
+  inlineActions: {
+    alignItems: "center",
+    columnGap: 8,
+    flexDirection: "row",
+    flexWrap: "wrap"
+  },
+  ownerClaimBackdrop: {
+    alignItems: "center",
+    backgroundColor: "rgba(7, 35, 31, 0.42)",
+    flex: 1,
+    justifyContent: "center",
+    padding: 24
+  },
+  ownerClaimModal: {
+    backgroundColor: theme.surface,
+    borderRadius: 24,
+    maxWidth: 420,
+    padding: 24,
+    rowGap: 14,
+    shadowColor: theme.text,
+    shadowOffset: { height: 12, width: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    width: "100%"
+  },
+  ownerClaimTitle: {
+    color: theme.text,
+    fontSize: 24,
+    fontWeight: "800",
+    lineHeight: 30
+  },
+  ownerClaimAddress: {
+    backgroundColor: theme.primarySoft,
+    borderRadius: 14,
+    padding: 14,
+    rowGap: 4
+  },
+  ownerClaimAddressText: {
+    color: theme.primary,
+    fontSize: 17,
+    fontWeight: "800",
+    lineHeight: 23
+  },
+  ownerClaimActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    justifyContent: "flex-end"
+  },
+  invitationRow: {
+    alignItems: "center",
+    borderBottomColor: theme.border,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    paddingVertical: 12
+  },
+  invitationText: {
+    flex: 1,
+    rowGap: 3
+  },
+  invitationCard: {
+    alignItems: "center",
+    borderBottomColor: theme.border,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    paddingVertical: 12
+  },
   compactActionButton: {
     alignItems: "center",
     backgroundColor: theme.primarySoft,
@@ -7970,6 +8368,25 @@ const styles = StyleSheet.create({
     color: theme.muted,
     fontSize: 13
   },
+  menuRowContent: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  attentionBadge: {
+    alignItems: "center",
+    backgroundColor: theme.error,
+    borderRadius: 10,
+    minHeight: 20,
+    minWidth: 20,
+    paddingHorizontal: 6,
+    justifyContent: "center"
+  },
+  attentionBadgeText: {
+    color: theme.surface,
+    fontSize: 11,
+    fontWeight: "900"
+  },
   tabBar: {
     backgroundColor: theme.surface,
     borderTopColor: theme.border,
@@ -8015,5 +8432,132 @@ const styles = StyleSheet.create({
   },
   tabLabelActive: {
     color: theme.primary
+  },
+  tabLabelRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4
+  },
+  tabBadge: {
+    alignItems: "center",
+    backgroundColor: theme.error,
+    borderRadius: 8,
+    minHeight: 16,
+    minWidth: 16,
+    paddingHorizontal: 4,
+    justifyContent: "center"
+  },
+  tabBadgeText: {
+    color: theme.surface,
+    fontSize: 9,
+    fontWeight: "900"
+  },
+  houseSelector: {
+    alignItems: "center",
+    backgroundColor: theme.primarySoft,
+    borderColor: theme.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 11
+  },
+  houseSelectorCompact: {
+    alignSelf: "flex-start",
+    borderRadius: 10,
+    maxWidth: 112,
+    marginTop: 6,
+    minHeight: 30,
+    paddingHorizontal: 9,
+    paddingVertical: 5
+  },
+  houseSelectorText: {
+    flex: 1,
+    rowGap: 2
+  },
+  houseSelectorLabel: {
+    color: theme.primary,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.8
+  },
+  houseSelectorValue: {
+    color: theme.text,
+    fontSize: 15,
+    fontWeight: "800"
+  },
+  houseSelectorCompactValue: {
+    color: theme.primary,
+    fontSize: 11,
+    fontWeight: "800"
+  },
+  houseSelectorChevronCompact: {
+    fontSize: 17,
+    paddingLeft: 6
+  },
+  houseSelectorChevron: {
+    color: theme.primary,
+    fontSize: 23,
+    fontWeight: "800",
+    paddingLeft: 10
+  },
+  houseSelectorBackdrop: {
+    alignItems: "center",
+    backgroundColor: "rgba(7, 35, 31, 0.42)",
+    flex: 1,
+    justifyContent: "center",
+    padding: 24
+  },
+  houseSelectorModal: {
+    backgroundColor: theme.surface,
+    borderRadius: 22,
+    maxWidth: 430,
+    padding: 18,
+    width: "100%"
+  },
+  houseSelectorModalHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingBottom: 10
+  },
+  houseSelectorClose: {
+    color: theme.primary,
+    fontSize: 14,
+    fontWeight: "800"
+  },
+  houseOption: {
+    alignItems: "center",
+    borderBottomColor: theme.border,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 14
+  },
+  houseOptionSelected: {
+    backgroundColor: theme.primarySoft,
+    borderRadius: 10,
+    paddingHorizontal: 10
+  },
+  houseOptionAddress: {
+    color: theme.text,
+    fontSize: 16,
+    fontWeight: "800"
+  },
+  houseOptionCheck: {
+    color: theme.primary,
+    fontSize: 20,
+    fontWeight: "900",
+    paddingLeft: 10
+  },
+  dashboardHeaderRow: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  dashboardHeaderSection: {
+    flex: 1,
+    minWidth: 0
   }
 });

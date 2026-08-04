@@ -194,6 +194,32 @@ export class DatafordelerClient {
     this.transport = transport;
   }
 
+  async identifyAddress(addressId: string, effectiveAt = new Date()) {
+    const data = await this.graphql(
+      withVirkningstid(addressAndGroundQuery, effectiveAt.toISOString()),
+      { adresseId: addressId }
+    );
+    const address = firstNode(data, "DAR_Adresse");
+    const houseNumber = relationNodes(address, "adresseHarHusnummer")[0] ?? null;
+    const addressBuilding = relationNodes(houseNumber, "husnummerHarAdgangTilBygning")[0] ?? null;
+    const ground = relationNodes(addressBuilding, "bygningGrund")[0] ?? null;
+    const property = relationNodes(ground, "grundSamletFastEjendom")[0] ?? null;
+    const bfeNumber = typeof property?.bfeNummer === "string"
+      ? property.bfeNummer.trim()
+      : typeof property?.bfeNummer === "number"
+        ? String(property.bfeNummer)
+        : "";
+    if (!address || !bfeNumber) {
+      throw new DatafordelerProviderError("missing_bfe_number", "The property identity could not be established.");
+    }
+    return {
+      bfeNumber,
+      officialAddressId: typeof address.id_lokalId === "string" ? address.id_lokalId : addressId,
+      groundId: typeof ground?.id_lokalId === "string" ? ground.id_lokalId : null,
+      property
+    };
+  }
+
   async enrichAddress(addressId: string, effectiveAt = new Date()) {
     const effectiveAtIso = effectiveAt.toISOString();
     const addressGround = await this.graphql(

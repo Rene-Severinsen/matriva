@@ -43,6 +43,9 @@ type DashboardAggregateRow = {
   funnel_houses: number;
   funnel_tasks: number;
   funnel_completions: number;
+  active_memberships: number;
+  houses_with_multiple_members: number;
+  pending_claims: number;
 };
 
 type SeriesRow = {
@@ -140,6 +143,9 @@ export async function getAdminDashboard(
       select
         (select count(*)::int from users) as total_users,
         (select count(*)::int from houses) as total_houses,
+        (select count(*)::int from house_memberships where status = 'active') as active_memberships,
+        (select count(*)::int from house_claims where status = 'pending') as pending_claims,
+        (select count(*)::int from (select house_id from house_memberships where status = 'active' group by house_id having count(*) > 1) multi) as houses_with_multiple_members,
         (select count(*)::int from maintenance_tasks where deleted_at is null) as total_tasks,
         (select count(*)::int from maintenance_completions) as total_completions,
         (
@@ -177,7 +183,8 @@ export async function getAdminDashboard(
         ) as permanent_hides,
         (
           select count(distinct user_id)::int
-          from houses
+          from house_memberships
+          where status = 'active'
         ) as users_with_house,
         (
           select count(distinct task_id)::int
@@ -203,7 +210,7 @@ export async function getAdminDashboard(
             from user_profiles up
             where up.user_id = u.id and up.display_name is not null
           )
-          and exists (select 1 from houses h where h.user_id = u.id)
+          and exists (select 1 from house_memberships hm where hm.user_id = u.id and hm.status = 'active')
         ) as funnel_houses,
         (
           select count(*)::int
@@ -216,8 +223,9 @@ export async function getAdminDashboard(
           and exists (
             select 1
             from houses h
+            join house_memberships hm on hm.house_id = h.id and hm.user_id = u.id and hm.status = 'active'
             join maintenance_tasks mt on mt.house_id = h.id
-            where h.user_id = u.id and mt.deleted_at is null
+            where mt.deleted_at is null
           )
         ) as funnel_tasks,
         (
@@ -231,9 +239,9 @@ export async function getAdminDashboard(
           and exists (
             select 1
             from houses h
+            join house_memberships hm on hm.house_id = h.id and hm.user_id = u.id and hm.status = 'active'
             join maintenance_tasks mt on mt.house_id = h.id and mt.deleted_at is null
             join maintenance_completions mc on mc.task_id = mt.id
-            where h.user_id = u.id
           )
         ) as funnel_completions
     `,
@@ -285,6 +293,11 @@ export async function getAdminDashboard(
     ratios: {
       usersWithHouseRate: ratio(count(aggregate.users_with_house), totalUsers),
       completedTaskRate: ratio(count(aggregate.completed_task_count), totalTasks)
+    },
+    relationshipMetrics: {
+      activeMemberships: count(aggregate.active_memberships),
+      housesWithMultipleMembers: count(aggregate.houses_with_multiple_members),
+      pendingClaims: count(aggregate.pending_claims)
     },
     funnel: {
       registeredUsers: totalUsers,

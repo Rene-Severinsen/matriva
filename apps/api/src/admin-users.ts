@@ -90,6 +90,7 @@ function mapUser(row: Record<string, any>) {
     lastLoginAt: iso(row.last_login_at),
     latestSessionActivityAt: iso(row.latest_session_activity_at),
     houseCount,
+    pendingClaimCount: count(row.pending_claim_count),
     taskCount: count(row.task_count),
     completionCount: count(row.completion_count),
     roles: row.roles ?? [],
@@ -133,7 +134,8 @@ export async function listAdminUsers(
       with user_counts as (
         select
           u.id,
-          count(distinct h.id)::int as house_count,
+          count(distinct hm.house_id) filter (where hm.status = 'active')::int as house_count,
+          count(distinct hc.id) filter (where hc.status = 'pending')::int as pending_claim_count,
           count(distinct mt.id)::int as task_count,
           count(distinct mc.id)::int as completion_count,
           max(s.last_used_at) as latest_session_activity_at,
@@ -142,7 +144,8 @@ export async function listAdminUsers(
             '{}'
           ) as roles
         from users u
-        left join houses h on h.user_id = u.id
+        left join house_memberships hm on hm.user_id = u.id
+        left join house_claims hc on hc.user_id = u.id
         left join maintenance_tasks mt on mt.user_id = u.id and mt.deleted_at is null
         left join maintenance_completions mc on mc.user_id = u.id
         left join auth_sessions s on s.user_id = u.id
@@ -158,6 +161,7 @@ export async function listAdminUsers(
           u.last_login_at,
           up.display_name,
           uc.house_count,
+          uc.pending_claim_count,
           uc.task_count,
           uc.completion_count,
           uc.latest_session_activity_at,
@@ -196,13 +200,15 @@ export async function getAdminUser(userId: string): Promise<AdminUserResponse> {
       with user_counts as (
         select
           u.id,
-          count(distinct h.id)::int as house_count,
+          count(distinct hm.house_id) filter (where hm.status = 'active')::int as house_count,
+          count(distinct hc.id) filter (where hc.status = 'pending')::int as pending_claim_count,
           count(distinct mt.id)::int as task_count,
           count(distinct mc.id)::int as completion_count,
           max(s.last_used_at) as latest_session_activity_at,
           coalesce(array_remove(array_agg(distinct ur.role order by ur.role), null), '{}') as roles
         from users u
-        left join houses h on h.user_id = u.id
+        left join house_memberships hm on hm.user_id = u.id
+        left join house_claims hc on hc.user_id = u.id
         left join maintenance_tasks mt on mt.user_id = u.id and mt.deleted_at is null
         left join maintenance_completions mc on mc.user_id = u.id
         left join auth_sessions s on s.user_id = u.id
@@ -214,6 +220,7 @@ export async function getAdminUser(userId: string): Promise<AdminUserResponse> {
         u.*,
         up.display_name,
         uc.house_count,
+        uc.pending_claim_count,
         uc.task_count,
         uc.completion_count,
         uc.latest_session_activity_at,
@@ -235,9 +242,9 @@ export async function getAdminUser(userId: string): Promise<AdminUserResponse> {
     await Promise.all([
       pool.query(
         `
-          select id, address_label, status, created_at
-          from houses
-          where user_id = $1
+          select h.id, h.address_label, h.bfe_number, h.status, h.created_at, hm.role, hm.status as membership_status, hm.valid_from, hm.valid_to
+          from houses h join house_memberships hm on hm.house_id = h.id
+          where hm.user_id = $1
           order by created_at desc, id asc
         `,
         [userId]
@@ -308,6 +315,15 @@ export async function getAdminUser(userId: string): Promise<AdminUserResponse> {
         addressLabel: house.address_label,
         status: house.status,
         createdAt: house.created_at.toISOString()
+      })),
+      memberships: houses.rows.map((house) => ({
+        houseId: house.id,
+        addressLabel: house.address_label,
+        bfeNumber: house.bfe_number,
+        role: house.role,
+        status: house.membership_status,
+        validFrom: new Date(house.valid_from).toISOString(),
+        validTo: house.valid_to ? new Date(house.valid_to).toISOString() : null
       })),
       taskSummary: {
         total: count(task.total),

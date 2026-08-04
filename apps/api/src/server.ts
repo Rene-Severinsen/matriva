@@ -13,6 +13,8 @@ import {
   adminDashboardResponseSchema,
   adminHouseResponseSchema,
   adminHousesResponseSchema,
+  adminHouseClaimsResponseSchema,
+  adminHouseClaimStatusFilterSchema,
   adminRecommendationCatalogItemResponseSchema,
   adminRecommendationCatalogResponseSchema,
   adminPasswordLoginRequestSchema,
@@ -91,8 +93,9 @@ import {
 } from "./admin-recommendations.ts";
 import { getAdminUser, listAdminUsers } from "./admin-users.ts";
 import { loginAdminWithPassword } from "./auth/admin-password.ts";
-import { sendMagicLinkEmail, createMagicLinkUrl } from "./auth/mailer.ts";
+import { sendMagicLinkEmail, createMagicLinkUrl, createHouseInvitationUrl, sendHouseInvitationEmail, createHouseClaimApprovalUrl, sendHouseClaimOwnerEmail } from "./auth/mailer.ts";
 import { getDatafordelerConfigStatus } from "./config/datafordeler.ts";
+import { DatafordelerClient, DatafordelerProviderError } from "./public-data/datafordeler-client.ts";
 import {
   ApiError,
   authenticateAccessToken,
@@ -115,6 +118,17 @@ import {
   createMaintenanceTaskForHouse,
   createMagicLinkToken,
   createSavedHouse,
+  findHouseByBfe,
+  hasActiveHouseMembership,
+  createHouseClaim,
+  approveHouseClaimByOwnerToken,
+  resolveHouseClaimByOwner,
+  listHouseMembers,
+  createHouseInvitation,
+  revokeHouseInvitation,
+  acceptHouseInvitation,
+  acceptHouseInvitationById,
+  resolveHouseClaim,
   getProfileForUser,
   getCurrentHousePhoto,
   getSavedHouse,
@@ -141,6 +155,7 @@ import {
   updateMaintenanceTaskStatus,
   updateProfile,
   updateMaintenanceSettings,
+  pool,
   validateAuthRuntimeConfig
 } from "./db.ts";
 import {
@@ -830,6 +845,16 @@ const server = createServer((request, response) => {
     return;
   }
 
+  const adminClaimMatch = /^\/v1\/admin\/house-claims\/([^/]+)\/(approve|reject)$/.exec((request.url ?? "").split("?")[0] ?? "");
+  if (request.method === "POST" && adminClaimMatch) {
+    void (async () => { try { const admin = await requireAdminUser(getBearerToken(request)); const payload = await readJsonBody(request) as { note?: string }; writeJson(response, 200, await resolveHouseClaim(decodeURIComponent(adminClaimMatch[1]!), admin.userId, adminClaimMatch[2] as "approve" | "reject", payload.note?.trim() || null)); } catch (error) { writeUnknownApiError(response, error); } })();
+    return;
+  }
+  if (request.method === "GET" && (request.url === "/v1/admin/house-claims" || request.url?.startsWith("/v1/admin/house-claims?"))) {
+    void (async () => { try { await requireAdminUser(getBearerToken(request)); const url = new URL(request.url ?? "/", `http://${host}:${port}`); const status = adminHouseClaimStatusFilterSchema.parse(url.searchParams.get("status") ?? "pending"); const values: string[] = []; const where = status === "all" ? "" : "where c.status = $1"; if (status !== "all") values.push(status); const result = await pool.query(`select c.id, c.house_id, c.user_id, c.claim_type, c.status, c.requested_at, c.resolved_at, c.verification_method, c.resolution_note, u.email as user_email, up.display_name as user_display_name, h.address_label, h.bfe_number from house_claims c join users u on u.id = c.user_id left join user_profiles up on up.user_id = u.id join houses h on h.id = c.house_id ${where} order by c.requested_at desc limit 100`, values); writeJson(response, 200, adminHouseClaimsResponseSchema.parse({ claims: result.rows.map((row) => ({ id: row.id, userId: row.user_id, userDisplayName: row.user_display_name, userEmail: row.user_email, houseId: row.house_id, addressLabel: row.address_label, bfeNumber: row.bfe_number, claimType: row.claim_type, status: row.status, requestedAt: new Date(row.requested_at).toISOString(), resolvedAt: row.resolved_at ? new Date(row.resolved_at).toISOString() : null, verificationMethod: row.verification_method, resolutionNote: row.resolution_note })), generatedAt: new Date().toISOString() })); } catch (error) { writeUnknownApiError(response, error); } })();
+    return;
+  }
+
   if (
     request.method === "GET" &&
     (request.url === "/v1/admin/recommendations/catalog" ||
@@ -1180,7 +1205,22 @@ const server = createServer((request, response) => {
         }
 
         const userId = await requireUserId(request);
-        const house = await createSavedHouse(userId, parsedRequest.data.selectedAddress);
+        let identity;
+        try {
+          identity = await new DatafordelerClient().identifyAddress(parsedRequest.data.selectedAddress.sourceAddressId);
+        } catch (error) {
+          if (error instanceof DatafordelerProviderError) {
+            writeApiError(response, 503, "property_identity_unavailable", "Vi kunne ikke identificere ejendommen lige nu. Prøv igen senere.");
+            return;
+          }
+          throw error;
+        }
+        const existing = await findHouseByBfe(identity.bfeNumber);
+        if (existing && !(await hasActiveHouseMembership(userId, existing.id))) {
+          writeJson(response, 200, { status: "claim_required", house: { id: existing.id, bfeNumber: existing.bfeNumber }, message: "Ejendommen findes allerede i Matriva. For at beskytte boligens oplysninger skal din adgang bekræftes." });
+          return;
+        }
+        const house = await createSavedHouse(userId, parsedRequest.data.selectedAddress, identity.bfeNumber);
         startHousePublicDataRefreshAfterHouseCreated(userId, house.id);
         writeJson(
           response,
@@ -1191,6 +1231,87 @@ const server = createServer((request, response) => {
         writeUnknownApiError(response, error);
       }
     })();
+    return;
+  }
+
+  const houseClaimsMatch = /^\/v1\/houses\/([^/]+)\/claims$/.exec(request.url ?? "");
+  if (request.method === "POST" && houseClaimsMatch) {
+    void (async () => {
+      try {
+        const userId = await requireUserId(request);
+        const payload = await readJsonBody(request) as { claimType?: unknown };
+        const claimType = payload.claimType === "owner" || payload.claimType === "resident" || payload.claimType === "household_member" ? payload.claimType : "resident";
+        const houseId = decodeURIComponent(houseClaimsMatch[1]!);
+        const house = await findHouseByBfe((await pool.query<{ bfe_number: string }>("select bfe_number from houses where id = $1", [houseId])).rows[0]?.bfe_number ?? "");
+        if (!house || house.id !== houseId) throw new ApiError(404, "house_not_found", "Saved house was not found.");
+        if (await hasActiveHouseMembership(userId, houseId)) throw new ApiError(409, "house_membership_exists", "You already have access to this house.");
+        const created = await createHouseClaim(userId, houseId, claimType);
+        for (const notification of created.notifications) {
+          await sendHouseClaimOwnerEmail({
+            to: notification.owner_email,
+            ownerName: notification.owner_name,
+            requesterName: notification.requester_name,
+            requesterEmail: notification.requester_email,
+            addressLabel: notification.address_label,
+            bfeNumber: notification.bfe_number,
+            approvalLink: createHouseClaimApprovalUrl(created.ownerActionToken),
+            expiresAt: created.ownerActionExpiresAt
+          });
+        }
+        writeJson(response, 201, { claim: created.claim });
+      } catch (error) { writeUnknownApiError(response, error); }
+    })();
+    return;
+  }
+
+  const houseMembersMatch = /^\/v1\/houses\/([^/]+)\/members$/.exec(request.url ?? "");
+  if (request.method === "GET" && houseMembersMatch) {
+    void (async () => { try { const userId = await requireUserId(request); writeJson(response, 200, await listHouseMembers(userId, decodeURIComponent(houseMembersMatch[1]!))); } catch (error) { writeUnknownApiError(response, error); } })();
+    return;
+  }
+  if (request.method === "POST" && houseMembersMatch) {
+    void (async () => {
+      try {
+        const userId = await requireUserId(request);
+        const payload = await readJsonBody(request) as { email?: string; role?: unknown };
+        if (!payload.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) throw new ApiError(400, "invitation_email_invalid", "Email is required.");
+        const house = await getSavedHouse(userId, decodeURIComponent(houseMembersMatch[1]!));
+        const invitation = await createHouseInvitation(userId, house.id, payload.email, payload.role === "owner" ? "owner" : "member");
+        if ("token" in invitation) {
+          const delivery = await sendHouseInvitationEmail({ to: invitation.email, invitationLink: createHouseInvitationUrl(invitation.token), addressLabel: house.addressLabel, expiresAt: new Date(invitation.expires_at) });
+          writeJson(response, 201, { invitation: { id: invitation.id, houseId: invitation.house_id, email: invitation.email, role: invitation.role, status: invitation.status, expiresAt: new Date(invitation.expires_at).toISOString() }, delivery });
+        } else if ("alreadyPending" in invitation) {
+          writeJson(response, 200, { invitation: invitation.invitation });
+        } else {
+          writeJson(response, 200, { invitation: { houseId: invitation.houseId, alreadyMember: true } });
+        }
+      } catch (error) { writeUnknownApiError(response, error); }
+    })();
+    return;
+  }
+  const houseInvitationMatch = /^\/v1\/houses\/([^/]+)\/invitations\/([^/]+)$/.exec(request.url ?? "");
+  if (request.method === "DELETE" && houseInvitationMatch) {
+    void (async () => { try { const userId = await requireUserId(request); writeJson(response, 200, await revokeHouseInvitation(userId, decodeURIComponent(houseInvitationMatch[1]!), decodeURIComponent(houseInvitationMatch[2]!))); } catch (error) { writeUnknownApiError(response, error); } })();
+    return;
+  }
+  if (request.method === "POST" && request.url === "/v1/house-invitations/accept") {
+    void (async () => { try { const userId = await requireUserId(request); const payload = await readJsonBody(request) as { token?: string }; if (!payload.token) throw new ApiError(400, "invitation_token_required", "Invitation token is required."); writeJson(response, 200, await acceptHouseInvitation(userId, payload.token)); } catch (error) { writeUnknownApiError(response, error); } })();
+    return;
+  }
+  const houseInvitationAcceptMatch = /^\/v1\/house-invitations\/([^/]+)\/accept$/.exec(request.url ?? "");
+  if (request.method === "POST" && houseInvitationAcceptMatch) {
+    void (async () => { try { const userId = await requireUserId(request); writeJson(response, 200, await acceptHouseInvitationById(userId, decodeURIComponent(houseInvitationAcceptMatch[1]!))); } catch (error) { writeUnknownApiError(response, error); } })();
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/v1/house-claims/owner-approve") {
+    void (async () => { try { const userId = await requireUserId(request); const payload = await readJsonBody(request) as { token?: string }; if (!payload.token) throw new ApiError(400, "house_claim_action_token_required", "Action token is required."); writeJson(response, 200, await approveHouseClaimByOwnerToken(userId, payload.token)); } catch (error) { writeUnknownApiError(response, error); } })();
+    return;
+  }
+
+  const ownerClaimActionMatch = /^\/v1\/house-claims\/([^/]+)\/(approve|reject)$/.exec(request.url ?? "");
+  if (request.method === "POST" && ownerClaimActionMatch) {
+    void (async () => { try { const userId = await requireUserId(request); writeJson(response, 200, await resolveHouseClaimByOwner(userId, decodeURIComponent(ownerClaimActionMatch[1]!), ownerClaimActionMatch[2] as "approve" | "reject")); } catch (error) { writeUnknownApiError(response, error); } })();
     return;
   }
 

@@ -267,6 +267,11 @@ export const adminDashboardResponseSchema = z.object({
     usersWithHouseRate: adminDashboardRatioSchema,
     completedTaskRate: adminDashboardRatioSchema
   }),
+  relationshipMetrics: z.object({
+    activeMemberships: adminDashboardCountSchema,
+    housesWithMultipleMembers: adminDashboardCountSchema,
+    pendingClaims: adminDashboardCountSchema
+  }),
   funnel: z.object({
     registeredUsers: adminDashboardCountSchema,
     usersWithCompletedProfile: adminDashboardCountSchema,
@@ -322,7 +327,7 @@ export type AdminUserStatusFilter = z.infer<
   typeof adminUserStatusFilterSchema
 >;
 
-export const adminSavedHouseStatusSchema = z.enum(["saved"]);
+export const adminSavedHouseStatusSchema = z.enum(["saved", "archived"]);
 export const adminSavedHouseDataConfidenceSchema = z.enum(["not_verified"]);
 export const adminMaintenanceSeasonSchema = z.enum([
   "spring",
@@ -368,6 +373,7 @@ export const adminUserListItemSchema = z.object({
   lastLoginAt: z.string().datetime().nullable(),
   latestSessionActivityAt: z.string().datetime().nullable(),
   houseCount: adminListCountSchema,
+  pendingClaimCount: adminListCountSchema,
   taskCount: adminListCountSchema,
   completionCount: adminListCountSchema,
   roles: z.array(adminRoleSchema),
@@ -395,6 +401,15 @@ export const adminUserDetailSchema = adminUserListItemSchema.extend({
       createdAt: z.string().datetime()
     })
   ),
+  memberships: z.array(z.object({
+    houseId: houseIdSchema,
+    addressLabel: z.string().min(1),
+    bfeNumber: z.string().min(1).nullable(),
+    role: z.enum(["owner", "member"]),
+    status: z.enum(["active", "revoked"]),
+    validFrom: z.string().datetime(),
+    validTo: z.string().datetime().nullable()
+  })),
   taskSummary: z.object({
     total: adminListCountSchema,
     planned: adminListCountSchema,
@@ -472,7 +487,10 @@ export const adminHouseOwnerSchema = z.object({
 export const adminHouseListItemSchema = z.object({
   id: houseIdSchema,
   addressLabel: z.string().min(1),
+  bfeNumber: z.string().min(1).nullable(),
   owner: adminHouseOwnerSchema,
+  activeUserCount: adminListCountSchema,
+  openClaimCount: adminListCountSchema,
   status: adminSavedHouseStatusSchema,
   dataConfidence: adminSavedHouseDataConfidenceSchema,
   createdAt: z.string().datetime(),
@@ -533,6 +551,23 @@ export const adminHousesResponseSchema = z.object({
 export type AdminHousesResponse = z.infer<typeof adminHousesResponseSchema>;
 
 export const adminHouseDetailSchema = adminHouseListItemSchema.extend({
+  members: z.array(z.object({
+    userId: userIdSchema,
+    displayName: z.string().min(1).nullable(),
+    email: z.string().email(),
+    role: z.enum(["owner", "member"]),
+    status: z.enum(["active", "revoked"]),
+    validFrom: z.string().datetime(),
+    validTo: z.string().datetime().nullable()
+  })),
+  invitations: z.array(z.object({
+    id: z.string().min(1), email: z.string().email(), role: z.enum(["owner", "member"]),
+    status: z.enum(["pending", "accepted", "expired", "revoked"]), expiresAt: z.string().datetime()
+  })),
+  claims: z.array(z.object({
+    id: z.string().min(1), userId: userIdSchema, claimType: z.enum(["owner", "resident", "household_member"]),
+    status: z.enum(["pending", "approved", "rejected", "cancelled"]), requestedAt: z.string().datetime(), resolutionNote: z.string().nullable()
+  })),
   updatedAt: z.string().datetime(),
   sourceReferences: z.object({
     dawaAddressId: z.string().min(1).nullable(),
@@ -598,6 +633,18 @@ export const adminHouseResponseSchema = z.object({
 });
 
 export type AdminHouseResponse = z.infer<typeof adminHouseResponseSchema>;
+
+export const adminHouseClaimStatusFilterSchema = z.enum(["all", "pending", "approved", "rejected"]);
+export type AdminHouseClaimStatusFilter = z.infer<typeof adminHouseClaimStatusFilterSchema>;
+export const adminHouseClaimListItemSchema = z.object({
+  id: z.string().min(1), userId: userIdSchema, userDisplayName: z.string().nullable(), userEmail: z.string().email(),
+  houseId: houseIdSchema, addressLabel: z.string().min(1), bfeNumber: z.string().min(1).nullable(),
+  claimType: z.enum(["owner", "resident", "household_member"]), status: z.enum(["pending", "approved", "rejected", "cancelled"]), requestedAt: z.string().datetime(),
+  resolvedAt: z.string().datetime().nullable(), verificationMethod: z.string().nullable(), resolutionNote: z.string().nullable()
+});
+export type AdminHouseClaimListItem = z.infer<typeof adminHouseClaimListItemSchema>;
+export const adminHouseClaimsResponseSchema = z.object({ claims: z.array(adminHouseClaimListItemSchema), generatedAt: z.string().datetime() });
+export type AdminHouseClaimsResponse = z.infer<typeof adminHouseClaimsResponseSchema>;
 
 export const adminRecommendationCatalogSortSchema = z.enum([
   "catalog_key",
@@ -967,6 +1014,7 @@ export const maintenanceSeasonSchema = z.enum([
 export type MaintenanceSeason = z.infer<typeof maintenanceSeasonSchema>;
 
 export const maintenanceRecurrenceIntervalSchema = z.enum([
+  "weekly",
   "monthly",
   "quarterly",
   "half_yearly",
@@ -1277,7 +1325,7 @@ export type CurrentDevUserResponse = z.infer<
   typeof currentDevUserResponseSchema
 >;
 
-export const savedHouseStatusSchema = z.enum(["saved"]);
+export const savedHouseStatusSchema = z.enum(["saved", "archived"]);
 
 export type SavedHouseStatus = z.infer<typeof savedHouseStatusSchema>;
 
@@ -1290,8 +1338,10 @@ export type SavedHouseDataConfidence = z.infer<
 export const savedHouseSchema = z.object({
   id: houseIdSchema,
   ownerUserId: userIdSchema,
+  bfeNumber: z.string().min(1).nullable(),
   addressLabel: z.string().min(1),
   dawaAddressId: z.string().min(1).optional(),
+  dawaAccessAddressId: z.string().min(1).optional(),
   status: savedHouseStatusSchema,
   dataConfidence: savedHouseDataConfidenceSchema,
   createdAt: z.string().datetime(),
@@ -1305,13 +1355,65 @@ export const createSavedHouseRequestSchema = z.object({
   selectedAddress: selectedAddressInputSchema
 });
 
+export const houseMembershipRoleSchema = z.enum(["owner", "member"]);
+export type HouseMembershipRole = z.infer<typeof houseMembershipRoleSchema>;
+export const houseMembershipStatusSchema = z.enum(["active", "revoked"]);
+export type HouseMembershipStatus = z.infer<typeof houseMembershipStatusSchema>;
+export const houseMembershipSchema = z.object({
+  id: z.string().min(1), houseId: houseIdSchema, userId: userIdSchema,
+  role: houseMembershipRoleSchema, status: houseMembershipStatusSchema,
+  validFrom: z.string().datetime(), validTo: z.string().datetime().nullable(),
+  displayName: z.string().nullable().optional()
+});
+export type HouseMembership = z.infer<typeof houseMembershipSchema>;
+export const houseClaimTypeSchema = z.enum(["owner", "resident", "household_member"]);
+export type HouseClaimType = z.infer<typeof houseClaimTypeSchema>;
+export const houseClaimStatusSchema = z.enum(["pending", "approved", "rejected", "cancelled"]);
+export type HouseClaimStatus = z.infer<typeof houseClaimStatusSchema>;
+export const houseClaimSchema = z.object({
+  id: z.string().min(1), houseId: houseIdSchema, userId: userIdSchema,
+  claimType: houseClaimTypeSchema, status: houseClaimStatusSchema,
+  requestedAt: z.string().datetime(), resolvedAt: z.string().datetime().nullable(), resolutionNote: z.string().nullable()
+});
+export type HouseClaim = z.infer<typeof houseClaimSchema>;
+export const pendingHouseClaimSchema = z.object({
+  id: z.string().min(1), houseId: houseIdSchema, addressLabel: z.string().min(1),
+  bfeNumber: z.string().min(1).nullable(), claimType: houseClaimTypeSchema,
+  status: z.literal("pending"), requestedAt: z.string().datetime()
+});
+export type PendingHouseClaim = z.infer<typeof pendingHouseClaimSchema>;
+export const ownerPendingHouseClaimSchema = z.object({
+  id: z.string().min(1), houseId: houseIdSchema, requesterName: z.string().min(1),
+  requesterEmail: z.string().email(), addressLabel: z.string().min(1),
+  bfeNumber: z.string().min(1).nullable(), claimType: houseClaimTypeSchema,
+  status: z.literal("pending"), requestedAt: z.string().datetime()
+});
+export type OwnerPendingHouseClaim = z.infer<typeof ownerPendingHouseClaimSchema>;
+export const pendingHouseInvitationSchema = z.object({
+  id: z.string().min(1), houseId: houseIdSchema, addressLabel: z.string().min(1),
+  bfeNumber: z.string().min(1).nullable(), email: z.string().email(),
+  inviterName: z.string().min(1), role: houseMembershipRoleSchema,
+  status: z.literal("pending"), expiresAt: z.string().datetime()
+});
+export type PendingHouseInvitation = z.infer<typeof pendingHouseInvitationSchema>;
+export const houseInvitationSchema = z.object({
+  id: z.string().min(1), houseId: houseIdSchema, email: z.string().email(),
+  role: houseMembershipRoleSchema, status: z.enum(["pending", "accepted", "expired", "revoked"]), expiresAt: z.string().datetime()
+});
+export type HouseInvitation = z.infer<typeof houseInvitationSchema>;
+
 export type CreateSavedHouseRequest = z.infer<
   typeof createSavedHouseRequestSchema
 >;
 
-export const savedHouseResponseSchema = z.object({
-  house: savedHouseSchema
-});
+export const savedHouseResponseSchema = z.union([
+  z.object({ house: savedHouseSchema }),
+  z.object({
+    status: z.literal("claim_required"),
+    house: z.object({ id: houseIdSchema, bfeNumber: z.string().min(1).nullable() }),
+    message: z.string().min(1)
+  })
+]);
 
 export type SavedHouseResponse = z.infer<typeof savedHouseResponseSchema>;
 
@@ -3441,6 +3543,9 @@ export const appBootstrapResponseSchema = z.object({
   }),
   houses: z.array(savedHouseSchema),
   activeHouseId: houseIdSchema.nullable(),
+  pendingHouseClaims: z.array(pendingHouseClaimSchema).default([]),
+  ownerPendingHouseClaims: z.array(ownerPendingHouseClaimSchema).default([]),
+  pendingHouseInvitations: z.array(pendingHouseInvitationSchema).default([]),
   publicDataSummaries: z.array(housePublicDataSummarySchema).default([]),
   entitlements: entitlementsSchema,
   cards: z.array(homeCardSchema),

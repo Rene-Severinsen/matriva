@@ -36,6 +36,7 @@
     "smoke:auth": "node tools/smoke-auth.mjs",
     "db:reset-test": "node tools/reset-test-db.mjs",
     "db:reset-qa-user-house-data": "node tools/reset-qa-user-house-data.mjs",
+    "test:qa-reset-order": "node tools/test-qa-user-house-reset-order.mjs",
     "check:bbr-codebooks": "node tools/check-bbr-codebooks.mjs",
     "dev:website": "npm run dev -w @matriva/website",
     "build:website": "npm run build -w @matriva/website"

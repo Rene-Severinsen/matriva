@@ -14,6 +14,24 @@ The reset implementation must refuse every value other than `local` or `qa`, req
 
 There is no production reset procedure. Production data must be preserved and any production cleanup requires a separately reviewed migration or incident process.
 
+## QA user/house data reset
+
+This is a separate, narrower operation. It only accepts `MATRIVA_ENVIRONMENT=qa` and the exact confirmation `WIPE_MATRIVA_QA_USER_HOUSE_DATA`. It explicitly deletes user/house data in dependency order, preserves `schema_migrations`, `user_roles`, and `maintenance_catalog_items`, and preserves every user that has any role in `user_roles` (including the permanent super-admin). It aborts if the expected current schema is incomplete or if an unexpected public foreign-key relation is detected.
+
+Dry-run first; output contains table names and counts only:
+
+```bash
+MATRIVA_ENVIRONMENT=qa RESET_CONFIRM=WIPE_MATRIVA_QA_USER_HOUSE_DATA DRY_RUN=1 DATABASE_URL='<qa-only-url>' npm run db:reset-qa-user-house-data
+```
+
+After reviewing the counts, run the same command without `DRY_RUN=1` only with explicit operator approval:
+
+```bash
+MATRIVA_ENVIRONMENT=qa RESET_CONFIRM=WIPE_MATRIVA_QA_USER_HOUSE_DATA DATABASE_URL='<qa-only-url>' npm run db:reset-qa-user-house-data
+```
+
+The database reset does not delete object-storage objects. The API uses the environment prefix `qa/houses/<house_id>/photos/` for house photos and `qa/houses/<house_id>/documents/` for documents. Because database rows are removed first, a DB-only reset leaves orphaned S3 objects. A separate, reviewed cleanup must list and delete only those two prefixes for house IDs captured before the reset, after independently verifying the QA endpoint and bucket. Never perform a bucket-wide delete and never log access keys or object contents.
+
 ## QA-deployplan
 
 QA is not wiped by this task. For a later controlled QA deployment:

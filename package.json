@@ -35,6 +35,7 @@
     "check": "npm run check:no-firebase && npm run check:secrets && npm run check:bbr-codebooks && npm run check:bbr-public-data-parity && npm run typecheck && npm run lint",
     "smoke:auth": "node tools/smoke-auth.mjs",
     "db:reset-test": "node tools/reset-test-db.mjs",
+    "db:reset-qa-user-house-data": "node tools/reset-qa-user-house-data.mjs",
     "check:bbr-codebooks": "node tools/check-bbr-codebooks.mjs",
     "dev:website": "npm run dev -w @matriva/website",
     "build:website": "npm run build -w @matriva/website"

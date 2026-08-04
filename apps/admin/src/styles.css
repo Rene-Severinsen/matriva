@@ -420,6 +420,18 @@ button:disabled {
   padding: 16px;
 }
 
+.data-tabs {
+  display: flex;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.data-tabs .active {
+  border-color: var(--accent, #1f6f5b);
+  background: var(--accent, #1f6f5b);
+  color: white;
+}
+
 .data-toolbar label {
   color: #536158;
   font-size: 12px;

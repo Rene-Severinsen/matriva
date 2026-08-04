@@ -4,6 +4,7 @@ import type { MatrivaAdminApiClient } from "@matriva/api-client";
 import type {
   AdminHouseResponse,
   AdminHouseClaimsResponse,
+  AdminHouseInvitationsResponse,
   AdminHousesResponse,
   AdminRecommendationCatalogItemResponse,
   AdminRecommendationCatalogResponse,
@@ -86,7 +87,7 @@ export function AdminDataPage({
   }
 
   if (section === "claims") {
-    return <ClaimsList client={client} onAuthorizationError={onAuthorizationError} onOpen={(id) => onOpenDetail("claims", id)} />;
+    return <AccessRequirementsPage client={client} onAuthorizationError={onAuthorizationError} onOpenClaim={(id) => onOpenDetail("claims", id)} />;
   }
 
   return (
@@ -98,11 +99,32 @@ export function AdminDataPage({
   );
 }
 
+function AccessRequirementsPage({ client, onAuthorizationError, onOpenClaim }: { client: MatrivaAdminApiClient; onAuthorizationError: (error: unknown) => Promise<boolean>; onOpenClaim: (id: string) => void }) {
+  const [tab, setTab] = useState<"claims" | "invitations">("claims");
+  return <>
+    <div className="data-tabs" role="tablist" aria-label="Adgangskrav">
+      <button className={tab === "claims" ? "secondary-action active" : "secondary-action"} type="button" role="tab" aria-selected={tab === "claims"} onClick={() => setTab("claims")}>Adgangsanmodninger</button>
+      <button className={tab === "invitations" ? "secondary-action active" : "secondary-action"} type="button" role="tab" aria-selected={tab === "invitations"} onClick={() => setTab("invitations")}>Invitationer</button>
+    </div>
+    {tab === "claims" ? <ClaimsList client={client} onAuthorizationError={onAuthorizationError} onOpen={onOpenClaim} /> : <InvitationsList client={client} onAuthorizationError={onAuthorizationError} />}
+  </>;
+}
+
 function ClaimsList({ client, onAuthorizationError, onOpen }: { client: MatrivaAdminApiClient; onAuthorizationError: (error: unknown) => Promise<boolean>; onOpen: (id: string) => void }) {
   const [status, setStatus] = useState<"all" | "pending" | "approved" | "rejected">("pending");
   const { state, retry } = useListState<AdminHouseClaimsResponse>((signal) => client.getAdminHouseClaims({ status, signal }), onAuthorizationError, "Adgangskrav kunne ikke indlæses.", [client, status]);
   return <DataSection title="Adgangskrav" description="Adgangskrav mellem brugere og fysiske ejendomme." filters={<FilterSelect label="Status" value={status} onChange={(value) => setStatus(value as typeof status)} options={[["pending", "Afventer"], ["approved", "Godkendt"], ["rejected", "Afvist"], ["all", "Alle"]]} />}>
     <ListState state={state} retry={retry} empty="Ingen adgangskrav matcher filteret.">{(data) => <div className="table-scroll"><table className="data-table"><thead><tr><th>Bruger</th><th>Bolig</th><th>BFE</th><th>Type</th><th>Status</th><th>Anmodet</th></tr></thead><tbody>{data.claims.map((claim) => <tr key={claim.id} onClick={() => onOpen(claim.id)}><td><strong>{claim.userDisplayName ?? "Navn mangler"}</strong><span>{claim.userEmail}</span></td><td>{claim.addressLabel}</td><td>{claim.bfeNumber ?? "Ikke registreret"}</td><td>{claim.claimType}</td><td><StatusBadge label={claim.status} /></td><td>{formatDate(claim.requestedAt)}</td></tr>)}</tbody></table></div>}</ListState>
+  </DataSection>;
+}
+
+const invitationStatusLabels = { pending: "Afventer", accepted: "Accepteret", expired: "Udløbet", revoked: "Tilbagekaldt" } as const;
+
+function InvitationsList({ client, onAuthorizationError }: { client: MatrivaAdminApiClient; onAuthorizationError: (error: unknown) => Promise<boolean> }) {
+  const [status, setStatus] = useState<"all" | "pending" | "accepted" | "expired" | "revoked">("all");
+  const { state, retry } = useListState<AdminHouseInvitationsResponse>((signal) => client.getAdminHouseInvitations({ status, signal }), onAuthorizationError, "Invitationer kunne ikke indlæses.", [client, status]);
+  return <DataSection title="Invitationer" description="Invitationer til boliger, adskilt fra adgangsanmodninger." filters={<FilterSelect label="Status" value={status} onChange={(value) => setStatus(value as typeof status)} options={[["all", "Alle"], ["pending", "Afventer"], ["accepted", "Accepteret"], ["expired", "Udløbet"], ["revoked", "Tilbagekaldt"]]} />}>
+    <ListState state={state} retry={retry} empty="Ingen invitationer matcher filteret.">{(data) => <div className="table-scroll"><table className="data-table"><thead><tr><th>Bolig</th><th>Inviteret e-mail</th><th>Inviteret af</th><th>Rolle</th><th>Status</th><th>Oprettet</th><th>Udløber</th><th>Accepteret af</th></tr></thead><tbody>{data.invitations.map((invitation) => <tr key={invitation.id}><td><strong>{invitation.addressLabel}</strong><span>{invitation.bfeNumber ?? "BFE ikke registreret"}</span></td><td>{invitation.email}</td><td><strong>{invitation.invitedByDisplayName ?? "Navn mangler"}</strong><span>{invitation.invitedByEmail}</span></td><td>{invitation.role === "owner" ? "Ejer" : "Medlem"}</td><td><StatusBadge label={invitationStatusLabels[invitation.status]} /></td><td>{formatDate(invitation.createdAt)}</td><td>{formatDate(invitation.expiresAt)}</td><td>{invitation.acceptedByDisplayName ?? invitation.acceptedByEmail ?? "Ikke accepteret"}</td></tr>)}</tbody></table></div>}</ListState>
   </DataSection>;
 }
 
@@ -452,7 +474,7 @@ function ListState<T>({ children, empty, retry, state }: { children: (data: T) =
   if (state.status === "loading") return <section className="data-state">Indlæser...</section>;
   if (state.status === "error") return <section className="data-state error"><strong>Kunne ikke indlæse</strong><p>{state.message}</p><button type="button" onClick={retry}>Prøv igen</button></section>;
   const candidate = state.data as any;
-  const rows = candidate.users ?? candidate.houses ?? candidate.items;
+  const rows = candidate.users ?? candidate.houses ?? candidate.items ?? candidate.claims ?? candidate.invitations;
   if (Array.isArray(rows) && rows.length === 0) return <section className="data-state">{empty}</section>;
   return <>{children(state.data)}</>;
 }

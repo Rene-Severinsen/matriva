@@ -15,6 +15,8 @@ import {
   adminHousesResponseSchema,
   adminHouseClaimsResponseSchema,
   adminHouseClaimStatusFilterSchema,
+  adminHouseInvitationsResponseSchema,
+  adminHouseInvitationStatusFilterSchema,
   adminRecommendationCatalogItemResponseSchema,
   adminRecommendationCatalogResponseSchema,
   adminPasswordLoginRequestSchema,
@@ -852,6 +854,62 @@ const server = createServer((request, response) => {
   }
   if (request.method === "GET" && (request.url === "/v1/admin/house-claims" || request.url?.startsWith("/v1/admin/house-claims?"))) {
     void (async () => { try { await requireAdminUser(getBearerToken(request)); const url = new URL(request.url ?? "/", `http://${host}:${port}`); const status = adminHouseClaimStatusFilterSchema.parse(url.searchParams.get("status") ?? "pending"); const values: string[] = []; const where = status === "all" ? "" : "where c.status = $1"; if (status !== "all") values.push(status); const result = await pool.query(`select c.id, c.house_id, c.user_id, c.claim_type, c.status, c.requested_at, c.resolved_at, c.verification_method, c.resolution_note, u.email as user_email, up.display_name as user_display_name, h.address_label, h.bfe_number from house_claims c join users u on u.id = c.user_id left join user_profiles up on up.user_id = u.id join houses h on h.id = c.house_id ${where} order by c.requested_at desc limit 100`, values); writeJson(response, 200, adminHouseClaimsResponseSchema.parse({ claims: result.rows.map((row) => ({ id: row.id, userId: row.user_id, userDisplayName: row.user_display_name, userEmail: row.user_email, houseId: row.house_id, addressLabel: row.address_label, bfeNumber: row.bfe_number, claimType: row.claim_type, status: row.status, requestedAt: new Date(row.requested_at).toISOString(), resolvedAt: row.resolved_at ? new Date(row.resolved_at).toISOString() : null, verificationMethod: row.verification_method, resolutionNote: row.resolution_note })), generatedAt: new Date().toISOString() })); } catch (error) { writeUnknownApiError(response, error); } })();
+    return;
+  }
+
+  if (request.method === "GET" && (request.url === "/v1/admin/house-invitations" || request.url?.startsWith("/v1/admin/house-invitations?"))) {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        const url = new URL(request.url ?? "/", `http://${host}:${port}`);
+        const status = adminHouseInvitationStatusFilterSchema.parse(url.searchParams.get("status") ?? "all");
+        const values: string[] = [];
+        const where = status === "all" ? "" : "where i.status = $1";
+        if (status !== "all") values.push(status);
+        const result = await pool.query(`
+          select i.id, i.house_id, h.address_label, h.bfe_number, i.email, i.role, i.status,
+                 i.invited_by_user_id, inviter_profile.display_name as invited_by_display_name,
+                 inviter.email as invited_by_email, i.accepted_by_user_id,
+                 accepter_profile.display_name as accepted_by_display_name,
+                 accepter.email as accepted_by_email, i.accepted_at, i.created_at,
+                 i.expires_at, i.updated_at
+          from house_invitations i
+          join houses h on h.id = i.house_id
+          join users inviter on inviter.id = i.invited_by_user_id
+          left join user_profiles inviter_profile on inviter_profile.user_id = inviter.id
+          left join users accepter on accepter.id = i.accepted_by_user_id
+          left join user_profiles accepter_profile on accepter_profile.user_id = accepter.id
+          ${where}
+          order by case i.status when 'pending' then 0 when 'accepted' then 1 when 'expired' then 2 when 'revoked' then 3 else 4 end,
+                   i.created_at desc
+          limit 100
+        `, values);
+        writeJson(response, 200, adminHouseInvitationsResponseSchema.parse({
+          invitations: result.rows.map((row) => ({
+            id: row.id,
+            houseId: row.house_id,
+            addressLabel: row.address_label,
+            bfeNumber: row.bfe_number,
+            email: row.email,
+            role: row.role,
+            status: row.status,
+            invitedByUserId: row.invited_by_user_id,
+            invitedByDisplayName: row.invited_by_display_name,
+            invitedByEmail: row.invited_by_email,
+            acceptedByUserId: row.accepted_by_user_id,
+            acceptedByDisplayName: row.accepted_by_display_name,
+            acceptedByEmail: row.accepted_by_email,
+            acceptedAt: row.accepted_at ? new Date(row.accepted_at).toISOString() : null,
+            createdAt: new Date(row.created_at).toISOString(),
+            expiresAt: new Date(row.expires_at).toISOString(),
+            updatedAt: new Date(row.updated_at).toISOString()
+          })),
+          generatedAt: new Date().toISOString()
+        }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
     return;
   }
 

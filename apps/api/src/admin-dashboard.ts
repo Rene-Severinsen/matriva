@@ -144,7 +144,10 @@ export async function getAdminDashboard(
         (select count(*)::int from users) as total_users,
         (select count(*)::int from houses) as total_houses,
         (select count(*)::int from house_memberships where status = 'active') as active_memberships,
-        (select count(*)::int from house_claims where status = 'pending') as pending_claims,
+        (
+          (select count(*) from house_claims where status = 'pending') +
+          (select count(*) from house_invitations where status = 'pending' and expires_at > now())
+        )::int as pending_claims,
         (select count(*)::int from (select house_id from house_memberships where status = 'active' group by house_id having count(*) > 1) multi) as houses_with_multiple_members,
         (select count(*)::int from maintenance_tasks where deleted_at is null) as total_tasks,
         (select count(*)::int from maintenance_completions) as total_completions,

@@ -173,7 +173,7 @@ function DashboardContent({ dashboard }: { dashboard: AdminDashboardResponse }) 
     {
       label: "Afventende adgangskrav",
       value: dashboard.relationshipMetrics.pendingClaims,
-      note: "Kræver adminbehandling",
+      note: "Anmodninger og invitationer, der kræver opfølgning",
       icon: "activity" as IconName,
       tone: "orange"
     },

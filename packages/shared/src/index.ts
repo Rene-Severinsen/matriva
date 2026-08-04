@@ -646,6 +646,31 @@ export type AdminHouseClaimListItem = z.infer<typeof adminHouseClaimListItemSche
 export const adminHouseClaimsResponseSchema = z.object({ claims: z.array(adminHouseClaimListItemSchema), generatedAt: z.string().datetime() });
 export type AdminHouseClaimsResponse = z.infer<typeof adminHouseClaimsResponseSchema>;
 
+export const adminHouseInvitationStatusFilterSchema = z.enum(["all", "pending", "accepted", "expired", "revoked"]);
+export type AdminHouseInvitationStatusFilter = z.infer<typeof adminHouseInvitationStatusFilterSchema>;
+export const adminHouseInvitationListItemSchema = z.object({
+  id: z.string().min(1),
+  houseId: houseIdSchema,
+  addressLabel: z.string().min(1),
+  bfeNumber: z.string().min(1).nullable(),
+  email: z.string().email(),
+  role: z.enum(["owner", "member"]),
+  status: z.enum(["pending", "accepted", "expired", "revoked"]),
+  invitedByUserId: userIdSchema,
+  invitedByDisplayName: z.string().nullable(),
+  invitedByEmail: z.string().email(),
+  acceptedByUserId: userIdSchema.nullable(),
+  acceptedByDisplayName: z.string().nullable(),
+  acceptedByEmail: z.string().email().nullable(),
+  acceptedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  expiresAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+export type AdminHouseInvitationListItem = z.infer<typeof adminHouseInvitationListItemSchema>;
+export const adminHouseInvitationsResponseSchema = z.object({ invitations: z.array(adminHouseInvitationListItemSchema), generatedAt: z.string().datetime() });
+export type AdminHouseInvitationsResponse = z.infer<typeof adminHouseInvitationsResponseSchema>;
+
 export const adminRecommendationCatalogSortSchema = z.enum([
   "catalog_key",
   "title",

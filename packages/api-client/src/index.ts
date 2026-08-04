@@ -6,6 +6,7 @@ import {
   adminHouseResponseSchema,
   adminHousesResponseSchema,
   adminHouseClaimsResponseSchema,
+  adminHouseInvitationsResponseSchema,
   adminRecommendationCatalogItemResponseSchema,
   adminRecommendationCatalogResponseSchema,
   adminPasswordLoginRequestSchema,
@@ -50,6 +51,8 @@ import {
   type AdminHouseResponse,
   type AdminHouseClaimsResponse,
   type AdminHouseClaimStatusFilter,
+  type AdminHouseInvitationsResponse,
+  type AdminHouseInvitationStatusFilter,
   type AdminHouseSort,
   type AdminHousesResponse,
   type AdminRecommendationActiveFilter,
@@ -243,6 +246,7 @@ export type MatrivaApiClient = {
     input?: { signal?: AbortSignal }
   ) => Promise<AdminHouseResponse>;
   getAdminHouseClaims: (input?: { status?: AdminHouseClaimStatusFilter; signal?: AbortSignal }) => Promise<AdminHouseClaimsResponse>;
+  getAdminHouseInvitations: (input?: { status?: AdminHouseInvitationStatusFilter; signal?: AbortSignal }) => Promise<AdminHouseInvitationsResponse>;
   resolveAdminHouseClaim: (claimId: string, decision: "approve" | "reject", note?: string) => Promise<unknown>;
   getAdminRecommendationCatalog: (
     input?: AdminListRequest<AdminRecommendationCatalogSort> & {
@@ -400,6 +404,7 @@ export type MatrivaAdminApiClient = Pick<
   | "getAdminHouses"
   | "getAdminHouse"
   | "getAdminHouseClaims"
+  | "getAdminHouseInvitations"
   | "resolveAdminHouseClaim"
   | "getAdminRecommendationCatalog"
   | "getAdminRecommendationCatalogItem"
@@ -537,6 +542,12 @@ export function createMatrivaAdminApiClient(
       if (input.status && input.status !== "all") params.set("status", input.status);
       const response = await fetcher(`${normalizedBaseUrl}/v1/admin/house-claims${params.toString() ? `?${params}` : ""}`, { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) });
       return adminHouseClaimsResponseSchema.parse(await parseApiResponse(response, "Could not load access claims."));
+    },
+    async getAdminHouseInvitations(input = {}) {
+      const params = new URLSearchParams();
+      if (input.status && input.status !== "all") params.set("status", input.status);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/house-invitations${params.toString() ? `?${params}` : ""}`, { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) });
+      return adminHouseInvitationsResponseSchema.parse(await parseApiResponse(response, "Could not load house invitations."));
     },
     async resolveAdminHouseClaim(claimId, decision, note) {
       const response = await fetcher(`${normalizedBaseUrl}/v1/admin/house-claims/${encodeURIComponent(claimId)}/${decision}`, { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ note: note ?? null }) });
@@ -931,6 +942,12 @@ export function createMatrivaApiClient(
       if (input.status && input.status !== "all") params.set("status", input.status);
       const response = await fetcher(`${normalizedBaseUrl}/v1/admin/house-claims${params.toString() ? `?${params}` : ""}`, { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) });
       return adminHouseClaimsResponseSchema.parse(await parseApiResponse(response, "Could not load access claims."));
+    },
+    async getAdminHouseInvitations(input = {}) {
+      const params = new URLSearchParams();
+      if (input.status && input.status !== "all") params.set("status", input.status);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/house-invitations${params.toString() ? `?${params}` : ""}`, { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) });
+      return adminHouseInvitationsResponseSchema.parse(await parseApiResponse(response, "Could not load house invitations."));
     },
     async resolveAdminHouseClaim(claimId, decision, note) {
       const response = await fetcher(`${normalizedBaseUrl}/v1/admin/house-claims/${encodeURIComponent(claimId)}/${decision}`, { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ note: note ?? null }) });

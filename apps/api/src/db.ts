@@ -28,6 +28,7 @@ import type {
   AdminEntitlementConfigResponse,
   AdminUserEntitlementResponse,
   Entitlements,
+  UpdateAdminUserEntitlementRequest,
   CreateHouseImprovementRequest,
   UpdateHouseImprovementRequest,
   AttachHouseImprovementDocumentRequest,
@@ -374,6 +375,37 @@ function booleanValue(features: Record<FeatureKey, EntitlementValue>, key: Featu
   return value?.kind === "boolean" && value.value;
 }
 
+function entitlementFeatureLabel(feature: FeatureKey) {
+  const labels: Record<FeatureKey, string> = {
+    "houses.maxActive": "flere boliger",
+    "documents.maxCount": "flere dokumenter",
+    "documents.maxStorageMb": "mere dokumentlager",
+    "tasks.maxActive": "flere aktive egne opgaver",
+    "maintenance.fullPlan.enabled": "den fulde vedligeholdelsesplan",
+    "seasonalRecommendations.enabled": "sæsonbaserede anbefalinger",
+    "advisories.enabled": "boligejer-advarsler",
+    "localAdvisories.enabled": "lokale boligejer-advarsler",
+    "legalUpdates.enabled": "lov- og regelopdateringer",
+    "documentExpiry.enabled": "dokumentudløb og garantier",
+    "sharing.enabled": "deling af boligdata",
+    "multiUser.enabled": "flere brugere på samme bolig",
+    "export.enabled": "eksport af dine boligdata",
+    "history.extended.enabled": "udvidet vedligeholdelseshistorik",
+    "advancedReminders.enabled": "avancerede reminders"
+  };
+  return labels[feature];
+}
+
+function entitlementLimitMessage(feature: FeatureKey, limit: number, current: number) {
+  const labels: Partial<Record<FeatureKey, string>> = {
+    "houses.maxActive": "antallet af boliger",
+    "documents.maxCount": "antallet af dokumenter",
+    "tasks.maxActive": "antallet af aktive egne opgaver"
+  };
+  const label = labels[feature] ?? entitlementFeatureLabel(feature);
+  return `Du har nået grænsen for ${label}. Din adgang inkluderer højst ${limit}. Du bruger allerede ${current}.`;
+}
+
 async function entitlementUsage(executor: DbExecutor, userId: string) {
   const result = await executor.query<{
     active_houses: string;
@@ -437,14 +469,14 @@ async function loadEntitlementPolicy(userId: string, executor: DbExecutor = pool
 
 function assertLimit(feature: FeatureKey, current: number, next: number, limit: number | null, details: EntitlementDetails = {}) {
   if (limit !== null && next > limit) {
-    throw new ApiError(409, "entitlement_limit_reached", `Din adgang inkluderer højst ${limit} for denne funktion. Du bruger allerede ${current}.`, { feature, limit, current, ...details });
+    throw new ApiError(409, "entitlement_limit_reached", entitlementLimitMessage(feature, limit, current), { feature, limit, current, ...details });
   }
 }
 
 async function assertEntitlementFeatureForExecutor(executor: DbExecutor, userId: string, feature: FeatureKey) {
   const entitlements = await loadEntitlementPolicy(userId, executor);
   if (!booleanValue(entitlements.features, feature)) {
-    throw new ApiError(403, "entitlement_feature_not_included", "Denne funktion er ikke inkluderet i din aktuelle adgang.", { feature });
+    throw new ApiError(403, "entitlement_feature_not_included", `${entitlementFeatureLabel(feature)} er ikke inkluderet i din aktuelle adgang.`, { feature });
   }
   return entitlements;
 }
@@ -542,6 +574,53 @@ export async function getAdminUserEntitlements(userId: string): Promise<AdminUse
   if (entitlements.usage.documents.storageLimitBytes !== null && entitlements.usage.documents.storageBytes > entitlements.usage.documents.storageLimitBytes) overLimit.push("storage");
   if (entitlements.usage.tasks.limit !== null && entitlements.usage.tasks.active > entitlements.usage.tasks.limit) overLimit.push("tasks");
   return { entitlement: { userId: userId as UserId, entitlements, overLimit }, generatedAt: new Date().toISOString() };
+}
+
+export async function updateAdminUserEntitlement(
+  adminUserId: string,
+  userId: string,
+  input: UpdateAdminUserEntitlementRequest
+): Promise<AdminUserEntitlementResponse> {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const user = await client.query<{ id: string }>(
+      "select id from users where id = $1",
+      [userId]
+    );
+    if (!user.rows[0]) {
+      throw new ApiError(404, "admin_user_not_found", "Brugeren blev ikke fundet.");
+    }
+
+    const status = input.plan === "pro" ? "active" : "free";
+    await client.query(
+      `insert into user_entitlements
+         (user_id, plan, status, source, starts_at, expires_at, updated_at, updated_by_user_id)
+       values ($1, $2, $3, 'admin', now(), null, now(), $4)
+       on conflict (user_id) do update set
+         plan = excluded.plan,
+         status = excluded.status,
+         source = 'admin',
+         starts_at = excluded.starts_at,
+         expires_at = null,
+         updated_at = now(),
+         updated_by_user_id = excluded.updated_by_user_id`,
+      [userId, input.plan, status, adminUserId]
+    );
+    await client.query(
+      `insert into entitlement_audit_log
+         (actor_user_id, target_user_id, action, plan, status, details)
+       values ($1, $2, 'user_plan_updated', $3, $4, $5::jsonb)`,
+      [adminUserId, userId, input.plan, status, JSON.stringify({ source: "admin" })]
+    );
+    await client.query("commit");
+    return getAdminUserEntitlements(userId);
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export function createOpaqueId(
@@ -3141,7 +3220,7 @@ export async function createHouseDocumentForHouse(
     );
     const storageLimitBytes = entitlements.usage.documents.storageLimitBytes;
     if (storageLimitBytes !== null && entitlements.usage.documents.storageBytes + input.sizeBytes > storageLimitBytes) {
-      throw new ApiError(409, "entitlement_storage_limit_reached", "Dit dokumentlager er fyldt. Slet eller arkivér et dokument, eller opgradér din adgang.", {
+      throw new ApiError(409, "entitlement_storage_limit_reached", `Du har nået grænsen for dit dokumentlager. Din adgang inkluderer højst ${Math.round(storageLimitBytes / 1024 / 1024)} MB. Slet eller arkivér et dokument, eller opgradér din adgang.`, {
         feature: "documents.maxStorageMb",
         limit: entitlements.usage.documents.limit,
         current: entitlements.usage.documents.storageBytes,

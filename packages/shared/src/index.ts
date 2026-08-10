@@ -317,9 +317,13 @@ export const adminUserSortSchema = z.enum([
   "latest_session_activity",
   "email",
   "display_name",
+  "status",
+  "subscription_plan",
   "house_count",
+  "pending_claim_count",
   "task_count",
-  "completion_count"
+  "completion_count",
+  "roles"
 ]);
 export type AdminUserSort = z.infer<typeof adminUserSortSchema>;
 
@@ -377,6 +381,7 @@ export const adminUserListItemSchema = z.object({
   pendingClaimCount: adminListCountSchema,
   taskCount: adminListCountSchema,
   completionCount: adminListCountSchema,
+  subscriptionPlan: z.enum(["free", "pro"]),
   roles: z.array(adminRoleSchema),
   onboardingState: onboardingStateSchema
 });
@@ -3600,6 +3605,13 @@ export const adminUserEntitlementResponseSchema = z.object({
   generatedAt: z.string().datetime()
 });
 export type AdminUserEntitlementResponse = z.infer<typeof adminUserEntitlementResponseSchema>;
+
+export const updateAdminUserEntitlementRequestSchema = z.object({
+  plan: entitlementPlanSchema
+});
+export type UpdateAdminUserEntitlementRequest = z.infer<
+  typeof updateAdminUserEntitlementRequestSchema
+>;
 
 export const apiErrorSchema = z.object({
   code: z.string().min(1),

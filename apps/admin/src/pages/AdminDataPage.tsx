@@ -10,7 +10,8 @@ import type {
   AdminRecommendationCatalogResponse,
   AdminUserResponse,
   AdminUserEntitlementResponse,
-  AdminUsersResponse
+  AdminUsersResponse,
+  AdminUserSort
 } from "@matriva/shared";
 
 type SectionKey = "users" | "houses" | "claims" | "recommendations";
@@ -186,11 +187,11 @@ function UsersList({
 }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
-  const [sort, setSort] = useState("created_at");
+  const [sort, setSort] = useState<AdminUserSort>("created_at");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const { state, retry } = useListState<AdminUsersResponse>(
-    (signal) => client.getAdminUsers({ query, status: status as any, sort: sort as any, order, page, pageSize: 25, signal }),
+    (signal) => client.getAdminUsers({ query, status: status as any, sort, order, page, pageSize: 25, signal }),
     onAuthorizationError,
     "Brugere kunne ikke indlæses.",
     [client, query, status, sort, order, page]
@@ -203,8 +204,6 @@ function UsersList({
         <>
           <SearchField value={query} onChange={(value) => { setQuery(value); setPage(1); }} />
           <FilterSelect label="Status" value={status} onChange={(value) => { setStatus(value); setPage(1); }} options={[["all", "Alle"], ["active", "Aktive"], ["disabled", "Disabled"]]} />
-          <SortSelect value={sort} onChange={setSort} options={[["created_at", "Oprettet"], ["latest_session_activity", "Senest aktiv"], ["email", "E-mail"], ["house_count", "Boliger"], ["task_count", "Opgaver"]]} />
-          <OrderButton order={order} setOrder={setOrder} />
         </>
       }
       title="Brugere"
@@ -216,20 +215,32 @@ function UsersList({
             <div className="table-scroll">
               <table className="data-table users-table">
                 <thead>
-                  <tr><th>Bruger</th><th>Status</th><th>Oprettet</th><th>Senest aktiv</th><th>Aktive boliger</th><th>Åbne adgangskrav</th><th>Opgaver</th><th>Rolle</th></tr>
+                  <tr>
+                    <SortableHeader label="Bruger" sortKey="display_name" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} />
+                    <SortableHeader label="Status" sortKey="status" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} />
+                    <SortableHeader label="Abonnement" sortKey="subscription_plan" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} />
+                    <SortableHeader label="Aktive boliger" sortKey="house_count" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} />
+                    <SortableHeader label="Åbne adgangskrav" sortKey="pending_claim_count" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} />
+                    <SortableHeader label="Opgaver" sortKey="task_count" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} />
+                    <SortableHeader label="Fuldførte" sortKey="completion_count" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} />
+                    <SortableHeader label="Rolle" sortKey="roles" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} />
+                    <SortableHeader label="Oprettet" sortKey="created_at" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} />
+                    <SortableHeader label="Senest aktiv" sortKey="latest_session_activity" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} />
+                  </tr>
                 </thead>
                 <tbody>
                   {data.users.map((user) => (
                     <tr key={user.id} onClick={() => onOpen(user.id)}>
                       <td><strong>{user.displayName ?? "Navn mangler"}</strong><span>{user.email}</span></td>
                       <td><StatusBadge label={user.status} /></td>
-                      <td>{formatDate(user.createdAt)}</td>
-                      <td>{formatDate(user.latestSessionActivityAt ?? user.lastLoginAt)}</td>
+                      <td><span className={`status-badge subscription-badge subscription-${user.subscriptionPlan}`}>{user.subscriptionPlan === "pro" ? "Paid / Pro" : "Free"}</span></td>
                       <td>{numberFormatter.format(user.houseCount)}</td>
                       <td>{numberFormatter.format(user.pendingClaimCount)}</td>
                       <td>{numberFormatter.format(user.taskCount)}</td>
                       <td>{numberFormatter.format(user.completionCount)}</td>
                       <td>{user.roles.join(", ") || "Bruger"}</td>
+                      <td>{formatDate(user.createdAt)}</td>
+                      <td>{formatDate(user.latestSessionActivityAt ?? user.lastLoginAt)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -434,11 +445,31 @@ function DetailContent({ data, client, onAuthorizationError, onOpenDetail }: { d
 }
 
 function UserEntitlementPanel({ client, userId, onAuthorizationError }: { client: MatrivaAdminApiClient; userId: string; onAuthorizationError: (error: unknown) => Promise<boolean> }) {
-  const { state } = useListState<AdminUserEntitlementResponse>(() => client.getAdminUserEntitlements(userId), onAuthorizationError, "Entitlement-status kunne ikke indlæses.", [client, userId]);
+  const { state, retry } = useListState<AdminUserEntitlementResponse>(() => client.getAdminUserEntitlements(userId), onAuthorizationError, "Entitlement-status kunne ikke indlæses.", [client, userId]);
+  const [selectedPlan, setSelectedPlan] = useState<"free" | "pro" | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
   if (state.status === "loading") return <section className="detail-panel"><p>Indlæser entitlement-status...</p></section>;
   if (state.status === "error") return <section className="detail-panel"><p>{state.message}</p></section>;
   const { entitlements, overLimit } = state.data.entitlement;
-  return <DetailGrid title="Entitlement-status" subtitle="Backend-evalueret adgang og forbrug" rows={[
+  const plan = selectedPlan ?? entitlements.configuredPlan;
+  async function savePlan() {
+    setSaving(true);
+    setMessage(null);
+    try {
+      await client.updateAdminUserEntitlement(userId, { plan });
+      setMessage(`Brugerens abonnement er sat til ${plan === "free" ? "Free" : "Paid / Pro"}.`);
+      retry();
+    } catch (error) {
+      if (!(await onAuthorizationError(error))) {
+        setMessage(errorMessage(error, "Abonnementet kunne ikke gemmes."));
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <><DetailGrid title="Entitlement-status" subtitle="Backend-evalueret adgang og forbrug" rows={[
     ["Plan", `${entitlements.plan} (konfigureret: ${entitlements.configuredPlan})`],
     ["Status", entitlements.status],
     ["Boliger", `${entitlements.usage.houses.active}/${entitlements.usage.houses.limit ?? "∞"}`],
@@ -446,7 +477,7 @@ function UserEntitlementPanel({ client, userId, onAuthorizationError }: { client
     ["Dokumentlager", `${Math.round(entitlements.usage.documents.storageBytes / 1024 / 1024 * 10) / 10}/${entitlements.usage.documents.storageLimitBytes === null ? "∞" : Math.round(entitlements.usage.documents.storageLimitBytes / 1024 / 1024)} MB`],
     ["Egne aktive opgaver", `${entitlements.usage.tasks.active}/${entitlements.usage.tasks.limit ?? "∞"}`],
     ["Over limit efter downgrade", overLimit.length ? overLimit.join(", ") : "Nej"]
-  ]} />;
+  ]} /><section className="detail-panel subscription-panel"><header><h3>Abonnement</h3><span>Administrér brugerens adgangsplan</span></header><div className="subscription-controls"><label>Plan<select value={plan} onChange={(event) => setSelectedPlan(event.target.value as "free" | "pro")}><option value="free">Free</option><option value="pro">Paid / Pro</option></select></label><button className="primary-action" disabled={saving || plan === entitlements.configuredPlan} onClick={() => void savePlan()} type="button">{saving ? "Gemmer..." : "Gem abonnement"}</button></div>{message ? <p className="state-message">{message}</p> : null}</section></>;
 }
 
 function DetailGrid({ title, subtitle, rows, extra = [] }: { title: string; subtitle: string; rows: Array<[string, string]>; extra?: ReactNode[] }) {
@@ -477,6 +508,21 @@ function SortSelect({ value, onChange, options }: { value: string; onChange: (va
 
 function OrderButton({ order, setOrder }: { order: "asc" | "desc"; setOrder: (order: "asc" | "desc") => void }) {
   return <button className="secondary-action" type="button" onClick={() => setOrder(order === "asc" ? "desc" : "asc")}>{order === "asc" ? "Stigende" : "Faldende"}</button>;
+}
+
+function SortableHeader({ label, sortKey, currentSort, order, onSort, onOrder, onPageReset }: { label: string; sortKey: AdminUserSort; currentSort: AdminUserSort; order: "asc" | "desc"; onSort: (sort: AdminUserSort) => void; onOrder: (order: "asc" | "desc") => void; onPageReset: () => void }) {
+  const active = currentSort === sortKey;
+  function handleSort() {
+    if (active) {
+      onOrder(order === "asc" ? "desc" : "asc");
+    } else {
+      onSort(sortKey);
+      onOrder("asc");
+    }
+    onPageReset();
+  }
+
+  return <th aria-sort={active ? order === "asc" ? "ascending" : "descending" : "none"}><button className={`table-sort-button${active ? " active" : ""}`} onClick={handleSort} type="button"><span>{label}</span><span className="table-sort-indicator" aria-hidden="true">{active ? order === "asc" ? "↑" : "↓" : "↕"}</span></button></th>;
 }
 
 function StatusBadge({ label }: { label: string }) {

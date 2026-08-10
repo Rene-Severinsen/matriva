@@ -98,7 +98,7 @@ type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" |
 type MaintenanceFilter = "current" | "spring" | "summer" | "autumn" | "winter" | "all";
 type MaintenanceView = "main" | "history" | "historyDetail" | "taskDetail" | "recommendations" | "dismissedRecommendations" | "recommendationDetail";
 type AuthStatus = "restoring" | "anonymous" | "authenticated";
-type MoreView = "menu" | "profile" | "settings" | "sharing";
+type MoreView = "menu" | "profile" | "settings" | "sharing" | "subscription";
 type HouseView = "overview" | "details" | "improvements" | "improvementDetail" | "addImprovement";
 type UnauthenticatedStep = "welcome" | "create" | "login";
 type HouseOnboardingStep = "search" | "confirm" | "progress" | "publicDataIssue";
@@ -1815,7 +1815,6 @@ function DashboardScreen({
   publicDataSummary,
   tasks,
   onboarding,
-  entitlements,
   onSelectHouse,
   onAddHouse,
   onCreateTask,
@@ -1827,7 +1826,6 @@ function DashboardScreen({
   publicDataSummary: HousePublicDataSummary | null;
   tasks: MaintenanceTask[];
   onboarding: React.ComponentProps<typeof HouseOnboarding>;
-  entitlements: AppBootstrapResponse["entitlements"];
   onCreateTask: () => void;
   onOpenTasks: () => void;
   onOpenTask: (task: MaintenanceTask) => void;
@@ -1865,8 +1863,6 @@ function DashboardScreen({
 
       <HouseStatusCard house={house} publicDataSummary={publicDataSummary} />
 
-      <EntitlementSummaryCard entitlements={entitlements} />
-
       <MaintenanceSummary
         activeTasks={activeTasks}
         overdueTasks={overdueTasks}
@@ -1901,6 +1897,23 @@ function EntitlementSummaryCard({ entitlements }: { entitlements: AppBootstrapRe
       {entitlements.usage.documents.storageLimitBytes !== null ? <Text style={styles.metaText}>{Math.round(entitlements.usage.documents.storageBytes / 1024 / 1024 * 10) / 10}/{Math.round(entitlements.usage.documents.storageLimitBytes / 1024 / 1024)} MB dokumentlager</Text> : null}
       {entitlements.status !== "free" && entitlements.plan !== "pro" ? <Text style={styles.metaText}>Nogle funktioner er midlertidigt begrænsede. Dine eksisterende data er bevaret.</Text> : null}
     </Card>
+  );
+}
+
+function SubscriptionScreen({ entitlements, onBack }: { entitlements: AppBootstrapResponse["entitlements"]; onBack: () => void }) {
+  return (
+    <View style={styles.stack}>
+      <View style={styles.screenTitleRow}>
+        <SectionHeader title="Abonnement" subtitle="Se din adgang og dit forbrug." />
+        <SecondaryButton label="Tilbage" onPress={onBack} />
+      </View>
+      <EntitlementSummaryCard entitlements={entitlements} />
+      <Card>
+        <Text style={styles.cardTitle}>Betaling</Text>
+        <Text style={styles.compactBodyText}>Her håndterer du senere køb, betalingsoplysninger og dit abonnement.</Text>
+        <Text style={styles.metaText}>Betaling og opgradering bliver tilgængeligt senere.</Text>
+      </Card>
+    </View>
   );
 }
 
@@ -2071,7 +2084,7 @@ function ImprovementDetailPanel({
 */
 }
 
-function SimpleImprovementDetail({ project, documents, onUpdate, onDelete, onAttach, onDetach, pendingDocumentName, pendingDocumentMimeType, onRemovePending, onPickDocument, onUploadPending }: { project: any; documents: HouseDocument[]; onUpdate: (input: any) => void; onDelete: () => void; onAttach: (documentId: any) => void; onDetach: (documentId: any) => void; pendingDocumentName: string | null; pendingDocumentMimeType: HouseDocument["mimeType"] | null; onRemovePending: () => void; onPickDocument: (source: "camera" | "library" | "file") => void; onUploadPending: () => void }) {
+function SimpleImprovementDetail({ project, documents, onUpdate, onDelete, onAttach, onDetach, pendingDocumentName, pendingDocumentMimeType, onRemovePending, onPickDocument, onStartAddDocument, onUploadPending }: { project: any; documents: HouseDocument[]; onUpdate: (input: any) => void; onDelete: () => void; onAttach: (documentId: any) => void; onDetach: (documentId: any) => void; pendingDocumentName: string | null; pendingDocumentMimeType: HouseDocument["mimeType"] | null; onRemovePending: () => void; onPickDocument: (source: "camera" | "library" | "file") => void; onStartAddDocument: (pendingCount?: number) => boolean; onUploadPending: () => void }) {
   const [title, setTitle] = useState(project.title);
   const [description, setDescription] = useState(project.description ?? "");
   const [amount, setAmount] = useState(project.totalAmountMinor === null ? "" : formatDkkPrice(project.totalAmountMinor).replace(/\s?kr\.$/, ""));
@@ -2103,7 +2116,7 @@ function SimpleImprovementDetail({ project, documents, onUpdate, onDelete, onAtt
       <Text style={styles.cardTitle}>Dokumenter</Text>
       {project.documents.map((doc: HouseDocument) => <PendingDocumentRow key={doc.id} fileName={doc.title ?? doc.originalFilename} mimeType={doc.mimeType} statusText={doc.documentType ?? "Dokument"} onRemove={() => onDetach(doc.id)} />)}
       {pendingDocumentName && pendingDocumentMimeType ? <><PendingDocumentRow fileName={pendingDocumentName} mimeType={pendingDocumentMimeType} onRemove={onRemovePending} /><PrimaryButton label="Upload og tilknyt" onPress={onUploadPending} /></> : null}
-      <SecondaryButton label="Tilføj dokument" onPress={() => showDocumentSourcePicker(onPickDocument)} />
+      <SecondaryButton label="Tilføj dokument" onPress={() => { if (onStartAddDocument(pendingDocumentName ? 1 : 0)) showDocumentSourcePicker(onPickDocument); }} />
     </Card>
     <SecondaryButton label="Arkivér forbedring" onPress={() => Alert.alert("Arkivér forbedring?", "Forbedringen skjules fra listen.", [{ text: "Annuller", style: "cancel" }, { text: "Arkivér", style: "destructive", onPress: onDelete }])} />
   </View>;
@@ -2173,6 +2186,7 @@ function HouseScreen({
   pendingImprovementDocuments,
   onRemovePendingDocument,
   onPickImprovementDocument,
+  onStartAddDocument,
   onRemoveImprovementDocument
   ,onUploadImprovementDocument
 }: {
@@ -2239,6 +2253,7 @@ function HouseScreen({
   pendingImprovementDocuments: Array<Pick<UploadHouseDocumentRequest, "fileName" | "mimeType" | "sizeBytes" | "contentBase64">>;
   onRemovePendingDocument: () => void;
   onPickImprovementDocument: (source: "camera" | "library" | "file") => void;
+  onStartAddDocument: (pendingCount?: number) => boolean;
   onRemoveImprovementDocument: (index: number) => void;
   onUploadImprovementDocument: () => void;
 }) {
@@ -2343,7 +2358,7 @@ function HouseScreen({
 
   if (houseView === "improvementDetail") {
     const project = selectedImprovement;
-    return <View style={styles.stack}><View style={styles.screenTitleRow}><SectionHeader title={project?.title ?? "Forbedring"} subtitle="Afsluttet forbedring" /><SecondaryButton label="Tilbage" onPress={onBackToHouse} /></View>{project ? <SimpleImprovementDetail project={project} documents={houseDocuments} onUpdate={onUpdateProject} onDelete={onDeleteImprovement} onAttach={(documentId) => onLinkDocument({ documentId })} onDetach={onUnlinkDocument} pendingDocumentName={pendingDocumentName} pendingDocumentMimeType={pendingDocumentMimeType} onRemovePending={onRemovePendingDocument} onPickDocument={onPickImprovementDocument} onUploadPending={onUploadImprovementDocument} /> : <ActivityIndicator color={theme.primary} />}</View>;
+    return <View style={styles.stack}><View style={styles.screenTitleRow}><SectionHeader title={project?.title ?? "Forbedring"} subtitle="Afsluttet forbedring" /><SecondaryButton label="Tilbage" onPress={onBackToHouse} /></View>{project ? <SimpleImprovementDetail project={project} documents={houseDocuments} onUpdate={onUpdateProject} onDelete={onDeleteImprovement} onAttach={(documentId) => onLinkDocument({ documentId })} onDetach={onUnlinkDocument} pendingDocumentName={pendingDocumentName} pendingDocumentMimeType={pendingDocumentMimeType} onRemovePending={onRemovePendingDocument} onPickDocument={onPickImprovementDocument} onStartAddDocument={onStartAddDocument} onUploadPending={onUploadImprovementDocument} /> : <ActivityIndicator color={theme.primary} />}</View>;
   }
 
   if (houseView === "addImprovement") {
@@ -2453,7 +2468,7 @@ function HouseScreen({
               value={improvementCost}
             />
           </View>
-          <View style={styles.formSection}><Text style={styles.label}>Dokumenter</Text>{pendingImprovementDocuments.map((document, index) => <PendingDocumentRow key={`${document.fileName}-${index}`} fileName={document.fileName} mimeType={document.mimeType === "application/pdf" ? "application/pdf" : "image/jpeg"} onRemove={() => onRemoveImprovementDocument(index)} />)}<SecondaryButton label="Tilføj dokument" disabled={isSavingImprovement} onPress={() => showDocumentSourcePicker(onPickImprovementDocument)} /><Text style={styles.metaText}>Dokumenttype: Forbedringsdokument</Text></View>
+          <View style={styles.formSection}><Text style={styles.label}>Dokumenter</Text>{pendingImprovementDocuments.map((document, index) => <PendingDocumentRow key={`${document.fileName}-${index}`} fileName={document.fileName} mimeType={document.mimeType === "application/pdf" ? "application/pdf" : "image/jpeg"} onRemove={() => onRemoveImprovementDocument(index)} />)}<SecondaryButton label="Tilføj dokument" disabled={isSavingImprovement} onPress={() => { if (onStartAddDocument(pendingImprovementDocuments.length)) showDocumentSourcePicker(onPickImprovementDocument); }} /><Text style={styles.metaText}>Dokumenttype: Forbedringsdokument</Text></View>
           {improvementFormError ? (
             <Text style={styles.errorText}>{improvementFormError}</Text>
           ) : null}
@@ -4318,6 +4333,7 @@ function DocumentsScreen({
   onOpenDocument,
   onDeleteDocument,
   onPickSource,
+  onStartAddDocument,
   onSaveDocument,
   onClearPickedFile,
   fileName,
@@ -4328,6 +4344,7 @@ function DocumentsScreen({
   onOpenDocument: (document: HouseDocument) => void;
   onDeleteDocument: (document: HouseDocument) => void;
   onPickSource: (source: "camera" | "library" | "file") => void;
+  onStartAddDocument: (pendingCount?: number) => boolean;
   onSaveDocument: (input: Omit<UploadHouseDocumentRequest, "fileName" | "mimeType" | "sizeBytes" | "contentBase64">) => Promise<boolean>;
   onClearPickedFile: () => void;
   fileName: string | null;
@@ -4372,7 +4389,7 @@ function DocumentsScreen({
   const hasExpiry = documentType === "warranty" || documentType === "insurance_policy" || documentType === "service_agreement";
   return (
     <View style={styles.stack}>
-      <View style={styles.screenTitleRow}><SectionHeader title="Dokumenter" /><Pressable accessibilityRole="button" accessibilityLabel="Tilføj dokument" onPress={() => { resetForm(); setShowForm(true); requestAnimationFrame(() => showDocumentSourcePicker(onPickSource, resetForm)); }} style={styles.documentAddButton}><Text style={styles.documentAddButtonText}>+</Text></Pressable></View>
+      <View style={styles.screenTitleRow}><SectionHeader title="Dokumenter" /><Pressable accessibilityRole="button" accessibilityLabel="Tilføj dokument" onPress={() => { if (!onStartAddDocument()) return; resetForm(); setShowForm(true); requestAnimationFrame(() => showDocumentSourcePicker(onPickSource, resetForm)); }} style={styles.documentAddButton}><Text style={styles.documentAddButtonText}>+</Text></Pressable></View>
       <TextInput value={search} onChangeText={setSearch} placeholder="⌕  Søg i dokumenter" placeholderTextColor={theme.subtle} style={styles.documentSearch} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.documentChips}>
         {([["all", "Alle"], ["important", "! Vigtige"], ["expiring", "Udløber snart"]] as const).map(([key, label]) => <Pressable key={key} onPress={() => setFilter(key)} style={[styles.documentChip, filter === key && styles.documentChipActive]}><Text style={[styles.documentChipText, filter === key && styles.documentChipTextActive]}>{label}</Text></Pressable>)}
@@ -4485,6 +4502,7 @@ function MoreScreen({
   onOpenProfile,
   onOpenSettings,
   onOpenSharing,
+  onOpenSubscription,
   attentionCount,
   sharingEnabled,
   onLogout
@@ -4493,11 +4511,12 @@ function MoreScreen({
   onOpenProfile: () => void;
   onOpenSettings: () => void;
   onOpenSharing: () => void;
+  onOpenSubscription: () => void;
   attentionCount: number;
   sharingEnabled: boolean;
   onLogout: () => void;
 }) {
-  const rows = ["Profil", "Indstillinger", "Deling & adgang", "Hjælp", "Om Matriva"];
+  const rows = ["Profil", "Abonnement", "Indstillinger", "Deling & adgang", "Hjælp", "Om Matriva"];
 
   return (
     <View style={styles.stack}>
@@ -4505,16 +4524,17 @@ function MoreScreen({
       <Card>
           {rows.map((row, index) => {
           const isProfile = row === "Profil";
+          const isSubscription = row === "Abonnement";
           const isSettings = row === "Indstillinger";
           const isSharing = row === "Deling & adgang";
-          const isEnabled = isProfile || isSettings || (isSharing && sharingEnabled);
+          const isEnabled = isProfile || isSubscription || isSettings || (isSharing && sharingEnabled);
 
           return (
             <Pressable
               accessibilityRole="button"
               disabled={!isEnabled}
               key={row}
-              onPress={isProfile ? onOpenProfile : isSettings ? onOpenSettings : isSharing ? onOpenSharing : undefined}
+              onPress={isProfile ? onOpenProfile : isSubscription ? onOpenSubscription : isSettings ? onOpenSettings : isSharing ? onOpenSharing : undefined}
               style={({ pressed }) => [
                 styles.menuRow,
                 index === rows.length - 1 ? styles.menuRowLast : null,
@@ -5571,6 +5591,17 @@ export default function App() {
   }
 
   function startAddingHouse() {
+    const houseLimit = bootstrap?.entitlements.usage.houses.limit;
+    const activeHouseCount = bootstrap?.entitlements.usage.houses.active ?? houses.length;
+    if (houseLimit !== null && houseLimit !== undefined && activeHouseCount >= houseLimit) {
+      Alert.alert(
+        "Free-planens boliggrænse",
+        `Du har allerede ${activeHouseCount} bolig${activeHouseCount === 1 ? "" : "er"}. Free giver adgang til ${houseLimit} bolig${houseLimit === 1 ? "" : "er"}. Opgradér til Paid / Pro for at tilføje flere boliger.`,
+        [{ text: "Forstået" }]
+      );
+      return;
+    }
+
     setIsAddingHouse(true);
     setQuery("");
     setSuggestions([]);
@@ -5657,6 +5688,51 @@ export default function App() {
     setTaskFormError(null);
     setShowTaskForm(false);
     setShowDeadlinePicker(false);
+  }
+
+  function canStartTaskCreation(): boolean {
+    const usage = bootstrap?.entitlements.usage.tasks;
+    if (!usage || usage.limit === null || usage.active < usage.limit) {
+      return true;
+    }
+
+    Alert.alert(
+      "Grænsen for egne opgaver",
+      `Du har nået grænsen på ${usage.limit} aktive egne opgaver. Du kan stadig se og administrere dine eksisterende opgaver. Opgradér til Paid / Pro for at oprette flere.`,
+      [{ text: "Forstået" }]
+    );
+    return false;
+  }
+
+  function startCreatingTask() {
+    if (!canStartTaskCreation()) return;
+    setActiveTab("maintenance");
+    setShowTaskForm(true);
+  }
+
+  function canStartDocumentCreation(pendingCount = 0): boolean {
+    const usage = bootstrap?.entitlements.usage.documents;
+    if (!usage) return true;
+
+    if (usage.limit !== null && usage.active + pendingCount >= usage.limit) {
+      Alert.alert(
+        "Grænsen for dokumenter",
+        `Du har nået grænsen på ${usage.limit} dokumenter. Dine eksisterende dokumenter er stadig tilgængelige. Opgradér til Paid / Pro for at tilføje flere.`,
+        [{ text: "Forstået" }]
+      );
+      return false;
+    }
+
+    if (usage.storageLimitBytes !== null && usage.storageBytes >= usage.storageLimitBytes) {
+      Alert.alert(
+        "Grænsen for dokumentlager",
+        `Du har brugt hele din dokumentlagergrænse på ${Math.round(usage.storageLimitBytes / 1024 / 1024)} MB. Slet et eksisterende dokument eller opgradér til Paid / Pro for at tilføje flere.`,
+        [{ text: "Forstået" }]
+      );
+      return false;
+    }
+
+    return true;
   }
 
   async function saveTask() {
@@ -6573,23 +6649,10 @@ export default function App() {
           houses={houses}
           publicDataSummary={selectedPublicDataSummary}
           tasks={tasks}
-          entitlements={bootstrap?.entitlements ?? {
-            plan: "free",
-            configuredPlan: "free",
-            accessPlan: "free",
-            status: "free",
-            source: "default",
-            features: {} as AppBootstrapResponse["entitlements"]["features"],
-            usage: { houses: { active: 0, limit: 1 }, documents: { active: 0, storageBytes: 0, limit: 2, storageLimitBytes: 10 * 1024 * 1024 }, tasks: { active: 0, limit: 4 } },
-            evaluatedAt: new Date().toISOString()
-          }}
           onboarding={onboardingProps}
           onSelectHouse={selectActiveHouse}
           onAddHouse={startAddingHouse}
-          onCreateTask={() => {
-            setActiveTab("maintenance");
-            setShowTaskForm(true);
-          }}
+          onCreateTask={startCreatingTask}
           onOpenTasks={() => {
             setActiveTab("maintenance");
             setShowTaskForm(false);
@@ -6726,6 +6789,7 @@ export default function App() {
           pendingImprovementDocuments={pendingImprovementDocuments}
           onRemovePendingDocument={() => setPendingDocument(null)}
           onPickImprovementDocument={(source) => void pickHouseDocument(source, "improvement")}
+          onStartAddDocument={(pendingCount = 0) => canStartDocumentCreation(pendingCount)}
           onRemoveImprovementDocument={(index) => setPendingImprovementDocuments((current) => current.filter((_, itemIndex) => itemIndex !== index))}
           onUploadImprovementDocument={() => void uploadPendingImprovementDocument()}
         />
@@ -6783,7 +6847,7 @@ export default function App() {
           recurrenceInterval={taskRecurrenceInterval}
           formError={taskFormError}
           isSaving={loadingAction === "task"}
-          onShowForm={() => setShowTaskForm(true)}
+          onShowForm={startCreatingTask}
           onCancelForm={resetTaskForm}
           onShowDeadlinePicker={() => setShowDeadlinePicker(true)}
           onHideDeadlinePicker={() => setShowDeadlinePicker(false)}
@@ -6843,6 +6907,7 @@ export default function App() {
           onOpenDocument={openHouseDocument}
           onDeleteDocument={(document) => void deleteHouseDocument(document)}
           onPickSource={(source) => void pickHouseDocument(source)}
+          onStartAddDocument={() => canStartDocumentCreation()}
           onSaveDocument={saveHouseDocument}
           onClearPickedFile={() => setPendingDocument(null)}
           fileName={pendingDocument?.fileName ?? null}
@@ -6868,6 +6933,10 @@ export default function App() {
       );
     }
 
+    if (moreView === "subscription" && bootstrap) {
+      return <SubscriptionScreen entitlements={bootstrap.entitlements} onBack={() => setMoreView("menu")} />;
+    }
+
     if (moreView === "settings") {
       return (
         <SettingsScreen
@@ -6890,6 +6959,7 @@ export default function App() {
       <MoreScreen
         isLoggingOut={loadingAction === "logout"}
         onOpenProfile={() => setMoreView("profile")}
+        onOpenSubscription={() => setMoreView("subscription")}
         onOpenSettings={() => setMoreView("settings")}
         onOpenSharing={() => setMoreView("sharing")}
         attentionCount={moreAttentionCount}

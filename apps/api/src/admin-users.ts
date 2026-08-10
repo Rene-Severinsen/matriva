@@ -13,9 +13,13 @@ const sortColumns = {
   latest_session_activity: "latest_session_activity_at",
   email: "email",
   display_name: "display_name",
+  status: "status",
+  subscription_plan: "subscription_plan",
   house_count: "house_count",
+  pending_claim_count: "pending_claim_count",
   task_count: "task_count",
-  completion_count: "completion_count"
+  completion_count: "completion_count",
+  roles: "roles"
 } as const;
 
 function count(value: unknown) {
@@ -93,6 +97,7 @@ function mapUser(row: Record<string, any>) {
     pendingClaimCount: count(row.pending_claim_count),
     taskCount: count(row.task_count),
     completionCount: count(row.completion_count),
+    subscriptionPlan: row.subscription_plan === "pro" ? "pro" : "free",
     roles: row.roles ?? [],
     onboardingState
   };
@@ -164,12 +169,14 @@ export async function listAdminUsers(
           uc.pending_claim_count,
           uc.task_count,
           uc.completion_count,
+          coalesce(ue.plan, 'free') as subscription_plan,
           uc.latest_session_activity_at,
           uc.roles,
           count(*) over()::int as total_count
         from users u
         join user_counts uc on uc.id = u.id
         left join user_profiles up on up.user_id = u.id
+        left join user_entitlements ue on ue.user_id = u.id
         ${where.sql}
       )
       select *
@@ -223,11 +230,13 @@ export async function getAdminUser(userId: string): Promise<AdminUserResponse> {
         uc.pending_claim_count,
         uc.task_count,
         uc.completion_count,
+        coalesce(ue.plan, 'free') as subscription_plan,
         uc.latest_session_activity_at,
         uc.roles
       from users u
       join user_counts uc on uc.id = u.id
       left join user_profiles up on up.user_id = u.id
+      left join user_entitlements ue on ue.user_id = u.id
       where u.id = $1
     `,
     [userId]

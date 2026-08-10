@@ -12,6 +12,7 @@ import {
   adminEntitlementConfigResponseSchema,
   adminUserEntitlementResponseSchema,
   updateAdminEntitlementPlanConfigRequestSchema,
+  updateAdminUserEntitlementRequestSchema,
   adminDashboardPeriodKeySchema,
   adminDashboardResponseSchema,
   adminHouseResponseSchema,
@@ -167,6 +168,7 @@ import {
   updateProfile,
   updateMaintenanceSettings,
   updateDefaultHouse,
+  updateAdminUserEntitlement,
   pool,
   validateAuthRuntimeConfig
 } from "./db.ts";
@@ -840,6 +842,39 @@ const server = createServer((request, response) => {
         await requireAdminUser(getBearerToken(request));
         const entitlement = await getAdminUserEntitlements(decodeURIComponent(adminUserEntitlementMatch[1]!));
         writeJson(response, 200, adminUserEntitlementResponseSchema.parse(entitlement));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "PUT" && adminUserEntitlementMatch) {
+    void (async () => {
+      try {
+        const admin = await requireAdminUser(getBearerToken(request));
+        const parsed = updateAdminUserEntitlementRequestSchema.safeParse(
+          await readJsonBody(request)
+        );
+        if (!parsed.success) {
+          writeApiError(
+            response,
+            400,
+            "admin_user_entitlement_invalid",
+            "Brugerens abonnement er ugyldigt."
+          );
+          return;
+        }
+        const entitlement = await updateAdminUserEntitlement(
+          admin.userId,
+          decodeURIComponent(adminUserEntitlementMatch[1]!),
+          parsed.data
+        );
+        writeJson(
+          response,
+          200,
+          adminUserEntitlementResponseSchema.parse(entitlement)
+        );
       } catch (error) {
         writeUnknownApiError(response, error);
       }

@@ -235,7 +235,7 @@ function writeBinary(
 ) {
   response.writeHead(status, {
     "content-type": contentType,
-    "cache-control": "private, max-age=300"
+    "cache-control": "private, no-store"
   });
   response.end(body);
 }
@@ -2618,7 +2618,7 @@ const server = createServer((request, response) => {
   }
 
   const housePhotoContentMatch =
-    /^\/v1\/houses\/([^/]+)\/photo\/content$/.exec(request.url ?? "");
+    /^\/v1\/houses\/([^/]+)\/photo\/content$/.exec((request.url ?? "").split("?")[0] ?? "");
 
   if (request.method === "GET" && housePhotoContentMatch) {
     void (async () => {

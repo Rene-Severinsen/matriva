@@ -5830,15 +5830,17 @@ export default function App() {
         source === "camera"
           ? await ImagePicker.launchCameraAsync({
               mediaTypes: ImagePicker.MediaTypeOptions.Images,
-              allowsEditing: true,
-              aspect: [16, 9],
+              ...(Platform.OS === "android"
+                ? { allowsEditing: true, aspect: [16, 9] as [number, number] }
+                : { allowsEditing: false }),
               quality: 0.82,
               base64: true
             })
           : await ImagePicker.launchImageLibraryAsync({
               mediaTypes: ImagePicker.MediaTypeOptions.Images,
-              allowsEditing: true,
-              aspect: [16, 9],
+              ...(Platform.OS === "android"
+                ? { allowsEditing: true, aspect: [16, 9] as [number, number] }
+                : { allowsEditing: false }),
               quality: 0.82,
               base64: true
             });
@@ -6573,7 +6575,9 @@ export default function App() {
           houseDocuments={houseDocuments}
           housePhoto={housePhoto}
           housePhotoUri={
-            housePhoto ? `${apiClient.baseUrl}${housePhoto.contentPath}` : null
+            housePhoto
+              ? `${apiClient.baseUrl}${housePhoto.contentPath}?v=${encodeURIComponent(housePhoto.id)}`
+              : null
           }
           housePhotoHeaders={
             accessTokenRef.current

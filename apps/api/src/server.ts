@@ -78,6 +78,8 @@ import {
   updateProfileResponseSchema,
   updateMaintenanceSettingsRequestSchema,
   updateMaintenanceSettingsResponseSchema,
+  updateDefaultHouseRequestSchema,
+  updateDefaultHouseResponseSchema,
   updateMaintenanceTaskRequestSchema,
   updateMaintenanceTaskStatusRequestSchema,
   houseDocumentCategoryForType,
@@ -158,6 +160,7 @@ import {
   updateMaintenanceTaskStatus,
   updateProfile,
   updateMaintenanceSettings,
+  updateDefaultHouse,
   pool,
   validateAuthRuntimeConfig
 } from "./db.ts";
@@ -1127,6 +1130,24 @@ const server = createServer((request, response) => {
           200,
           updateMaintenanceSettingsResponseSchema.parse({ profile })
         );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "PUT" && request.url === "/v1/me/default-house") {
+    void (async () => {
+      try {
+        const userId = await requireUserId(request);
+        const parsedRequest = updateDefaultHouseRequestSchema.safeParse(await readJsonBody(request));
+        if (!parsedRequest.success) {
+          writeApiError(response, 400, "default_house_request_invalid", "Standardboligen er ugyldig.");
+          return;
+        }
+        const profile = await updateDefaultHouse(userId, parsedRequest.data);
+        writeJson(response, 200, updateDefaultHouseResponseSchema.parse({ profile }));
       } catch (error) {
         writeUnknownApiError(response, error);
       }

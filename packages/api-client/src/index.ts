@@ -34,6 +34,7 @@ import {
   requestMagicLinkResponseSchema,
   updateProfileResponseSchema,
   updateMaintenanceSettingsResponseSchema,
+  updateDefaultHouseResponseSchema,
   savedHouseResponseSchema,
   savedHousesResponseSchema,
   houseMembershipSchema,
@@ -123,7 +124,9 @@ import {
   type UpdateProfileRequest,
   type UpdateProfileResponse,
   type UpdateMaintenanceSettingsRequest,
-  type UpdateMaintenanceSettingsResponse
+  type UpdateMaintenanceSettingsResponse,
+  type UpdateDefaultHouseRequest,
+  type UpdateDefaultHouseResponse
 } from "@matriva/shared";
 
 export type MatrivaApiClientOptions = {
@@ -261,6 +264,7 @@ export type MatrivaApiClient = {
   updateMaintenanceSettings: (
     input: UpdateMaintenanceSettingsRequest
   ) => Promise<UpdateMaintenanceSettingsResponse>;
+  updateDefaultHouse: (input: UpdateDefaultHouseRequest) => Promise<UpdateDefaultHouseResponse>;
   getAppBootstrap: () => Promise<AppBootstrapResponse>;
   searchAddresses: (query: string) => Promise<AddressSearchResponse>;
   createHouseDraft: (input: SelectedAddressInput) => Promise<HouseDraftResponse>;
@@ -1010,6 +1014,16 @@ export function createMatrivaApiClient(
 
       return updateMaintenanceSettingsResponseSchema.parse(
         await parseApiResponse(response, "Could not save maintenance settings.")
+      );
+    },
+    async updateDefaultHouse(input) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/me/default-house`, {
+        method: "PUT",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify(input)
+      });
+      return updateDefaultHouseResponseSchema.parse(
+        await parseApiResponse(response, "Could not save default house.")
       );
     },
     async getAppBootstrap() {

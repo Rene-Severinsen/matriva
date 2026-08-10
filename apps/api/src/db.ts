@@ -47,6 +47,7 @@ import type {
   SessionTokens,
   UpdateMaintenanceTaskRequest,
   UpdateMaintenanceSettingsRequest,
+  UpdateDefaultHouseRequest,
   UpdateProfileRequest,
   UserProfile
 } from "@matriva/shared";
@@ -111,6 +112,7 @@ type UserProfileRow = {
   display_name: string | null;
   preferred_locale: "da-DK";
   prompt_for_completion_note: boolean;
+  default_house_id: string | null;
 };
 
 type HouseRow = {
@@ -615,7 +617,8 @@ function toProfile(row: UserProfileRow | undefined): UserProfile {
   return userProfileSchema.parse({
     displayName: row?.display_name ?? null,
     preferredLocale: row?.preferred_locale ?? "da-DK",
-    promptForCompletionNote: row?.prompt_for_completion_note ?? true
+    promptForCompletionNote: row?.prompt_for_completion_note ?? true,
+    defaultHouseId: row?.default_house_id ?? null
   });
 }
 
@@ -1092,7 +1095,14 @@ export async function getUserByEmail(email: string) {
 
 export async function getProfileForUser(userId: string) {
   const result = await pool.query<UserProfileRow>(
-    "select display_name, preferred_locale, prompt_for_completion_note from user_profiles where user_id = $1",
+    `select up.display_name, up.preferred_locale, up.prompt_for_completion_note,
+            case when exists (
+              select 1 from house_memberships hm
+              join houses h on h.id = hm.house_id
+              where hm.user_id = up.user_id and hm.house_id = up.default_house_id
+                and hm.status = 'active' and h.status = 'saved'
+            ) then up.default_house_id else null end as default_house_id
+     from user_profiles up where up.user_id = $1`,
     [userId]
   );
 
@@ -1217,7 +1227,7 @@ export async function updateProfile(userId: string, input: UpdateProfileRequest)
       update user_profiles
       set display_name = $2, preferred_locale = $3, updated_at = now()
       where user_id = $1
-      returning display_name, preferred_locale, prompt_for_completion_note
+      returning display_name, preferred_locale, prompt_for_completion_note, default_house_id
     `,
     [userId, input.displayName.trim(), input.preferredLocale ?? "da-DK"]
   );
@@ -1234,11 +1244,32 @@ export async function updateMaintenanceSettings(
       update user_profiles
       set prompt_for_completion_note = $2, updated_at = now()
       where user_id = $1
-      returning display_name, preferred_locale, prompt_for_completion_note
+      returning display_name, preferred_locale, prompt_for_completion_note, default_house_id
     `,
     [userId, input.promptForCompletionNote]
   );
 
+  return toProfile(result.rows[0]);
+}
+
+export async function updateDefaultHouse(userId: string, input: UpdateDefaultHouseRequest) {
+  if (input.houseId) {
+    const membership = await pool.query(
+      `select 1 from houses h join house_memberships hm on hm.house_id = h.id
+       where h.id = $1 and h.status = 'saved' and hm.user_id = $2 and hm.status = 'active'`,
+      [input.houseId, userId]
+    );
+    if (!membership.rowCount) {
+      throw new ApiError(400, "default_house_not_accessible", "Du har ikke aktiv adgang til den valgte bolig.");
+    }
+  }
+
+  const result = await pool.query<UserProfileRow>(
+    `update user_profiles set default_house_id = $2, updated_at = now()
+     where user_id = $1
+     returning display_name, preferred_locale, prompt_for_completion_note, default_house_id`,
+    [userId, input.houseId]
+  );
   return toProfile(result.rows[0]);
 }
 
@@ -3243,7 +3274,11 @@ export async function buildAppBootstrap(userId: string): Promise<AppBootstrapRes
       state: onboardingState
     },
     houses,
-    activeHouseId: houses[0]?.id ?? null,
+    activeHouseId: profile.defaultHouseId && houses.some((house) => house.id === profile.defaultHouseId)
+      ? profile.defaultHouseId
+      : houses.length === 1
+        ? houses[0]?.id ?? null
+        : null,
     pendingHouseClaims: pendingClaims.rows.map((claim) => ({
       id: claim.id,
       houseId: claim.house_id,

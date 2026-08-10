@@ -1887,6 +1887,27 @@ function HouseSelector({ houses, selectedHouse, onSelectHouse, onAddHouse, compa
   </>;
 }
 
+function HouseDefaultCheckbox({ checked, onPress }: { checked: boolean; onPress: () => void }) {
+  return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked }} accessibilityLabel="Brug som standardbolig" onPress={(event) => { event.stopPropagation(); onPress(); }} style={[styles.defaultHouseCheckbox, checked ? styles.defaultHouseCheckboxChecked : null]}>
+    {checked ? <Text style={styles.defaultHouseCheckboxMark}>✓</Text> : null}
+  </Pressable>;
+}
+
+function LoginHouseSelectionModal({ houses, onSelect }: { houses: SavedHouse[]; onSelect: (houseId: HouseId, useAsDefault: boolean) => void }) {
+  const [defaultHouseId, setDefaultHouseId] = useState<HouseId | null>(null);
+  return <Modal animationType="fade" transparent visible onRequestClose={() => undefined}>
+    <View style={styles.ownerClaimBackdrop}>
+      <View style={styles.ownerClaimModal}>
+        <Text style={styles.eyebrow}>VÆLG BOLIG</Text>
+        <Text style={styles.ownerClaimTitle}>Hvilken bolig vil du bruge?</Text>
+        <Text style={styles.compactBodyText}>Vælg en bolig for at fortsætte.</Text>
+        {houses.map((house) => <Pressable key={house.id} accessibilityRole="button" onPress={() => onSelect(house.id, defaultHouseId === house.id)} style={styles.houseOption}><View style={styles.houseSelectorText}><Text style={styles.houseOptionAddress}>{house.addressLabel}</Text><Text style={styles.menuMeta}>{house.bfeNumber ? `BFE ${house.bfeNumber}` : "BFE ikke registreret"}</Text></View><View style={styles.houseDefaultChoice}><HouseDefaultCheckbox checked={defaultHouseId === house.id} onPress={() => setDefaultHouseId((current) => current === house.id ? null : house.id)} /><Text style={styles.houseSelectorChevron}>›</Text></View></Pressable>)}
+        <Text style={styles.compactBodyText}>Markér checkboxen ud for en bolig, hvis den skal bruges som standard næste gang.</Text>
+      </View>
+    </View>
+  </Modal>;
+}
+
 function OwnerClaimInbox({ claims, onResolve }: { claims: AppBootstrapResponse["ownerPendingHouseClaims"]; onResolve: (claimId: string, decision: "approve" | "reject") => void }) {
   return <Card variant="soft">
     <Text style={styles.eyebrow}>NY ADGANGSANMODNING</Text>
@@ -4563,15 +4584,21 @@ function SharingScreen({
 }
 
 function SettingsScreen({
+  houses,
+  defaultHouseId,
   promptForCompletionNote,
   isSaving,
   onBack,
-  onChange
+  onChange,
+  onDefaultHouseChange
 }: {
+  houses: SavedHouse[];
+  defaultHouseId: HouseId | null;
   promptForCompletionNote: boolean;
   isSaving: boolean;
   onBack: () => void;
   onChange: (value: boolean) => void;
+  onDefaultHouseChange: (houseId: HouseId | null) => void;
 }) {
   return (
     <View style={styles.stack}>
@@ -4579,6 +4606,12 @@ function SettingsScreen({
         <SectionHeader title="Indstillinger" />
         <SecondaryButton label="Tilbage" onPress={onBack} />
       </View>
+      <Card>
+        <Text style={styles.cardTitle}>Standardbolig</Text>
+        <Text style={styles.compactBodyText}>Vælg hvilken bolig der åbnes automatisk efter login.</Text>
+        {houses.length > 1 ? houses.map((house) => <View key={house.id} style={styles.menuRow}><View style={styles.settingsRow}><View style={styles.settingsTextGroup}><Text style={styles.menuText}>{house.addressLabel}</Text></View><Switch disabled={isSaving} onValueChange={(enabled) => onDefaultHouseChange(enabled ? house.id : null)} trackColor={{ false: theme.border, true: theme.primarySoft }} thumbColor={defaultHouseId === house.id ? theme.primary : theme.muted} value={defaultHouseId === house.id} /></View></View>) : <Text style={styles.compactBodyText}>Du har kun én aktiv bolig, som vælges automatisk.</Text>}
+        {defaultHouseId ? <SecondaryButton compact label="Nulstil standardbolig" onPress={() => onDefaultHouseChange(null)} disabled={isSaving} /> : null}
+      </Card>
       <Card>
         <View style={styles.settingsRow}>
           <View style={styles.settingsTextGroup}>
@@ -4695,6 +4728,7 @@ export default function App() {
   const [publicDataProfile, setPublicDataProfile] =
     useState<HousePublicDataProfileV1 | null>(null);
   const [selectedHouseId, setSelectedHouseId] = useState<HouseId | null>(null);
+  const [showHouseSelectionModal, setShowHouseSelectionModal] = useState(false);
   const [tasks, setTasks] = useState<MaintenanceTask[]>([]);
   const [maintenanceHistory, setMaintenanceHistory] = useState<MaintenanceHistoryEntry[]>([]);
   const [maintenanceRecommendations, setMaintenanceRecommendations] = useState<
@@ -4826,6 +4860,7 @@ export default function App() {
     setPublicDataSummaries([]);
     setPublicDataProfile(null);
     setSelectedHouseId(null);
+    setShowHouseSelectionModal(false);
     setTasks([]);
     setMaintenanceRecommendations([]);
     setDismissedRecommendations([]);
@@ -4949,16 +4984,15 @@ export default function App() {
       setPendingHouseInvitations(bootstrapResponse.pendingHouseInvitations);
       setPublicDataSummaries(bootstrapResponse.publicDataSummaries);
       setPublicDataProfile(null);
-      const nextHouse =
+      const preservedHouse =
         bootstrapResponse.houses.find(
           (house) => house.id === selectedHouseId
-        ) ??
-        bootstrapResponse.houses.find(
-          (house) => house.id === bootstrapResponse.activeHouseId
-        ) ??
-        bootstrapResponse.houses[0] ??
-        null;
+        );
+      const nextHouse = preservedHouse ??
+        (bootstrapResponse.activeHouseId ? bootstrapResponse.houses.find((house) => house.id === bootstrapResponse.activeHouseId) : null) ??
+        (bootstrapResponse.houses.length === 1 ? bootstrapResponse.houses[0] : null);
       setSelectedHouseId(nextHouse?.id ?? null);
+      setShowHouseSelectionModal(bootstrapResponse.houses.length > 1 && !nextHouse);
 
       if (bootstrapResponse.onboarding.state === "complete" && nextHouse) {
         await Promise.all([
@@ -5323,6 +5357,19 @@ export default function App() {
     }
   }
 
+  async function updateDefaultHouse(houseId: HouseId | null) {
+    setLoadingAction("profile");
+    setError(null);
+    try {
+      const response = await apiClient.updateDefaultHouse({ houseId });
+      setBootstrap((current) => current ? { ...current, profile: response.profile, activeHouseId: response.profile.defaultHouseId } : current);
+    } catch (caughtError) {
+      setError(userFacingError(caughtError));
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
   async function logout() {
     setLoadingAction("logout");
     setError(null);
@@ -5552,6 +5599,19 @@ export default function App() {
       loadHousePhoto(nextHouse.id),
       loadHouseDocuments(nextHouse.id)
     ]).catch((caughtError) => setError(userFacingError(caughtError))).finally(() => setLoadingAction(null));
+  }
+
+  function selectRequiredHouse(houseId: HouseId, useAsDefault: boolean) {
+    const nextHouse = houses.find((house) => house.id === houseId);
+    if (!nextHouse) return;
+    setShowHouseSelectionModal(false);
+    setSelectedHouseId(nextHouse.id);
+    setPublicDataProfile(null);
+    if (useAsDefault) void updateDefaultHouse(nextHouse.id);
+    setLoadingAction("house");
+    void Promise.all([loadMaintenanceV1(nextHouse.id), loadHouseImprovements(nextHouse.id), loadHousePhoto(nextHouse.id), loadHouseDocuments(nextHouse.id)])
+      .catch((caughtError) => setError(userFacingError(caughtError)))
+      .finally(() => setLoadingAction(null));
   }
 
   function deferOwnerClaim(claimId: string) {
@@ -6767,9 +6827,12 @@ export default function App() {
     if (moreView === "settings") {
       return (
         <SettingsScreen
+          houses={houses}
+          defaultHouseId={bootstrap?.profile.defaultHouseId ?? null}
           isSaving={loadingAction === "profile"}
           onBack={() => setMoreView("menu")}
           onChange={(value) => void updateCompletionNotePrompt(value)}
+          onDefaultHouseChange={(houseId) => void updateDefaultHouse(houseId)}
           promptForCompletionNote={bootstrap?.profile.promptForCompletionNote ?? true}
         />
       );
@@ -7013,6 +7076,7 @@ export default function App() {
           onResolve={resolveOwnerClaim}
           onDefer={deferOwnerClaim}
         />
+        {showHouseSelectionModal ? <LoginHouseSelectionModal houses={houses} onSelect={selectRequiredHouse} /> : null}
         <View style={styles.tabBar}>
           {tabs.map((tab) => {
             const isActive = activeTab === tab.key;
@@ -8645,6 +8709,30 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "900",
     paddingLeft: 10
+  },
+  houseDefaultChoice: {
+    alignItems: "center",
+    columnGap: 12,
+    flexDirection: "row"
+  },
+  defaultHouseCheckbox: {
+    alignItems: "center",
+    borderColor: theme.border,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    height: 22,
+    justifyContent: "center",
+    width: 22
+  },
+  defaultHouseCheckboxChecked: {
+    backgroundColor: theme.primary,
+    borderColor: theme.primary
+  },
+  defaultHouseCheckboxMark: {
+    color: theme.surface,
+    fontSize: 15,
+    fontWeight: "900",
+    lineHeight: 18
   },
   dashboardHeaderRow: {
     alignItems: "flex-start",

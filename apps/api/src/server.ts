@@ -9,6 +9,9 @@ import {
   addressSearchQuerySchema,
   addressSearchResponseSchema,
   adminBootstrapResponseSchema,
+  adminEntitlementConfigResponseSchema,
+  adminUserEntitlementResponseSchema,
+  updateAdminEntitlementPlanConfigRequestSchema,
   adminDashboardPeriodKeySchema,
   adminDashboardResponseSchema,
   adminHouseResponseSchema,
@@ -105,6 +108,9 @@ import {
   authenticateAccessToken,
   authPublicResponse,
   buildAppBootstrap,
+  getAdminUserEntitlements,
+  listAdminEntitlementConfigs,
+  updateAdminEntitlementPlanConfig,
   acceptMaintenanceRecommendationForHouse,
   archiveMaintenanceTaskForHouse,
   archiveHouseDocumentForHouse,
@@ -244,14 +250,22 @@ function writeApiError(
   response: ServerResponse,
   status: number,
   code: string,
-  message: string
+  message: string,
+  details?: {
+    feature?: string;
+    limit?: number | null;
+    current?: number;
+    storageLimitBytes?: number | null;
+    storageBytes?: number;
+  }
 ) {
   writeJson(
     response,
     status,
     apiErrorSchema.parse({
       code,
-      message
+      message,
+      ...(details ? { details } : {})
     })
   );
 }
@@ -305,7 +319,7 @@ function userAgentHint(request: IncomingMessage) {
 
 function writeUnknownApiError(response: ServerResponse, error: unknown) {
   if (error instanceof ApiError) {
-    writeApiError(response, error.status, error.code, error.message);
+    writeApiError(response, error.status, error.code, error.message, error.details);
     return;
   }
 
@@ -817,6 +831,55 @@ const server = createServer((request, response) => {
     return;
   }
 
+  const adminUserEntitlementMatch = /^\/v1\/admin\/users\/([^/?]+)\/entitlements$/.exec(
+    (request.url ?? "").split("?")[0] ?? ""
+  );
+  if (request.method === "GET" && adminUserEntitlementMatch) {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        const entitlement = await getAdminUserEntitlements(decodeURIComponent(adminUserEntitlementMatch[1]!));
+        writeJson(response, 200, adminUserEntitlementResponseSchema.parse(entitlement));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "GET" && request.url === "/v1/admin/entitlements/config") {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        writeJson(response, 200, adminEntitlementConfigResponseSchema.parse(await listAdminEntitlementConfigs()));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const adminEntitlementConfigMatch = /^\/v1\/admin\/entitlements\/config\/(free|pro)$/.exec(
+    (request.url ?? "").split("?")[0] ?? ""
+  );
+  if (request.method === "PUT" && adminEntitlementConfigMatch) {
+    void (async () => {
+      try {
+        const admin = await requireAdminUser(getBearerToken(request));
+        const parsed = updateAdminEntitlementPlanConfigRequestSchema.safeParse(await readJsonBody(request));
+        if (!parsed.success) {
+          writeApiError(response, 400, "entitlement_config_invalid", "Plan-konfigurationen er ugyldig.");
+          return;
+        }
+        const updated = await updateAdminEntitlementPlanConfig(admin.userId, adminEntitlementConfigMatch[1] as "free" | "pro", parsed.data);
+        writeJson(response, 200, { plan: updated });
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
   if (
     request.method === "GET" &&
     (request.url === "/v1/admin/houses" ||
@@ -1201,16 +1264,31 @@ const server = createServer((request, response) => {
       },
       entitlements: {
         plan: "free",
+        configuredPlan: "free",
+        accessPlan: "free",
         status: "free",
+        source: "default",
         features: {
-          "documents.maxCount": { kind: "limit", value: 0 },
-          "documents.maxStorageMb": { kind: "limit", value: 0 },
-          "tasks.maxActive": { kind: "limit", value: 0 },
+          "houses.maxActive": { kind: "limit", value: 1 },
+          "documents.maxCount": { kind: "limit", value: 2 },
+          "documents.maxStorageMb": { kind: "limit", value: 10 },
+          "tasks.maxActive": { kind: "limit", value: 4 },
+          "maintenance.fullPlan.enabled": { kind: "boolean", value: true },
+          "seasonalRecommendations.enabled": { kind: "boolean", value: true },
           "advisories.enabled": { kind: "boolean", value: false },
+          "localAdvisories.enabled": { kind: "boolean", value: false },
           "legalUpdates.enabled": { kind: "boolean", value: false },
+          "documentExpiry.enabled": { kind: "boolean", value: true },
           "sharing.enabled": { kind: "boolean", value: false },
+          "multiUser.enabled": { kind: "boolean", value: false },
           "export.enabled": { kind: "boolean", value: false },
+          "history.extended.enabled": { kind: "boolean", value: false },
           "advancedReminders.enabled": { kind: "boolean", value: false }
+        },
+        usage: {
+          houses: { active: 0, limit: 1 },
+          documents: { active: 0, storageBytes: 0, limit: 2, storageLimitBytes: 10 * 1024 * 1024 },
+          tasks: { active: 0, limit: 4 }
         },
         evaluatedAt: now
       },

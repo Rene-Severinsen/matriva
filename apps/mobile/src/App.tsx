@@ -43,7 +43,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import { WebView } from "react-native-webview";
-import { createMatrivaApiClient } from "@matriva/api-client";
+import { createMatrivaApiClient, MatrivaApiError } from "@matriva/api-client";
 import {
   type AddressSuggestion,
   type AppBootstrapResponse,
@@ -182,6 +182,18 @@ function selectedAddressInput(
 }
 
 function userFacingError(error: unknown): string {
+  if (error instanceof MatrivaApiError) {
+    if (error.code === "entitlement_feature_not_included") {
+      return "Denne funktion er ikke inkluderet i din aktuelle adgang.";
+    }
+    if (error.code === "entitlement_unavailable") {
+      return "Din adgang kunne ikke bekræftes lige nu. Prøv igen om lidt.";
+    }
+    if (error.code?.includes("limit_reached")) {
+      return `${error.message} Du kan stadig se dine eksisterende data.`;
+    }
+  }
+
   if (!(error instanceof Error)) {
     return "Matriva kunne ikke gennemføre handlingen. Prøv igen om lidt.";
   }
@@ -1803,6 +1815,7 @@ function DashboardScreen({
   publicDataSummary,
   tasks,
   onboarding,
+  entitlements,
   onSelectHouse,
   onAddHouse,
   onCreateTask,
@@ -1814,6 +1827,7 @@ function DashboardScreen({
   publicDataSummary: HousePublicDataSummary | null;
   tasks: MaintenanceTask[];
   onboarding: React.ComponentProps<typeof HouseOnboarding>;
+  entitlements: AppBootstrapResponse["entitlements"];
   onCreateTask: () => void;
   onOpenTasks: () => void;
   onOpenTask: (task: MaintenanceTask) => void;
@@ -1851,6 +1865,8 @@ function DashboardScreen({
 
       <HouseStatusCard house={house} publicDataSummary={publicDataSummary} />
 
+      <EntitlementSummaryCard entitlements={entitlements} />
+
       <MaintenanceSummary
         activeTasks={activeTasks}
         overdueTasks={overdueTasks}
@@ -1860,6 +1876,31 @@ function DashboardScreen({
         onOpenTask={onOpenTask}
       />
     </View>
+  );
+}
+
+function EntitlementSummaryCard({ entitlements }: { entitlements: AppBootstrapResponse["entitlements"] }) {
+  const formatLimit = (value: number | null) => value === null ? "∞" : String(value);
+  const statusLabel = entitlements.status === "free"
+    ? "Free"
+    : entitlements.status === "billing_issue" || entitlements.status === "expired" || entitlements.status === "refunded_revoked"
+      ? "Begrænset adgang"
+      : entitlements.plan === "pro" ? "Pro" : "Free";
+  return (
+    <Card variant="soft">
+      <View style={styles.cardHeaderRow}>
+        <View style={styles.taskTitleGroup}>
+          <Text style={styles.eyebrow}>DIN ADGANG</Text>
+          <Text style={styles.cardTitle}>{statusLabel}</Text>
+        </View>
+        {entitlements.status !== "free" && entitlements.status !== "active" ? <Pill>{entitlements.status.replaceAll("_", " ")}</Pill> : null}
+      </View>
+      <Text style={styles.compactBodyText}>
+        {entitlements.usage.houses.active}/{formatLimit(entitlements.usage.houses.limit)} boliger · {entitlements.usage.documents.active}/{formatLimit(entitlements.usage.documents.limit)} dokumenter · {entitlements.usage.tasks.active}/{formatLimit(entitlements.usage.tasks.limit)} egne aktive opgaver
+      </Text>
+      {entitlements.usage.documents.storageLimitBytes !== null ? <Text style={styles.metaText}>{Math.round(entitlements.usage.documents.storageBytes / 1024 / 1024 * 10) / 10}/{Math.round(entitlements.usage.documents.storageLimitBytes / 1024 / 1024)} MB dokumentlager</Text> : null}
+      {entitlements.status !== "free" && entitlements.plan !== "pro" ? <Text style={styles.metaText}>Nogle funktioner er midlertidigt begrænsede. Dine eksisterende data er bevaret.</Text> : null}
+    </Card>
   );
 }
 
@@ -4445,6 +4486,7 @@ function MoreScreen({
   onOpenSettings,
   onOpenSharing,
   attentionCount,
+  sharingEnabled,
   onLogout
 }: {
   isLoggingOut: boolean;
@@ -4452,6 +4494,7 @@ function MoreScreen({
   onOpenSettings: () => void;
   onOpenSharing: () => void;
   attentionCount: number;
+  sharingEnabled: boolean;
   onLogout: () => void;
 }) {
   const rows = ["Profil", "Indstillinger", "Deling & adgang", "Hjælp", "Om Matriva"];
@@ -4464,7 +4507,7 @@ function MoreScreen({
           const isProfile = row === "Profil";
           const isSettings = row === "Indstillinger";
           const isSharing = row === "Deling & adgang";
-          const isEnabled = isProfile || isSettings || isSharing;
+          const isEnabled = isProfile || isSettings || (isSharing && sharingEnabled);
 
           return (
             <Pressable
@@ -4479,7 +4522,7 @@ function MoreScreen({
               ]}
             >
               <View style={styles.menuRowContent}><Text style={styles.menuText}>{row}</Text>{isSharing && attentionCount > 0 ? <View style={styles.attentionBadge}><Text style={styles.attentionBadgeText}>{attentionCount > 99 ? "99+" : attentionCount}</Text></View> : null}</View>
-              <Text style={styles.menuMeta}>{isEnabled ? "Åbn" : "Kommer senere"}</Text>
+              <Text style={styles.menuMeta}>{isSharing && !sharingEnabled ? "Ikke inkluderet" : isEnabled ? "Åbn" : "Kommer senere"}</Text>
             </Pressable>
           );
         })}
@@ -6530,6 +6573,16 @@ export default function App() {
           houses={houses}
           publicDataSummary={selectedPublicDataSummary}
           tasks={tasks}
+          entitlements={bootstrap?.entitlements ?? {
+            plan: "free",
+            configuredPlan: "free",
+            accessPlan: "free",
+            status: "free",
+            source: "default",
+            features: {} as AppBootstrapResponse["entitlements"]["features"],
+            usage: { houses: { active: 0, limit: 1 }, documents: { active: 0, storageBytes: 0, limit: 2, storageLimitBytes: 10 * 1024 * 1024 }, tasks: { active: 0, limit: 4 } },
+            evaluatedAt: new Date().toISOString()
+          }}
           onboarding={onboardingProps}
           onSelectHouse={selectActiveHouse}
           onAddHouse={startAddingHouse}
@@ -6840,6 +6893,7 @@ export default function App() {
         onOpenSettings={() => setMoreView("settings")}
         onOpenSharing={() => setMoreView("sharing")}
         attentionCount={moreAttentionCount}
+        sharingEnabled={bootstrap?.entitlements.features["sharing.enabled"]?.kind === "boolean" && bootstrap.entitlements.features["sharing.enabled"].value === true}
         onLogout={() => void logout()}
       />
     );

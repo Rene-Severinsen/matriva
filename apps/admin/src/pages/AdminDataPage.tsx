@@ -9,6 +9,7 @@ import type {
   AdminRecommendationCatalogItemResponse,
   AdminRecommendationCatalogResponse,
   AdminUserResponse,
+  AdminUserEntitlementResponse,
   AdminUsersResponse
 } from "@matriva/shared";
 
@@ -407,18 +408,18 @@ function DetailPage({
     <DataSection title="Detalje" description="Read-only administrativ detaljevisning.">
       <button className="secondary-action" type="button" onClick={onBack}>Tilbage</button>
       <ListState state={state} retry={retry} empty="Detaljen findes ikke.">
-        {(data) => <DetailContent data={data} onOpenDetail={onOpenDetail} />}
+        {(data) => <DetailContent data={data} client={client} onAuthorizationError={onAuthorizationError} onOpenDetail={onOpenDetail} />}
       </ListState>
     </DataSection>
   );
 }
 
-function DetailContent({ data, onOpenDetail }: { data: AdminUserResponse | AdminHouseResponse | AdminRecommendationCatalogItemResponse; onOpenDetail: (section: SectionKey, id?: string) => void }) {
+function DetailContent({ data, client, onAuthorizationError, onOpenDetail }: { data: AdminUserResponse | AdminHouseResponse | AdminRecommendationCatalogItemResponse; client: MatrivaAdminApiClient; onAuthorizationError: (error: unknown) => Promise<boolean>; onOpenDetail: (section: SectionKey, id?: string) => void }) {
   if ("user" in data) {
     const user = data.user;
-    return <DetailGrid title={user.displayName ?? user.email} subtitle={user.id} rows={[
+    return <><DetailGrid title={user.displayName ?? user.email} subtitle={user.id} rows={[
       ["Status", user.status], ["E-mail", user.email], ["Onboarding", user.onboardingState], ["Roller", user.roles.join(", ") || "Bruger"], ["Oprettet", formatDate(user.createdAt)], ["Senest aktiv", formatDate(user.latestActivityAt)], ["Boliger", numberFormatter.format(user.houseCount)], ["Opgaver", numberFormatter.format(user.taskSummary.total)], ["Completions", numberFormatter.format(user.completionSummary.total)], ["Anbefalinger", `${user.recommendationSummary.pending} pending / ${user.recommendationSummary.accepted} accepted / ${user.recommendationSummary.permanentHidden} skjult`]
-    ]} extra={[...user.memberships.map((membership) => <button type="button" key={`${membership.houseId}:${membership.validFrom}`} onClick={() => onOpenDetail("houses", membership.houseId)}>{membership.addressLabel} · {membership.role} · {membership.status}</button>), `Åbne adgangskrav: ${user.pendingClaimCount}`]} />;
+    ]} extra={[...user.memberships.map((membership) => <button type="button" key={`${membership.houseId}:${membership.validFrom}`} onClick={() => onOpenDetail("houses", membership.houseId)}>{membership.addressLabel} · {membership.role} · {membership.status}</button>), `Åbne adgangskrav: ${user.pendingClaimCount}`]} /><UserEntitlementPanel client={client} userId={user.id} onAuthorizationError={onAuthorizationError} /></>;
   }
   if ("house" in data) {
     const house = data.house;
@@ -430,6 +431,22 @@ function DetailContent({ data, onOpenDetail }: { data: AdminUserResponse | Admin
   return <DetailGrid title={item.title} subtitle={item.catalogKey} rows={[
     ["Version", item.catalogVersion], ["Aktiv", item.active ? "Ja" : "Nej"], ["Priority", item.priority], ["Recurrence", item.recurrenceInterval], ["Season", item.season], ["Instances", numberFormatter.format(item.instanceCount)], ["Pending", numberFormatter.format(item.statusDistribution.pending)], ["Accepted", numberFormatter.format(item.statusDistribution.accepted)], ["Dismissed", numberFormatter.format(item.statusDistribution.dismissed)], ["Accepted tasks", numberFormatter.format(item.acceptedTaskCount)], ["Permanent hides", numberFormatter.format(item.permanentHideCount)], ["Acceptance rate", percentFormatter.format(item.acceptanceRate)], ["Accepted over time", "Estimeret via updated_at"], ["not_now", "Ikke tilgængelig som præcis metric"]
   ]} extra={[item.shortDescription]} />;
+}
+
+function UserEntitlementPanel({ client, userId, onAuthorizationError }: { client: MatrivaAdminApiClient; userId: string; onAuthorizationError: (error: unknown) => Promise<boolean> }) {
+  const { state } = useListState<AdminUserEntitlementResponse>(() => client.getAdminUserEntitlements(userId), onAuthorizationError, "Entitlement-status kunne ikke indlæses.", [client, userId]);
+  if (state.status === "loading") return <section className="detail-panel"><p>Indlæser entitlement-status...</p></section>;
+  if (state.status === "error") return <section className="detail-panel"><p>{state.message}</p></section>;
+  const { entitlements, overLimit } = state.data.entitlement;
+  return <DetailGrid title="Entitlement-status" subtitle="Backend-evalueret adgang og forbrug" rows={[
+    ["Plan", `${entitlements.plan} (konfigureret: ${entitlements.configuredPlan})`],
+    ["Status", entitlements.status],
+    ["Boliger", `${entitlements.usage.houses.active}/${entitlements.usage.houses.limit ?? "∞"}`],
+    ["Dokumenter", `${entitlements.usage.documents.active}/${entitlements.usage.documents.limit ?? "∞"}`],
+    ["Dokumentlager", `${Math.round(entitlements.usage.documents.storageBytes / 1024 / 1024 * 10) / 10}/${entitlements.usage.documents.storageLimitBytes === null ? "∞" : Math.round(entitlements.usage.documents.storageLimitBytes / 1024 / 1024)} MB`],
+    ["Egne aktive opgaver", `${entitlements.usage.tasks.active}/${entitlements.usage.tasks.limit ?? "∞"}`],
+    ["Over limit efter downgrade", overLimit.length ? overLimit.join(", ") : "Nej"]
+  ]} />;
 }
 
 function DetailGrid({ title, subtitle, rows, extra = [] }: { title: string; subtitle: string; rows: Array<[string, string]>; extra?: ReactNode[] }) {

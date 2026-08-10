@@ -3501,13 +3501,20 @@ export type HousePublicDataWithProfileResponseV1 = z.infer<
 >;
 
 export const featureKeySchema = z.enum([
+  "houses.maxActive",
   "documents.maxCount",
   "documents.maxStorageMb",
   "tasks.maxActive",
+  "maintenance.fullPlan.enabled",
+  "seasonalRecommendations.enabled",
   "advisories.enabled",
+  "localAdvisories.enabled",
   "legalUpdates.enabled",
+  "documentExpiry.enabled",
   "sharing.enabled",
+  "multiUser.enabled",
   "export.enabled",
+  "history.extended.enabled",
   "advancedReminders.enabled"
 ]);
 
@@ -3520,33 +3527,91 @@ export const entitlementValueSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("limit"),
-    value: z.number().int().nonnegative()
+    value: z.number().int().nonnegative().nullable()
   })
 ]);
+export type EntitlementValue = z.infer<typeof entitlementValueSchema>;
+
+export const entitlementPlanSchema = z.enum(["free", "pro"]);
+export type EntitlementPlan = z.infer<typeof entitlementPlanSchema>;
+
+export const entitlementStatusSchema = z.enum([
+  "free",
+  "trial",
+  "active",
+  "grace_period",
+  "billing_issue",
+  "expired",
+  "cancelled",
+  "refunded_revoked"
+]);
+export type EntitlementStatus = z.infer<typeof entitlementStatusSchema>;
+
+export const entitlementSourceSchema = z.enum(["default", "admin", "billing"]);
+export type EntitlementSource = z.infer<typeof entitlementSourceSchema>;
+
+export const entitlementUsageSchema = z.object({
+  houses: z.object({ active: z.number().int().nonnegative(), limit: z.number().int().nonnegative().nullable() }),
+  documents: z.object({ active: z.number().int().nonnegative(), storageBytes: z.number().int().nonnegative(), limit: z.number().int().nonnegative().nullable(), storageLimitBytes: z.number().int().nonnegative().nullable() }),
+  tasks: z.object({ active: z.number().int().nonnegative(), limit: z.number().int().nonnegative().nullable() })
+});
+export type EntitlementUsage = z.infer<typeof entitlementUsageSchema>;
 
 export const entitlementsSchema = z.object({
-  plan: z.enum(["free", "pro"]),
-  status: z.enum([
-    "free",
-    "trial",
-    "active",
-    "grace_period",
-    "billing_issue",
-    "expired",
-    "cancelled",
-    "refunded_revoked"
-  ]),
+  plan: entitlementPlanSchema,
+  configuredPlan: entitlementPlanSchema,
+  accessPlan: entitlementPlanSchema,
+  status: entitlementStatusSchema,
+  source: entitlementSourceSchema,
   features: z.record(featureKeySchema, entitlementValueSchema),
+  usage: entitlementUsageSchema,
   evaluatedAt: z.string().datetime(),
   expiresAt: z.string().datetime().optional()
 });
 
 export type Entitlements = z.infer<typeof entitlementsSchema>;
 
+export const adminEntitlementPlanConfigSchema = z.object({
+  plan: entitlementPlanSchema,
+  features: z.record(featureKeySchema, entitlementValueSchema),
+  updatedAt: z.string().datetime(),
+  updatedByUserId: userIdSchema.nullable()
+});
+export type AdminEntitlementPlanConfig = z.infer<typeof adminEntitlementPlanConfigSchema>;
+
+export const adminEntitlementConfigResponseSchema = z.object({
+  plans: z.array(adminEntitlementPlanConfigSchema),
+  generatedAt: z.string().datetime()
+});
+export type AdminEntitlementConfigResponse = z.infer<typeof adminEntitlementConfigResponseSchema>;
+
+export const updateAdminEntitlementPlanConfigRequestSchema = z.object({
+  features: z.record(featureKeySchema, entitlementValueSchema)
+});
+export type UpdateAdminEntitlementPlanConfigRequest = z.infer<typeof updateAdminEntitlementPlanConfigRequestSchema>;
+
+export const adminUserEntitlementSchema = z.object({
+  userId: userIdSchema,
+  entitlements: entitlementsSchema,
+  overLimit: z.array(z.enum(["houses", "documents", "storage", "tasks"]))
+});
+export const adminUserEntitlementResponseSchema = z.object({
+  entitlement: adminUserEntitlementSchema,
+  generatedAt: z.string().datetime()
+});
+export type AdminUserEntitlementResponse = z.infer<typeof adminUserEntitlementResponseSchema>;
+
 export const apiErrorSchema = z.object({
   code: z.string().min(1),
   message: z.string().min(1),
-  requestId: z.string().min(1).optional()
+  requestId: z.string().min(1).optional(),
+  details: z.object({
+    feature: featureKeySchema.optional(),
+    limit: z.number().int().nonnegative().nullable().optional(),
+    current: z.number().int().nonnegative().optional(),
+    storageLimitBytes: z.number().int().nonnegative().nullable().optional(),
+    storageBytes: z.number().int().nonnegative().optional()
+  }).optional()
 });
 
 export type ApiError = z.infer<typeof apiErrorSchema>;

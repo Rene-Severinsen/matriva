@@ -4,9 +4,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import pg from "pg";
+import type { PoolClient } from "pg";
 
 import {
   appBootstrapResponseSchema,
+  entitlementValueSchema,
+  entitlementsSchema,
   maintenanceHistoryEntrySchema,
   maintenanceHistoryDetailSchema,
   maintenanceRecommendationOriginSnapshotSchema,
@@ -22,6 +25,9 @@ import {
 } from "@matriva/shared";
 import type {
   AppBootstrapResponse,
+  AdminEntitlementConfigResponse,
+  AdminUserEntitlementResponse,
+  Entitlements,
   CreateHouseImprovementRequest,
   UpdateHouseImprovementRequest,
   AttachHouseImprovementDocumentRequest,
@@ -49,8 +55,10 @@ import type {
   UpdateMaintenanceSettingsRequest,
   UpdateDefaultHouseRequest,
   UpdateProfileRequest,
-  UserProfile
+  UserProfile,
+  UserId
 } from "@matriva/shared";
+import type { FeatureKey, EntitlementValue, UpdateAdminEntitlementPlanConfigRequest } from "@matriva/shared";
 import {
   maintenanceCatalogItems,
   recommendedPeriodLabel,
@@ -284,11 +292,13 @@ type HouseMediaRow = {
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly details: EntitlementDetails | undefined;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, details?: EntitlementDetails) {
     super(message);
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -305,6 +315,234 @@ function databaseUrl() {
 export const pool = new Pool({
   connectionString: databaseUrl()
 });
+
+type DbExecutor = typeof pool | PoolClient;
+type EntitlementDetails = {
+  feature?: FeatureKey;
+  limit?: number | null;
+  current?: number;
+  storageLimitBytes?: number | null;
+  storageBytes?: number;
+};
+
+const safeFreeFeatures: Record<FeatureKey, EntitlementValue> = {
+  "houses.maxActive": { kind: "limit", value: 1 },
+  "documents.maxCount": { kind: "limit", value: 2 },
+  "documents.maxStorageMb": { kind: "limit", value: 10 },
+  "tasks.maxActive": { kind: "limit", value: 4 },
+  "maintenance.fullPlan.enabled": { kind: "boolean", value: true },
+  "seasonalRecommendations.enabled": { kind: "boolean", value: true },
+  "advisories.enabled": { kind: "boolean", value: false },
+  "localAdvisories.enabled": { kind: "boolean", value: false },
+  "legalUpdates.enabled": { kind: "boolean", value: false },
+  "documentExpiry.enabled": { kind: "boolean", value: true },
+  "sharing.enabled": { kind: "boolean", value: false },
+  "multiUser.enabled": { kind: "boolean", value: false },
+  "export.enabled": { kind: "boolean", value: false },
+  "history.extended.enabled": { kind: "boolean", value: false },
+  "advancedReminders.enabled": { kind: "boolean", value: false }
+};
+
+function entitlementFeatures(value: unknown, fallback = safeFreeFeatures) {
+  const parsed = Object.entries(fallback).reduce<Record<FeatureKey, EntitlementValue>>((result, [key, defaultValue]) => {
+    result[key as FeatureKey] = defaultValue;
+    return result;
+  }, {} as Record<FeatureKey, EntitlementValue>);
+
+  if (!value || typeof value !== "object") {
+    return parsed;
+  }
+
+  for (const key of Object.keys(parsed) as FeatureKey[]) {
+    const candidate = (value as Record<string, unknown>)[key];
+    const validated = entitlementValueSchema.safeParse(candidate);
+    if (validated.success) {
+      parsed[key] = validated.data;
+    }
+  }
+
+  return parsed;
+}
+
+function limitValue(features: Record<FeatureKey, EntitlementValue>, key: FeatureKey) {
+  const value = features[key];
+  return value?.kind === "limit" ? value.value : null;
+}
+
+function booleanValue(features: Record<FeatureKey, EntitlementValue>, key: FeatureKey) {
+  const value = features[key];
+  return value?.kind === "boolean" && value.value;
+}
+
+async function entitlementUsage(executor: DbExecutor, userId: string) {
+  const result = await executor.query<{
+    active_houses: string;
+    active_documents: string;
+    document_storage_bytes: string;
+    active_user_tasks: string;
+  }>(`
+    select
+      (select count(distinct hm.house_id) from house_memberships hm join houses h on h.id = hm.house_id where hm.user_id = $1 and hm.status = 'active' and h.status = 'saved')::text as active_houses,
+      (select count(*) from house_documents d join house_memberships hm on hm.house_id = d.house_id where hm.user_id = $1 and hm.status = 'active' and d.upload_status = 'uploaded' and d.archived_at is null)::text as active_documents,
+      coalesce((select sum(d.size_bytes) from house_documents d join house_memberships hm on hm.house_id = d.house_id where hm.user_id = $1 and hm.status = 'active' and d.upload_status = 'uploaded' and d.archived_at is null), 0)::text as document_storage_bytes,
+      (select count(*) from maintenance_tasks t join house_memberships hm on hm.house_id = t.house_id where hm.user_id = $1 and hm.status = 'active' and t.source = 'user_created' and t.deleted_at is null and t.archived_at is null and t.status not in ('done', 'dismissed'))::text as active_user_tasks
+  `, [userId]);
+  const row = result.rows[0];
+  return {
+    houses: Number(row?.active_houses ?? 0),
+    documents: Number(row?.active_documents ?? 0),
+    storageBytes: Number(row?.document_storage_bytes ?? 0),
+    tasks: Number(row?.active_user_tasks ?? 0)
+  };
+}
+
+async function loadEntitlementPolicy(userId: string, executor: DbExecutor = pool) {
+  const assignment = await executor.query<{
+    plan: "free" | "pro";
+    status: string;
+    source: "default" | "admin" | "billing";
+    expires_at: Date | null;
+  }>("select plan, status, source, expires_at from user_entitlements where user_id = $1", [userId]);
+  const assigned = assignment.rows[0];
+  const configuredPlan = assigned?.plan ?? "free";
+  const status = (assigned?.status ?? "free") as Entitlements["status"];
+  const source = assigned?.source ?? "default";
+  const expiresAt = assigned?.expires_at ? new Date(assigned.expires_at).toISOString() : undefined;
+  const proAccess = configuredPlan === "pro" && ["trial", "active", "grace_period"].includes(status) && (!assigned?.expires_at || assigned.expires_at > new Date());
+  const accessPlan = proAccess ? "pro" : "free";
+  const config = await executor.query<{ features: unknown }>("select features from entitlement_plan_configs where plan = $1", [accessPlan]);
+  const features = entitlementFeatures(config.rows[0]?.features);
+  const usage = await entitlementUsage(executor, userId);
+  const limit = limitValue(features, "houses.maxActive");
+  const documentLimit = limitValue(features, "documents.maxCount");
+  const storageLimit = limitValue(features, "documents.maxStorageMb");
+  const taskLimit = limitValue(features, "tasks.maxActive");
+
+  return entitlementsSchema.parse({
+    plan: accessPlan,
+    configuredPlan,
+    accessPlan,
+    status,
+    source,
+    features,
+    usage: {
+      houses: { active: usage.houses, limit },
+      documents: { active: usage.documents, storageBytes: usage.storageBytes, limit: documentLimit, storageLimitBytes: storageLimit === null ? null : storageLimit * 1024 * 1024 },
+      tasks: { active: usage.tasks, limit: taskLimit }
+    },
+    ...(expiresAt ? { expiresAt } : {}),
+    evaluatedAt: new Date().toISOString()
+  });
+}
+
+function assertLimit(feature: FeatureKey, current: number, next: number, limit: number | null, details: EntitlementDetails = {}) {
+  if (limit !== null && next > limit) {
+    throw new ApiError(409, "entitlement_limit_reached", `Din adgang inkluderer højst ${limit} for denne funktion. Du bruger allerede ${current}.`, { feature, limit, current, ...details });
+  }
+}
+
+async function assertEntitlementFeatureForExecutor(executor: DbExecutor, userId: string, feature: FeatureKey) {
+  const entitlements = await loadEntitlementPolicy(userId, executor);
+  if (!booleanValue(entitlements.features, feature)) {
+    throw new ApiError(403, "entitlement_feature_not_included", "Denne funktion er ikke inkluderet i din aktuelle adgang.", { feature });
+  }
+  return entitlements;
+}
+
+async function lockEntitlementUser(client: PoolClient, userId: string) {
+  await client.query("select pg_advisory_xact_lock(hashtext($1))", [`entitlements:${userId}`]);
+}
+
+export async function getEntitlementsForUser(userId: string) {
+  try {
+    return await loadEntitlementPolicy(userId);
+  } catch {
+    const usage = { houses: { active: 0, limit: 1 }, documents: { active: 0, storageBytes: 0, limit: 2, storageLimitBytes: 10 * 1024 * 1024 }, tasks: { active: 0, limit: 4 } };
+    return entitlementsSchema.parse({ plan: "free", configuredPlan: "free", accessPlan: "free", status: "billing_issue", source: "default", features: safeFreeFeatures, usage, evaluatedAt: new Date().toISOString() });
+  }
+}
+
+export async function assertEntitlementFeature(userId: string, feature: FeatureKey) {
+  return assertEntitlementFeatureForExecutor(pool, userId, feature);
+}
+
+export async function listAdminEntitlementConfigs(): Promise<AdminEntitlementConfigResponse> {
+  const result = await pool.query<{ plan: "free" | "pro"; features: unknown; updated_at: Date; updated_by_user_id: string | null }>(
+    "select plan, features, updated_at, updated_by_user_id from entitlement_plan_configs order by case plan when 'free' then 0 else 1 end"
+  );
+  return {
+    plans: result.rows.map((row) => ({
+      plan: row.plan,
+      features: entitlementFeatures(row.features),
+      updatedAt: new Date(row.updated_at).toISOString(),
+      updatedByUserId: row.updated_by_user_id as UserId | null
+    })),
+    generatedAt: new Date().toISOString()
+  };
+}
+
+export async function updateAdminEntitlementPlanConfig(
+  adminUserId: string,
+  plan: "free" | "pro",
+  input: UpdateAdminEntitlementPlanConfigRequest
+) {
+  const limitKeys: FeatureKey[] = ["houses.maxActive", "documents.maxCount", "documents.maxStorageMb", "tasks.maxActive"];
+  for (const key of limitKeys) {
+    if (input.features[key]?.kind !== "limit") {
+      throw new ApiError(400, "entitlement_config_value_invalid", `${key} skal være en numerisk grænse.`);
+    }
+    const value = input.features[key].value;
+    if (value !== null && value > 1_000_000_000) {
+      throw new ApiError(400, "entitlement_config_value_invalid", `${key} er for høj.`);
+    }
+  }
+  for (const key of Object.keys(input.features) as FeatureKey[]) {
+    if (!limitKeys.includes(key) && input.features[key]?.kind !== "boolean") {
+      throw new ApiError(400, "entitlement_config_value_invalid", `${key} skal være en boolean feature flag.`);
+    }
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const result = await client.query<{ plan: "free" | "pro"; features: unknown; updated_at: Date; updated_by_user_id: string | null }>(
+      `update entitlement_plan_configs
+       set features = $2::jsonb, updated_at = now(), updated_by_user_id = $3
+       where plan = $1
+       returning plan, features, updated_at, updated_by_user_id`,
+      [plan, JSON.stringify(input.features), adminUserId]
+    );
+    if (!result.rows[0]) {
+      throw new ApiError(404, "entitlement_plan_not_found", "Plan-konfigurationen blev ikke fundet.");
+    }
+    await client.query(
+      `insert into entitlement_audit_log (actor_user_id, action, plan, details)
+       values ($1, 'plan_config_updated', $2, $3::jsonb)`,
+      [adminUserId, plan, JSON.stringify({ features: input.features })]
+    );
+    await client.query("commit");
+    return {
+      plan: result.rows[0].plan,
+      features: entitlementFeatures(result.rows[0].features),
+      updatedAt: new Date(result.rows[0].updated_at).toISOString(),
+      updatedByUserId: result.rows[0].updated_by_user_id as UserId | null
+    };
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getAdminUserEntitlements(userId: string): Promise<AdminUserEntitlementResponse> {
+  const entitlements = await loadEntitlementPolicy(userId);
+  const overLimit: Array<"houses" | "documents" | "storage" | "tasks"> = [];
+  if (entitlements.usage.houses.limit !== null && entitlements.usage.houses.active > entitlements.usage.houses.limit) overLimit.push("houses");
+  if (entitlements.usage.documents.limit !== null && entitlements.usage.documents.active > entitlements.usage.documents.limit) overLimit.push("documents");
+  if (entitlements.usage.documents.storageLimitBytes !== null && entitlements.usage.documents.storageBytes > entitlements.usage.documents.storageLimitBytes) overLimit.push("storage");
+  if (entitlements.usage.tasks.limit !== null && entitlements.usage.tasks.active > entitlements.usage.tasks.limit) overLimit.push("tasks");
+  return { entitlement: { userId: userId as UserId, entitlements, overLimit }, generatedAt: new Date().toISOString() };
+}
 
 export function createOpaqueId(
   prefix:
@@ -1426,6 +1664,7 @@ export async function revokeHouseInvitation(userId: string, houseId: string, inv
 }
 
 export async function createHouseInvitation(userId: string, houseId: string, email: string, role: "owner" | "member") {
+  await assertEntitlementFeature(userId, "sharing.enabled");
   await requireHouseMembership(userId, houseId);
   const owner = await pool.query("select 1 from house_memberships where house_id = $1 and user_id = $2 and role = 'owner' and status = 'active'", [houseId, userId]);
   if (!owner.rowCount) throw new ApiError(403, "house_owner_required", "Only an owner can invite members.");
@@ -1457,6 +1696,7 @@ export async function acceptHouseInvitation(userId: string, token: string) {
   const client = await pool.connect();
   try {
     await client.query("begin");
+    await assertEntitlementFeatureForExecutor(client, userId, "sharing.enabled");
     const result = await client.query(`select i.*, u.email as accepting_email from house_invitations i cross join users u
       where u.id = $1 and i.token_hash = $2 and i.status = 'pending' and i.expires_at > now() for update`, [userId, hashSecret(token)]);
     const invitation = result.rows[0];
@@ -1480,6 +1720,7 @@ export async function acceptHouseInvitationById(userId: string, invitationId: st
   const client = await pool.connect();
   try {
     await client.query("begin");
+    await assertEntitlementFeatureForExecutor(client, userId, "sharing.enabled");
     const result = await client.query(
       `select i.*, u.email as accepting_email from house_invitations i cross join users u
        where u.id = $1 and i.id = $2 and i.status = 'pending' and i.expires_at > now() for update`,
@@ -1517,6 +1758,7 @@ export async function createSavedHouse(userId: string, input: SelectedAddressInp
   const client = await pool.connect();
   try {
     await client.query("begin");
+    await lockEntitlementUser(client, userId);
     const existing = await client.query<HouseRow>(
       `select h.* from houses h
        where h.bfe_number = $1 and h.status = 'saved' limit 1`, [bfeNumber]
@@ -1525,6 +1767,13 @@ export async function createSavedHouse(userId: string, input: SelectedAddressInp
       await client.query("commit");
       return toSavedHouse(existing.rows[0] as HouseRow);
     }
+    const entitlements = await loadEntitlementPolicy(userId, client);
+    assertLimit(
+      "houses.maxActive",
+      entitlements.usage.houses.active,
+      entitlements.usage.houses.active + 1,
+      entitlements.usage.houses.limit
+    );
     let result: { rows: HouseRow[] };
     try {
       result = await client.query<HouseRow>(
@@ -1585,7 +1834,24 @@ export async function createMaintenanceTaskForHouse(
   const house = await getSavedHouse(userId, houseId);
   const status = input.status ?? "planned";
   const completedAt = status === "done" ? new Date() : null;
-  const result = await pool.query<MaintenanceTaskRow>(
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await lockEntitlementUser(client, userId);
+    const entitlements = await loadEntitlementPolicy(userId, client);
+    if (input.recurrence && !booleanValue(entitlements.features, "advancedReminders.enabled")) {
+      throw new ApiError(403, "entitlement_feature_not_included", "Avancerede reminders er ikke inkluderet i din aktuelle adgang.", { feature: "advancedReminders.enabled" });
+    }
+    const countsAsActive = status !== "done" && status !== "dismissed";
+    if (countsAsActive) {
+      assertLimit(
+        "tasks.maxActive",
+        entitlements.usage.tasks.active,
+        entitlements.usage.tasks.active + 1,
+        entitlements.usage.tasks.limit
+      );
+    }
+    const result = await client.query<MaintenanceTaskRow>(
     `
       insert into maintenance_tasks (
         id,
@@ -1627,9 +1893,15 @@ export async function createMaintenanceTaskForHouse(
       input.recurrence?.anchor ?? null,
       completedAt
     ]
-  );
-
-  return toMaintenanceTask(result.rows[0] as MaintenanceTaskRow);
+    );
+    await client.query("commit");
+    return toMaintenanceTask(result.rows[0] as MaintenanceTaskRow);
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function listMaintenanceTasksForHouse(userId: string, houseId: string) {
@@ -2036,6 +2308,7 @@ export async function listMaintenanceRecommendationsForHouse(
   status: "pending" | "dismissed" = "pending"
 ) {
   const house = await getSavedHouse(userId, houseId);
+  await assertEntitlementFeature(userId, "seasonalRecommendations.enabled");
   if (status === "pending") {
     await ensureMaintenanceRecommendationInstancesForHouse(userId, house.id);
   }
@@ -2855,7 +3128,28 @@ export async function createHouseDocumentForHouse(
   }
 ) {
   const house = await getSavedHouse(userId, houseId);
-  const result = await pool.query<HouseDocumentRow>(
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await lockEntitlementUser(client, userId);
+    const entitlements = await loadEntitlementPolicy(userId, client);
+    assertLimit(
+      "documents.maxCount",
+      entitlements.usage.documents.active,
+      entitlements.usage.documents.active + 1,
+      entitlements.usage.documents.limit
+    );
+    const storageLimitBytes = entitlements.usage.documents.storageLimitBytes;
+    if (storageLimitBytes !== null && entitlements.usage.documents.storageBytes + input.sizeBytes > storageLimitBytes) {
+      throw new ApiError(409, "entitlement_storage_limit_reached", "Dit dokumentlager er fyldt. Slet eller arkivér et dokument, eller opgradér din adgang.", {
+        feature: "documents.maxStorageMb",
+        limit: entitlements.usage.documents.limit,
+        current: entitlements.usage.documents.storageBytes,
+        storageLimitBytes,
+        storageBytes: entitlements.usage.documents.storageBytes
+      });
+    }
+    const result = await client.query<HouseDocumentRow>(
     `
       insert into house_documents (
         id,
@@ -2901,9 +3195,15 @@ export async function createHouseDocumentForHouse(
       input.documentDate ?? null, input.relatedParty ?? null, input.amountMinor ?? null,
       input.expiresAt ?? null, input.isImportant ?? false, input.note ?? null
     ]
-  );
-
-  return toHouseDocument(result.rows[0] as HouseDocumentRow);
+    );
+    await client.query("commit");
+    return toHouseDocument(result.rows[0] as HouseDocumentRow);
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function getHouseDocumentForHouse(
@@ -3220,7 +3520,7 @@ export async function removeHousePhoto(userId: string, houseId: string) {
 }
 
 export async function buildAppBootstrap(userId: string): Promise<AppBootstrapResponse> {
-  const [user, profile, houses, pendingClaims, ownerPendingClaims, pendingInvitations] = await Promise.all([
+  const [user, profile, houses, pendingClaims, ownerPendingClaims, pendingInvitations, entitlements] = await Promise.all([
     getUserById(userId),
     getProfileForUser(userId),
     listSavedHouses(userId),
@@ -3258,7 +3558,8 @@ export async function buildAppBootstrap(userId: string): Promise<AppBootstrapRes
        where i.status = 'pending' and i.expires_at > now()
        order by i.created_at desc`,
       [userId]
-    )
+    ),
+    getEntitlementsForUser(userId)
   ]);
   const now = new Date().toISOString();
   const onboardingState = !profile.displayName
@@ -3310,21 +3611,7 @@ export async function buildAppBootstrap(userId: string): Promise<AppBootstrapRes
       status: invitation.status,
       expiresAt: new Date(invitation.expires_at).toISOString()
     })),
-    entitlements: {
-      plan: "free",
-      status: "free",
-      features: {
-        "documents.maxCount": { kind: "limit", value: 0 },
-        "documents.maxStorageMb": { kind: "limit", value: 0 },
-        "tasks.maxActive": { kind: "limit", value: 3 },
-        "advisories.enabled": { kind: "boolean", value: false },
-        "legalUpdates.enabled": { kind: "boolean", value: false },
-        "sharing.enabled": { kind: "boolean", value: false },
-        "export.enabled": { kind: "boolean", value: false },
-        "advancedReminders.enabled": { kind: "boolean", value: false }
-      },
-      evaluatedAt: now
-    },
+    entitlements,
     cards: [],
     generatedAt: now
   });

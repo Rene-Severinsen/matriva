@@ -122,6 +122,29 @@ button:disabled {
   color: #8a2d18;
 }
 
+.entitlement-form-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.entitlement-form-grid label {
+  align-items: center;
+  display: flex;
+  font-size: 13px;
+  justify-content: space-between;
+}
+
+.entitlement-form-grid input[type="number"] {
+  max-width: 120px;
+  padding: 8px 10px;
+}
+
+.entitlement-form-grid input[type="checkbox"] {
+  height: 18px;
+  width: 18px;
+}
+
 .admin-shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);

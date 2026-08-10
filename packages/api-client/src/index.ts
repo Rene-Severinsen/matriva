@@ -1,6 +1,8 @@
 import {
   addressSearchResponseSchema,
   adminBootstrapResponseSchema,
+  adminEntitlementConfigResponseSchema,
+  adminUserEntitlementResponseSchema,
   adminDashboardPeriodKeySchema,
   adminDashboardResponseSchema,
   adminHouseResponseSchema,
@@ -46,6 +48,8 @@ import {
   housePublicDataWithProfileResponseV1Schema,
   type AddressSearchResponse,
   type AdminBootstrapResponse,
+  type AdminEntitlementConfigResponse,
+  type AdminUserEntitlementResponse,
   type AdminDashboardPeriodKey,
   type AdminDashboardResponse,
   type AdminHousePublicDataStatusFilter,
@@ -66,6 +70,7 @@ import {
   type AdminUserSort,
   type AdminUserStatusFilter,
   type AdminUsersResponse,
+  type UpdateAdminEntitlementPlanConfigRequest,
   type AppBootstrapResponse,
   type AuthSessionResponse,
   type ConsumeMagicLinkRequest,
@@ -239,6 +244,15 @@ export type MatrivaApiClient = {
     userId: string,
     input?: { signal?: AbortSignal }
   ) => Promise<AdminUserResponse>;
+  getAdminUserEntitlements: (
+    userId: string,
+    input?: { signal?: AbortSignal }
+  ) => Promise<AdminUserEntitlementResponse>;
+  getAdminEntitlementConfig: () => Promise<AdminEntitlementConfigResponse>;
+  updateAdminEntitlementConfig: (
+    plan: "free" | "pro",
+    input: UpdateAdminEntitlementPlanConfigRequest
+  ) => Promise<AdminEntitlementConfigResponse["plans"][number]>;
   getAdminHouses: (
     input?: AdminListRequest<AdminHouseSort> & {
       publicDataStatus?: AdminHousePublicDataStatusFilter;
@@ -406,6 +420,9 @@ export type MatrivaAdminApiClient = Pick<
   | "getAdminDashboard"
   | "getAdminUsers"
   | "getAdminUser"
+  | "getAdminUserEntitlements"
+  | "getAdminEntitlementConfig"
+  | "updateAdminEntitlementConfig"
   | "getAdminHouses"
   | "getAdminHouse"
   | "getAdminHouseClaims"
@@ -515,6 +532,30 @@ export function createMatrivaAdminApiClient(
       return adminUserResponseSchema.parse(
         await parseApiResponse(response, "Could not load admin user.")
       );
+    },
+    async getAdminUserEntitlements(userId, input = {}) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/admin/users/${encodeURIComponent(userId)}/entitlements`,
+        { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) }
+      );
+      return adminUserEntitlementResponseSchema.parse(
+        await parseApiResponse(response, "Kunne ikke indlæse brugerens entitlements.")
+      );
+    },
+    async getAdminEntitlementConfig() {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/entitlements/config`, { headers: authHeaders() });
+      return adminEntitlementConfigResponseSchema.parse(
+        await parseApiResponse(response, "Kunne ikke indlæse entitlement-konfigurationen.")
+      );
+    },
+    async updateAdminEntitlementConfig(plan, input) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/entitlements/config/${plan}`, {
+        method: "PUT",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify(input)
+      });
+      const payload = await parseApiResponse(response, "Kunne ikke gemme entitlement-konfigurationen.");
+      return adminEntitlementConfigResponseSchema.shape.plans.element.parse(payload.plan);
     },
     async getAdminHouses(input = {}) {
       const response = await fetcher(
@@ -915,6 +956,30 @@ export function createMatrivaApiClient(
       return adminUserResponseSchema.parse(
         await parseApiResponse(response, "Could not load admin user.")
       );
+    },
+    async getAdminUserEntitlements(userId, input = {}) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/admin/users/${encodeURIComponent(userId)}/entitlements`,
+        { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) }
+      );
+      return adminUserEntitlementResponseSchema.parse(
+        await parseApiResponse(response, "Kunne ikke indlæse brugerens entitlements.")
+      );
+    },
+    async getAdminEntitlementConfig() {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/entitlements/config`, { headers: authHeaders() });
+      return adminEntitlementConfigResponseSchema.parse(
+        await parseApiResponse(response, "Kunne ikke indlæse entitlement-konfigurationen.")
+      );
+    },
+    async updateAdminEntitlementConfig(plan, input) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/entitlements/config/${plan}`, {
+        method: "PUT",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify(input)
+      });
+      const payload = await parseApiResponse(response, "Kunne ikke gemme entitlement-konfigurationen.");
+      return adminEntitlementConfigResponseSchema.shape.plans.element.parse(payload.plan);
     },
     async getAdminHouses(input = {}) {
       const response = await fetcher(

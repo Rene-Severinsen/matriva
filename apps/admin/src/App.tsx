@@ -8,6 +8,7 @@ import type { AdminBootstrapResponse, SessionTokens } from "@matriva/shared";
 
 import { AdminDataPage } from "./pages/AdminDataPage.js";
 import { DashboardPage } from "./pages/DashboardPage.js";
+import { EntitlementsPage } from "./pages/EntitlementsPage.js";
 import { Icon, type IconName } from "./components/Icon.js";
 import {
   adminEnvironmentOptions,
@@ -49,7 +50,7 @@ const navigation: Array<{
     label: "Anbefalinger",
     icon: "recommendations"
   },
-  { key: "settings", label: "Indstillinger", icon: "settings", disabled: true }
+  { key: "settings", label: "Planer og adgang", icon: "settings" }
 ];
 
 const routePaths: Record<ViewKey, string> = {
@@ -472,6 +473,8 @@ function AdminShell({
               onOpenDetail={(section, id) => onNavigate(section, id)}
               section={activeView}
             />
+          ) : activeView === "settings" ? (
+            <EntitlementsPage client={client} onAuthorizationError={onAuthorizationError} />
           ) : (
             <FullPageState
               title="Kommer senere"

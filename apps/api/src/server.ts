@@ -126,6 +126,7 @@ import {
   approveHouseClaimByOwnerToken,
   resolveHouseClaimByOwner,
   listHouseMembers,
+  revokeHouseMembership,
   createHouseInvitation,
   revokeHouseInvitation,
   acceptHouseInvitation,
@@ -1347,6 +1348,16 @@ const server = createServer((request, response) => {
         } else {
           writeJson(response, 200, { invitation: { houseId: invitation.houseId, alreadyMember: true } });
         }
+      } catch (error) { writeUnknownApiError(response, error); }
+    })();
+    return;
+  }
+  const houseMembershipMatch = /^\/v1\/houses\/([^/]+)\/members\/([^/]+)$/.exec(request.url ?? "");
+  if (request.method === "DELETE" && houseMembershipMatch) {
+    void (async () => {
+      try {
+        const userId = await requireUserId(request);
+        writeJson(response, 200, await revokeHouseMembership(userId, decodeURIComponent(houseMembershipMatch[1]!), decodeURIComponent(houseMembershipMatch[2]!)));
       } catch (error) { writeUnknownApiError(response, error); }
     })();
     return;

@@ -279,6 +279,7 @@ export type MatrivaApiClient = {
   approveHouseClaimByToken: (token: string) => Promise<unknown>;
   resolveHouseClaimAsOwner: (claimId: string, decision: "approve" | "reject") => Promise<unknown>;
   listHouseMembers: (houseId: HouseId) => Promise<{ members: HouseMembership[]; invitations: HouseInvitation[]; canManage: boolean }>;
+  revokeHouseMembership: (houseId: HouseId, membershipId: string) => Promise<unknown>;
   inviteHouseMember: (houseId: HouseId, input: { email: string; role?: "owner" | "member" }) => Promise<unknown>;
   revokeHouseInvitation: (houseId: HouseId, invitationId: string) => Promise<unknown>;
   acceptHouseInvitation: (token: string) => Promise<{ houseId: HouseId }>;
@@ -1116,6 +1117,10 @@ export function createMatrivaApiClient(
       const response = await fetcher(`${normalizedBaseUrl}/v1/houses/${houseId}/members`, { headers: authHeaders() });
       const payload = await parseApiResponse(response, "Could not load house members.") as { members?: unknown; invitations?: unknown; canManage?: boolean };
       return { canManage: payload.canManage === true, members: Array.isArray(payload.members) ? payload.members.map((member) => houseMembershipSchema.parse(member)) : [], invitations: Array.isArray(payload.invitations) ? payload.invitations.map((invitation) => houseInvitationSchema.parse(invitation)) : [] };
+    },
+    async revokeHouseMembership(houseId, membershipId) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/houses/${encodeURIComponent(houseId)}/members/${encodeURIComponent(membershipId)}`, { method: "DELETE", headers: authHeaders() });
+      return parseApiResponse(response, "Could not remove house member.");
     },
     async inviteHouseMember(houseId, input) {
       const response = await fetcher(`${normalizedBaseUrl}/v1/houses/${houseId}/members`, { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) });

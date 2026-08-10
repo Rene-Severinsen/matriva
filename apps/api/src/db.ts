@@ -129,6 +129,8 @@ type HouseRow = {
 type MaintenanceTaskRow = {
   id: string;
   house_id: string;
+  created_by_user_id: string | null;
+  created_by_display_name: string | null;
   title: string;
   description: string | null;
   source: MaintenanceTask["source"];
@@ -403,6 +405,8 @@ function maintenanceTaskReturningColumns() {
   return `
     id,
     house_id,
+    user_id as created_by_user_id,
+    (select up.display_name from user_profiles up where up.user_id = maintenance_tasks.user_id) as created_by_display_name,
     title,
     description,
     source,
@@ -650,6 +654,8 @@ function toMaintenanceTask(row: MaintenanceTaskRow): MaintenanceTask {
     title: row.title,
     ...(row.description ? { description: row.description } : {}),
     source: row.source,
+    createdByUserId: row.created_by_user_id,
+    createdByDisplayName: row.created_by_display_name,
     status: row.status,
     timing,
     priceAmountMinor: nullableNumber(row.price_amount_minor),
@@ -1346,6 +1352,38 @@ export async function listHouseMembers(userId: string, houseId: string) {
     members: result.rows.map((row) => ({ id: row.id, houseId: row.house_id, userId: row.user_id, role: row.role, status: row.status, validFrom: new Date(row.valid_from).toISOString(), validTo: row.valid_to ? new Date(row.valid_to).toISOString() : null, displayName: row.display_name })),
     invitations: invitations.rows.map((row) => ({ id: row.id, houseId: row.house_id, email: row.email, role: row.role, status: row.status, expiresAt: new Date(row.expires_at).toISOString() }))
   };
+}
+
+export async function revokeHouseMembership(userId: string, houseId: string, membershipId: string) {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const owner = await client.query(
+      "select 1 from house_memberships where house_id = $1 and user_id = $2 and role = 'owner' and status = 'active' for update",
+      [houseId, userId]
+    );
+    if (!owner.rowCount) throw new ApiError(403, "house_owner_required", "Kun en aktiv ejer kan fjerne medlemmer.");
+
+    const membership = await client.query<{ id: string; user_id: string }>(
+      "select id, user_id from house_memberships where id = $1 and house_id = $2 and status = 'active' for update",
+      [membershipId, houseId]
+    );
+    const target = membership.rows[0];
+    if (!target) throw new ApiError(404, "house_membership_not_found", "Medlemmet blev ikke fundet.");
+    if (target.user_id === userId) throw new ApiError(400, "owner_self_removal_forbidden", "Ejeren kan ikke fjerne sig selv.");
+
+    await client.query(
+      "update house_memberships set status = 'revoked', valid_to = now(), updated_at = now() where id = $1",
+      [membershipId]
+    );
+    await client.query("commit");
+    return { id: membershipId, houseId, status: "revoked" as const };
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function revokeHouseInvitation(userId: string, houseId: string, invitationId: string) {

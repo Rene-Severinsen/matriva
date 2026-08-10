@@ -272,8 +272,14 @@ function formatStatus(status: MaintenanceTask["status"]) {
   return labels[status];
 }
 
-function formatSource(source: MaintenanceTask["source"]) {
-  return source === "user_created" ? "Oprettet af dig" : "Anbefalet";
+function formatSource(task: MaintenanceTask, currentUserId: string | null) {
+  if (task.source === "user_created") {
+    if (task.createdByUserId === currentUserId) return "Oprettet af dig";
+    if (task.createdByDisplayName) return `Oprettet af ${task.createdByDisplayName}`;
+    return "Oprettet af en anden bruger";
+  }
+
+  return "Anbefalet";
 }
 
 function isActiveMaintenanceTask(task: MaintenanceTask) {
@@ -1500,6 +1506,7 @@ function ProfileSection({
 
 function TaskRow({
   task,
+  currentUserId,
   completing,
   onComplete,
   onOpen,
@@ -1509,6 +1516,7 @@ function TaskRow({
   onSwipeOpen
 }: {
   task: MaintenanceTask;
+  currentUserId: string | null;
   completing: boolean;
   onComplete: (task: MaintenanceTask) => void;
   onOpen: (task: MaintenanceTask) => void;
@@ -1580,7 +1588,7 @@ function TaskRow({
           </Text>
           {description ? <Text style={styles.compactBodyText}>{description}</Text> : null}
           {priceText ? <Text style={styles.metaText}>Pris · {priceText}</Text> : null}
-          <Text style={styles.metaText}>{formatSource(task.source)}</Text>
+          <Text style={styles.metaText}>{formatSource(task, currentUserId)}</Text>
         </Pressable>
         <Pill tone={isOverdue ? "warning" : "default"}>{formatStatus(displayStatus)}</Pill>
       </View>
@@ -2862,6 +2870,7 @@ function sourceLabel(source: MaintenanceTask["source"]) {
 
 function MaintenanceScreen({
   house,
+  currentUserId,
   tasks,
   history,
   historyDetail,
@@ -2924,6 +2933,7 @@ function MaintenanceScreen({
   onSaveCompletion
 }: {
   house: SavedHouse | null;
+  currentUserId: string | null;
   tasks: MaintenanceTask[];
   history: MaintenanceHistoryEntry[];
   historyDetail: MaintenanceHistoryDetail | null;
@@ -3066,7 +3076,9 @@ function MaintenanceScreen({
 
   if (view === "taskDetail" && selectedTask) {
     const recurrenceText = recurrenceLabel(selectedTask.recurrence);
-    const sourceText = sourceLabel(selectedTask.source);
+    const sourceText = selectedTask.source === "user_created"
+      ? formatSource(selectedTask, currentUserId)
+      : sourceLabel(selectedTask.source);
     const dateText =
       selectedTask.timing.type === "specific_deadline" && selectedTask.timing.dueDate
         ? formatDisplayDate(selectedTask.timing.dueDate)
@@ -3701,6 +3713,7 @@ function MaintenanceScreen({
           {overdueTasks.length > 0 ? (
             <MaintenanceSection
               completingTaskId={completingTaskId}
+              currentUserId={currentUserId}
               onCompleteTask={onCompleteTask}
               onDeleteTask={onDeleteTask}
               onEditTask={openTaskForEditing}
@@ -3714,6 +3727,7 @@ function MaintenanceScreen({
           {soonTasks.length > 0 ? (
             <MaintenanceSection
               completingTaskId={completingTaskId}
+              currentUserId={currentUserId}
               onCompleteTask={onCompleteTask}
               onDeleteTask={onDeleteTask}
               onEditTask={openTaskForEditing}
@@ -3727,6 +3741,7 @@ function MaintenanceScreen({
           {seasonalTasks.length > 0 ? (
             <MaintenanceSection
               completingTaskId={completingTaskId}
+              currentUserId={currentUserId}
               onCompleteTask={onCompleteTask}
               onDeleteTask={onDeleteTask}
               onEditTask={openTaskForEditing}
@@ -3740,6 +3755,7 @@ function MaintenanceScreen({
           {laterTasks.length > 0 ? (
             <MaintenanceSection
               completingTaskId={completingTaskId}
+              currentUserId={currentUserId}
               onCompleteTask={onCompleteTask}
               onDeleteTask={onDeleteTask}
               onEditTask={openTaskForEditing}
@@ -3811,6 +3827,7 @@ function MaintenanceScreen({
 function MaintenanceSection({
   title,
   tasks,
+  currentUserId,
   completingTaskId,
   onCompleteTask,
   onOpenTask,
@@ -3821,6 +3838,7 @@ function MaintenanceSection({
 }: {
   title: string;
   tasks: MaintenanceTask[];
+  currentUserId: string | null;
   completingTaskId: TaskId | null;
   onCompleteTask: (task: MaintenanceTask) => void;
   onOpenTask: (task: MaintenanceTask) => void;
@@ -3835,6 +3853,7 @@ function MaintenanceSection({
       {tasks.map((task) => (
         <TaskRow
           completing={completingTaskId === task.id}
+          currentUserId={currentUserId}
           key={task.id}
           onComplete={onCompleteTask}
           onDelete={onDeleteTask}
@@ -4512,12 +4531,32 @@ function SharingScreen({
     catch { setMessage("Invitationen kunne ikke tilbagekaldes."); }
     finally { setBusy(false); }
   }
+  function removeMember(member: HouseMembership) {
+    if (!house || member.role === "owner") return;
+    Alert.alert(
+      "Fjern medlem?",
+      `${member.displayName ?? "Medlemmet"} mister adgang til boligen. Husets data slettes ikke.`,
+      [
+        { text: "Annuller", style: "cancel" },
+        {
+          text: "Fjern medlem",
+          style: "destructive",
+          onPress: () => void (async () => {
+            setBusy(true); setMessage(null);
+            try { await apiClient.revokeHouseMembership(house.id, member.id); setMessage("Medlemmet er fjernet."); await loadSharing(); }
+            catch { setMessage("Medlemmet kunne ikke fjernes."); }
+            finally { setBusy(false); }
+          })()
+        }
+      ]
+    );
+  }
   return <View style={styles.stack}>
     <SectionHeader title="Deling & adgang" />
     <SecondaryButton label="Tilbage" onPress={onBack} />
     {ownerPendingClaims.length > 0 ? <OwnerClaimInbox claims={ownerPendingClaims} onResolve={onResolveOwnerClaim} /> : null}
     {pendingHouseInvitations.length > 0 ? <Card><Text style={styles.cardTitle}>Dine invitationer</Text><Text style={styles.compactBodyText}>Du kan få adgang til flere huse uden at oprette en ny bolig.</Text>{pendingHouseInvitations.map((invitation) => <View key={invitation.id} style={styles.invitationCard}><View style={styles.invitationText}><Text style={styles.menuText}>{invitation.addressLabel}</Text><Text style={styles.menuMeta}>Inviteret af {invitation.inviterName}</Text></View><PrimaryButton compact label="Accepter" onPress={() => onAcceptInvitation(invitation.id)} /></View>)}</Card> : null}
-    <Card><Text style={styles.cardTitle}>Aktive medlemmer</Text>{members.map((member) => <View key={member.id} style={styles.menuRow}><Text style={styles.menuText}>{member.displayName ?? "Medlem"}</Text><Text style={styles.menuMeta}>{member.role}</Text></View>)}</Card>
+    <Card><Text style={styles.cardTitle}>Aktive medlemmer</Text>{members.map((member) => <View key={member.id} style={styles.menuRow}><View style={styles.invitationText}><Text style={styles.menuText}>{member.displayName ?? "Medlem"}</Text><Text style={styles.menuMeta}>{member.role === "owner" ? "Ejer" : "Medlem"}</Text></View>{canManage && member.role !== "owner" ? <SecondaryButton compact label="Fjern" disabled={busy} onPress={() => removeMember(member)} /> : null}</View>)}</Card>
     {canManage && invitations.length > 0 ? <Card><Text style={styles.cardTitle}>Afventende invitationer</Text>{invitations.map((invitation) => <View key={invitation.id} style={styles.invitationRow}><View style={styles.invitationText}><Text style={styles.menuText}>{invitation.email}</Text><Text style={styles.menuMeta}>Udløber {new Date(invitation.expiresAt).toLocaleDateString("da-DK")}</Text></View><SecondaryButton compact label="Tilbagekald" disabled={busy} onPress={() => void revoke(invitation.id)} /></View>)}</Card> : null}
     {canManage ? <Card><Text style={styles.cardTitle}>Invitér via e-mail</Text><NativeTextInput style={styles.input} value={email} onChangeText={setEmail} placeholder="navn@eksempel.dk" autoCapitalize="none" keyboardType="email-address" /><PrimaryButton label={busy ? "Opretter..." : "Send invitation"} onPress={() => void invite()} disabled={busy || !email.trim()} />{message ? <Text style={styles.bodyText}>{message}</Text> : null}</Card> : <Card><Text style={styles.bodyText}>Kun ejere kan administrere adgang.</Text></Card>}
   </View>;
@@ -6593,6 +6632,7 @@ export default function App() {
       return (
         <MaintenanceScreen
           house={selectedHouse}
+          currentUserId={bootstrap?.user.id ?? null}
           tasks={tasks}
           history={maintenanceHistory}
           historyDetail={selectedHistoryDetail}

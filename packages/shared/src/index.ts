@@ -1281,6 +1281,8 @@ export const maintenanceTaskSchema = z
     title: z.string().min(1),
     description: z.string().min(1).optional(),
     source: maintenanceTaskSourceSchema,
+    createdByUserId: userIdSchema.nullable().optional(),
+    createdByDisplayName: z.string().min(1).nullable().optional(),
     status: maintenanceTaskStatusSchema,
     timing: maintenanceTaskTimingSchema,
     priceAmountMinor: priceAmountMinorSchema.nullable(),

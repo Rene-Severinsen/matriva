@@ -452,8 +452,15 @@ export function mapPublicData(
 
   const primaryBuilding =
     buildings.find((building) => building.isAddressBuilding) ?? null;
-  const primaryUnitCandidates =
-    primaryBuilding?.units.filter(unitLooksResidential) ?? [];
+  const addressUnitIds = raw.addressUnitIds ?? [];
+  const primaryUnitCandidates = primaryBuilding
+    ? (addressUnitIds.length > 0
+        ? primaryBuilding.units.filter(
+            (unit) =>
+              addressUnitIds.includes(unit.bbrUnitId) && unitLooksResidential(unit)
+          )
+        : primaryBuilding.units.filter(unitLooksResidential))
+    : [];
   const primaryUnit =
     primaryUnitCandidates.length === 1 ? primaryUnitCandidates[0] : null;
 

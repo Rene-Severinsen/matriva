@@ -112,6 +112,10 @@ assert(
   sharedSource.includes("source_unavailable"),
   "shared contract must expose availability semantics"
 );
+assert(
+  querySource.includes("adresseIdentificerer") && querySource.includes("BBR_Enhed"),
+  "BBR query must select the address-to-unit relation"
+);
 
 console.log(
   JSON.stringify({

@@ -11,6 +11,7 @@ export type DatafordelerRawPayload = {
   effectiveAt: string;
   address: DatafordelerNode | null;
   addressBuilding: DatafordelerNode | null;
+  addressUnitIds: string[];
   ground: DatafordelerNode | null;
   buildings: DatafordelerNode[];
   unitsByBuildingId: Record<string, DatafordelerNode[]>;

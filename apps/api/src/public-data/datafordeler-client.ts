@@ -65,6 +65,16 @@ const addressAndGroundQuery = `
   }
 `;
 
+const unitsByAddressQuery = `
+  query MatrivaUnitsByAddress($adresseId: String!) {
+    BBR_Enhed(first: 100, virkningstid: __VIRKNINGSTID__, where: { adresseIdentificerer: { eq: $adresseId } }) {
+      nodes {
+        id_lokalId
+      }
+    }
+  }
+`;
+
 const buildingsQuery = `
   query MatrivaBuildings($groundId: String!) {
     BBR_Bygning(first: 100, virkningstid: __VIRKNINGSTID__, where: { grund: { eq: $groundId } }) {
@@ -242,12 +252,21 @@ export class DatafordelerClient {
       );
     }
 
+    const addressUnitsData = await this.graphql(
+      withVirkningstid(unitsByAddressQuery, effectiveAtIso),
+      { adresseId: addressId }
+    );
+    const addressUnitIds = nodes(addressUnitsData.BBR_Enhed)
+      .map((unit) => typeof unit.id_lokalId === "string" ? unit.id_lokalId : null)
+      .filter((unitId): unitId is string => unitId !== null);
+
     if (!groundId) {
       return {
         addressId,
         effectiveAt: effectiveAtIso,
         address,
         addressBuilding,
+        addressUnitIds,
         ground,
         buildings: [],
         unitsByBuildingId: {},
@@ -323,6 +342,7 @@ export class DatafordelerClient {
       effectiveAt: effectiveAtIso,
       address,
       addressBuilding,
+      addressUnitIds,
       ground,
       buildings,
       unitsByBuildingId,

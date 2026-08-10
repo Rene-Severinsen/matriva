@@ -1335,20 +1335,15 @@ function numericProfileFactValue(fact: HousePublicDataProfileFact | undefined) {
 }
 
 function productTotalAreaValue(
-  buildingAreaFact: HousePublicDataProfileFact | undefined,
-  residentialAreaFact: HousePublicDataProfileFact | undefined,
-  basementAreaFact: HousePublicDataProfileFact | undefined
+  residentialAreaFact: HousePublicDataProfileFact | undefined
 ) {
-  const mainArea =
-    numericProfileFactValue(buildingAreaFact) ??
-    numericProfileFactValue(residentialAreaFact);
-  const basementArea = numericProfileFactValue(basementAreaFact);
+  const mainArea = numericProfileFactValue(residentialAreaFact);
 
-  if (mainArea === null && basementArea === null) {
+  if (mainArea === null) {
     return "Ikke registreret";
   }
 
-  return `${(mainArea ?? 0) + (basementArea ?? 0)} m²`;
+  return `${mainArea} m²`;
 }
 
 function updatedAtLabel(value: string | null | undefined) {
@@ -2439,12 +2434,6 @@ function HouseScreen({
   const heatingSourceFact = publicDataProfile?.sections
     .find((section) => section.key === "heating")
     ?.facts.find((fact) => fact.key === "source");
-  const buildingTotalAreaFact = publicDataProfile?.sections
-    .find((section) => section.key === "areas")
-    ?.facts.find((fact) => fact.key === "building_total");
-  const basementAreaFact = publicDataProfile?.sections
-    .find((section) => section.key === "floorsAndBasement")
-    ?.facts.find((fact) => fact.key === "basement_area");
   const latestImprovements = [...improvements]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 3);
@@ -2453,9 +2442,7 @@ function HouseScreen({
     buildingUseFact
   );
   const totalAreaValue = productTotalAreaValue(
-    buildingTotalAreaFact,
-    factMap.get("residential_area"),
-    basementAreaFact
+    factMap.get("residential_area")
   );
   const identityType =
     houseTypeValue !== "Ikke registreret"

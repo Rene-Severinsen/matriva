@@ -25,6 +25,9 @@ const raw = {
   address: {
     id_lokalId: target.darAddressId,
     adressebetegnelse: target.addressLabel,
+    enhed: {
+      nodes: [{ id_lokalId: "unit-1" }]
+    },
     adresseHarHusnummer: {
       nodes: [
         {
@@ -54,6 +57,7 @@ const raw = {
     }
   },
   addressBuilding: { id_lokalId: "4600cb6a-4f3c-4cb2-872a-3ecb746cf866" },
+  addressUnitIds: ["unit-1"],
   ground: {
       id_lokalId: "90a31dae-fa35-43ee-9fc5-462029630500",
       gru009Vandforsyning: 1,
@@ -162,36 +166,36 @@ const raw = {
 };
 
 assert.equal(lookupCode("buildingUse", 120)?.label, "Fritliggende enfamiliehus");
-assert.equal(lookupCode("buildingUse", 999)?.known, false);
-assert.equal(lookupCode("lifecycle", 10)?.label, "Fejlregistreret");
+assert.equal(lookupCode("buildingUse", 998)?.known, false);
+assert.equal(lookupCode("lifecycle", 10)?.label, "Historisk");
 assert.equal(lookupCode("lifecycle", 10)?.known, true);
 assert.equal(
   lookupCode("outerWallMaterial", 1)?.label,
-  "Mursten (tegl, kalksten, cementsten)"
+  "Mursten"
 );
 assert.equal(
   lookupCode("roofMaterial", 5)?.label,
-  "Fibercement, herunder asbest"
+  "Tegl"
 );
 assert.equal(
   lookupCode("unitHousingType", 1)?.label,
-  "Egentlig beboelseslejlighed"
+  "Egentlig beboelseslejlighed med eget køkken"
 );
-assert.equal(lookupCode("unitAreaSource", 1)?.label, "Oplyst af ejer");
+assert.equal(lookupCode("unitAreaSource", 1)?.label, "Oplyst af ejer eller dennes repræsentant");
 assert.equal(
   lookupCode("unitToilet", "T")?.label,
   "Vandskyllende toilet i enheden"
 );
 assert.equal(lookupCode("unitBath", "V")?.label, "Badeværelse i enheden");
 assert.equal(lookupCode("unitKitchen", "E")?.label, "Eget køkken med afløb");
-assert.equal(lookupCode("unitAddressFunction", 0)?.label, "Enhedens adresse");
+assert.equal(lookupCode("unitAddressFunction", 0)?.label, "Vis Enheder under Opgange");
 assert.equal(
   lookupCode("groundWaterSupply", 1)?.label,
   "Alment vandforsyningsanlæg"
 );
 assert.equal(
   lookupCode("groundSewer", 10)?.label,
-  "Fælleskloakeret: spildevand + tag- og overfladevand"
+  "Afløb til offentligt kloaksystem"
 );
 assert.equal(normalizeExternalCode(5537536), "5537536");
 
@@ -206,8 +210,9 @@ assert.equal(mapped.property?.municipalityCode, "0840");
 assert.equal(mapped.ground?.waterSupply?.known, true);
 assert.equal(mapped.ground?.sewer?.known, true);
 assert.equal(mapped.selection.primaryBuildingStatus, "automatic_address_relation");
-assert.equal(mapped.selection.primaryUnitStatus, "user_confirmation_required");
-assert.equal(mapped.status, "ambiguous");
+assert.equal(mapped.selection.primaryUnitStatus, "automatic_unambiguous");
+assert.equal(mapped.selection.primaryUnitId, "unit-1");
+assert.equal(mapped.status, "success");
 assert.equal(primary.areas.totalBuildingAreaM2, 160);
 assert.equal(primary.areas.coveredAreaM2, 6);
 assert.equal(primary.materials.outerWall?.code, "1");
@@ -216,7 +221,7 @@ assert.equal(primary.materials.roof?.code, "5");
 assert.equal(primary.materials.roof?.known, true);
 assert.equal(mapped.buildings[1].lifecycle.code, "10");
 assert.equal(mapped.buildings[1].lifecycle.known, true);
-assert.equal(mapped.buildings[1].lifecycle.label, "Fejlregistreret");
+assert.equal(mapped.buildings[1].lifecycle.label, "Historisk");
 assert.equal(mapped.buildings[1].inclusion.exclusionReason, "non_constructed_lifecycle");
 assert.equal(mapped.buildings[1].availability.heating, "registered_empty");
 assert.equal(mapped.buildings[1].availability.materials, "registered_empty");
@@ -240,6 +245,19 @@ assert.equal(primary.heating.sourceApplicability, "not_applicable");
 assert.equal(primary.heating.supplementary?.code, "2");
 assert.equal(mapped.productBuildings.some((building) => building.bbrBuildingId === "projected"), false);
 assert.equal(mapped.buildings.some((building) => building.bbrBuildingId === "projected"), true);
+
+const ambiguousRaw = structuredClone(raw);
+ambiguousRaw.addressUnitIds.push("unit-2");
+const ambiguousMapped = mapPublicData(target, ambiguousRaw);
+assert.equal(ambiguousMapped.selection.primaryUnitStatus, "user_confirmation_required");
+assert.equal(ambiguousMapped.selection.primaryUnitId, null);
+assert.equal(ambiguousMapped.status, "ambiguous");
+const ambiguousProfile = buildHousePublicDataProfile(target.id, ambiguousMapped);
+assert.equal(
+  ambiguousProfile.topFacts.some((fact) => fact.key === "residential_area" && fact.value !== null),
+  false,
+  "An ambiguous address must not present building residential area as the home's area."
+);
 
 const optionalFieldRaw = structuredClone(raw);
 optionalFieldRaw.unitsByBuildingId["4600cb6a-4f3c-4cb2-872a-3ecb746cf866"] = [

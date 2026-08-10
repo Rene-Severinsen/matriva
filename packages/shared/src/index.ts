@@ -2934,13 +2934,11 @@ export function buildHousePublicDataSummary(
         publicCodeLabel(displayBuilding?.use)
           ? { key: "use", value: publicCodeLabel(displayBuilding?.use) as string }
           : null,
-        primaryUnit?.areas.residentialAreaM2 ??
-        displayBuilding?.areas.residentialAreaM2
+        primaryUnit?.areas.residentialAreaM2 !== null &&
+        primaryUnit?.areas.residentialAreaM2 !== undefined
           ? {
               key: "residential_area_m2",
-              value:
-                (primaryUnit?.areas.residentialAreaM2 ??
-                  displayBuilding?.areas.residentialAreaM2) as number,
+              value: primaryUnit.areas.residentialAreaM2,
               unit: "m2"
             }
           : null,
@@ -3476,7 +3474,7 @@ export function buildHousePublicDataProfile(
       profileFact(
         "residential_area",
         "Boligareal",
-        primaryUnit?.areas.residentialAreaM2 ?? displayBuilding?.areas.residentialAreaM2,
+        primaryUnit?.areas.residentialAreaM2,
         "m2"
       ),
       profileFact(

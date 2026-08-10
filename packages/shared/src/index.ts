@@ -273,6 +273,15 @@ export const adminDashboardResponseSchema = z.object({
     housesWithMultipleMembers: adminDashboardCountSchema,
     pendingClaims: adminDashboardCountSchema
   }),
+  subscriptionMetrics: z.object({
+    proUsers: adminDashboardCountSchema,
+    freeUsers: adminDashboardCountSchema,
+    proRate: adminDashboardRatioSchema,
+    trialUsers: adminDashboardCountSchema,
+    billingIssueUsers: adminDashboardCountSchema,
+    upgradesInPeriod: adminDashboardCountSchema,
+    downgradesInPeriod: adminDashboardCountSchema
+  }),
   funnel: z.object({
     registeredUsers: adminDashboardCountSchema,
     usersWithCompletedProfile: adminDashboardCountSchema,
@@ -284,7 +293,9 @@ export const adminDashboardResponseSchema = z.object({
     newUsers: z.array(adminDashboardSeriesPointSchema),
     newHouses: z.array(adminDashboardSeriesPointSchema),
     completedTasks: z.array(adminDashboardSeriesPointSchema),
-    acceptedRecommendations: z.array(adminDashboardSeriesPointSchema)
+    acceptedRecommendations: z.array(adminDashboardSeriesPointSchema),
+    proUpgrades: z.array(adminDashboardSeriesPointSchema),
+    proDowngrades: z.array(adminDashboardSeriesPointSchema)
   }),
   dataQuality: z.object({
     acceptedRecommendations: z.literal("estimated")

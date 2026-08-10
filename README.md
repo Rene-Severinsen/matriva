@@ -131,6 +131,13 @@ Dashboard definitions:
   Permanent hides use `maintenance_recommendation_hides.hidden_at`.
 - `not_now` is intentionally omitted because the dismissal mode is not stored
   reliably. There is no generic product event logging in this scope.
+- Subscription metrics use the current effective access policy from
+  `user_entitlements`: active Pro access includes `trial`, `active`, and
+  `grace_period` statuses while unexpired. Free users are the remaining users.
+  Pro upgrades and downgrades in the selected period are counted from
+  `entitlement_audit_log` entries with action `user_plan_updated`. These are
+  registered plan changes, not billing revenue or churn until billing is
+  integrated.
 
 The admin UI does not contain seed values, mock metrics, or fallback dashboard
 data. It renders only the validated response from `GET /v1/admin/dashboard` and

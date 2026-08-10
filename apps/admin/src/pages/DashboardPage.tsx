@@ -239,6 +239,9 @@ function DashboardContent({ dashboard }: { dashboard: AdminDashboardResponse }) 
         ))}
       </section>
 
+      <DashboardSignals dashboard={dashboard} />
+      <SubscriptionOverview dashboard={dashboard} />
+
       <section className="chart-grid" aria-label="Udvikling over tid">
         <LineChart
           period={dashboard.period.key}
@@ -261,11 +264,285 @@ function DashboardContent({ dashboard }: { dashboard: AdminDashboardResponse }) 
           title="Accepterede anbefalinger"
           points={dashboard.series.acceptedRecommendations}
         />
+        <LineChart
+          period={dashboard.period.key}
+          title="Pro-opgraderinger"
+          points={dashboard.series.proUpgrades}
+        />
+        <LineChart
+          period={dashboard.period.key}
+          title="Pro-nedgraderinger"
+          points={dashboard.series.proDowngrades}
+        />
       </section>
 
       <Funnel dashboard={dashboard} />
     </>
   );
+}
+
+function DashboardSignals({ dashboard }: { dashboard: AdminDashboardResponse }) {
+  const totalUsers = dashboard.totals.users;
+  const activeUserRate = safeRatio(
+    dashboard.periodMetrics.activeUsers,
+    totalUsers
+  );
+  const profileCompletionRate = safeRatio(
+    dashboard.funnel.usersWithCompletedProfile,
+    dashboard.funnel.registeredUsers
+  );
+  const houseActivationRate = dashboard.ratios.usersWithHouseRate;
+  const sharedHouseRate = safeRatio(
+    dashboard.relationshipMetrics.housesWithMultipleMembers,
+    dashboard.totals.houses
+  );
+  const profilesWithoutTask = Math.max(
+    0,
+    dashboard.funnel.usersWithCompletedProfile - dashboard.funnel.usersWithTask
+  );
+  const attentionItems = [
+    {
+      label: "Afventende adgangskrav",
+      value: dashboard.relationshipMetrics.pendingClaims,
+      note: "anmodninger eller invitationer kræver opfølgning",
+      tone: "warning"
+    },
+    {
+      label: "BBR warnings",
+      value: dashboard.totals.publicDataWarnings,
+      note: "warnings i det aktuelle datagrundlag",
+      tone: "warning"
+    },
+    {
+      label: "Profiler uden første opgave",
+      value: profilesWithoutTask,
+      note: "brugere er faldet fra før første vedligeholdelsesopgave",
+      tone: "neutral"
+    },
+    {
+      label: "Anbefalinger skjult permanent",
+      value: dashboard.periodMetrics.permanentRecommendationHides,
+      note: "skjult i den valgte periode; kan pege på relevansproblemer",
+      tone: "neutral"
+    }
+  ].filter((item) => item.value > 0);
+
+  return (
+    <>
+      <section className="dashboard-insight-grid" aria-label="Ledelsesoverblik">
+        <article className="dashboard-panel health-panel">
+          <header className="dashboard-panel-header">
+            <div>
+              <p className="panel-eyebrow">Sundhedstjek</p>
+              <h3>Hvordan bruges Matriva?</h3>
+            </div>
+            <span className="panel-header-note">Aktuelt snapshot</span>
+          </header>
+          <div className="health-metrics">
+            <InsightMetric
+              label="Aktiv brugerandel"
+              value={percentFormatter.format(activeUserRate)}
+              detail={`${numberFormatter.format(dashboard.periodMetrics.activeUsers)} af ${numberFormatter.format(totalUsers)} brugere`}
+              tone="blue"
+            />
+            <InsightMetric
+              label="Profil gennemført"
+              value={percentFormatter.format(profileCompletionRate)}
+              detail={`${numberFormatter.format(dashboard.funnel.usersWithCompletedProfile)} brugere`}
+              tone="purple"
+            />
+            <InsightMetric
+              label="Brugere med bolig"
+              value={percentFormatter.format(houseActivationRate)}
+              detail={`${numberFormatter.format(dashboard.funnel.usersWithHouse)} brugere`}
+              tone="green"
+            />
+            <InsightMetric
+              label="Delte boliger"
+              value={percentFormatter.format(sharedHouseRate)}
+              detail={`${numberFormatter.format(dashboard.relationshipMetrics.housesWithMultipleMembers)} boliger`}
+              tone="teal"
+            />
+          </div>
+        </article>
+
+        <article className="dashboard-panel attention-panel">
+          <header className="dashboard-panel-header">
+            <div>
+              <p className="panel-eyebrow">Driftsblik</p>
+              <h3>Kræver opmærksomhed</h3>
+            </div>
+            <span className="panel-header-note">Prioriteret signal</span>
+          </header>
+          {attentionItems.length > 0 ? (
+            <ul className="attention-list">
+              {attentionItems.map((item) => (
+                <li className={`attention-item ${item.tone}`} key={item.label}>
+                  <span className="attention-value">
+                    {numberFormatter.format(item.value)}
+                  </span>
+                  <span className="attention-copy">
+                    <strong>{item.label}</strong>
+                    <small>{item.note}</small>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="attention-empty">
+              <span className="attention-empty-icon">
+                <Icon name="check" />
+              </span>
+              <div>
+                <strong>Ingen aktuelle opfølgningssignaler</strong>
+                <p>De viste datakvalitets- og aktiveringsmål ser stabile ud.</p>
+              </div>
+            </div>
+          )}
+        </article>
+      </section>
+
+      <section className="dashboard-panel period-summary" aria-label="Aktivitet i valgt periode">
+        <header className="dashboard-panel-header">
+          <div>
+            <p className="panel-eyebrow">Valgt periode</p>
+            <h3>Aktivitet i fokus</h3>
+          </div>
+          <span className="panel-header-note">
+            {formatDateRange(dashboard.period.from, dashboard.period.to)}
+          </span>
+        </header>
+        <div className="period-summary-grid">
+          <PeriodMetric label="Nye brugere" value={dashboard.periodMetrics.newUsers} />
+          <PeriodMetric label="Nye boliger" value={dashboard.periodMetrics.newHouses} />
+          <PeriodMetric label="Nye opgaver" value={dashboard.periodMetrics.createdTasks} />
+          <PeriodMetric label="Udførte opgaver" value={dashboard.periodMetrics.completedTasks} />
+        </div>
+      </section>
+    </>
+  );
+}
+
+function InsightMetric({
+  detail,
+  label,
+  tone,
+  value
+}: {
+  detail: string;
+  label: string;
+  tone: "blue" | "green" | "purple" | "teal";
+  value: string;
+}) {
+  return (
+    <div className="health-metric">
+      <span className={`health-metric-dot ${tone}`} />
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
+        <small>{detail}</small>
+      </div>
+    </div>
+  );
+}
+
+function SubscriptionOverview({
+  dashboard
+}: {
+  dashboard: AdminDashboardResponse;
+}) {
+  const subscription = dashboard.subscriptionMetrics;
+  const totalUsers = subscription.proUsers + subscription.freeUsers;
+  const netChange = subscription.upgradesInPeriod - subscription.downgradesInPeriod;
+
+  return (
+    <section className="dashboard-subscription-grid" aria-label="Abonnement og udvikling">
+      <article className="dashboard-panel dashboard-subscription-panel">
+        <header className="dashboard-panel-header">
+          <div>
+            <p className="panel-eyebrow">Abonnement</p>
+            <h3>Free og Pro i dag</h3>
+          </div>
+          <span className="panel-header-note">Aktiv adgang</span>
+        </header>
+        <div className="subscription-split">
+          <div className="subscription-split-label">
+            <span>Fordeling af brugere</span>
+            <strong>{numberFormatter.format(totalUsers)}</strong>
+          </div>
+          <div
+            aria-label={`${percentFormatter.format(subscription.proRate)} Pro og ${percentFormatter.format(1 - subscription.proRate)} Free`}
+            className="subscription-bar"
+            role="img"
+          >
+            <span style={{ width: `${subscription.proRate * 100}%` }} />
+          </div>
+          <div className="subscription-legend">
+            <span><i className="subscription-dot pro" />Pro <strong>{numberFormatter.format(subscription.proUsers)}</strong></span>
+            <span><i className="subscription-dot free" />Free <strong>{numberFormatter.format(subscription.freeUsers)}</strong></span>
+          </div>
+        </div>
+        <div className="subscription-mini-grid">
+          <div>
+            <span>Pro-andel</span>
+            <strong>{percentFormatter.format(subscription.proRate)}</strong>
+          </div>
+          <div>
+            <span>Prøveperioder</span>
+            <strong>{numberFormatter.format(subscription.trialUsers)}</strong>
+          </div>
+          <div>
+            <span>Billing issues</span>
+            <strong>{numberFormatter.format(subscription.billingIssueUsers)}</strong>
+          </div>
+        </div>
+      </article>
+
+      <article className="dashboard-panel dashboard-subscription-panel">
+        <header className="dashboard-panel-header">
+          <div>
+            <p className="panel-eyebrow">Udvikling i perioden</p>
+            <h3>Planændringer</h3>
+          </div>
+          <span className={`subscription-net ${netChange >= 0 ? "positive" : "negative"}`}>
+            Netto {formatSignedCount(netChange)}
+          </span>
+        </header>
+        <div className="subscription-change-grid">
+          <div className="subscription-change positive">
+            <span>Pro-opgraderinger</span>
+            <strong>{numberFormatter.format(subscription.upgradesInPeriod)}</strong>
+            <small>registreret i audit-loggen</small>
+          </div>
+          <div className="subscription-change negative">
+            <span>Pro-nedgraderinger</span>
+            <strong>{numberFormatter.format(subscription.downgradesInPeriod)}</strong>
+            <small>registreret i audit-loggen</small>
+          </div>
+        </div>
+        <p className="subscription-note">
+          Udviklingen viser registrerede planændringer. Faktisk betaling og churn kræver en billing-integration.
+        </p>
+      </article>
+    </section>
+  );
+}
+
+function PeriodMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="period-metric">
+      <span>{label}</span>
+      <strong>{numberFormatter.format(value)}</strong>
+    </div>
+  );
+}
+
+function safeRatio(numerator: number, denominator: number) {
+  return denominator === 0 ? 0 : numerator / denominator;
+}
+
+function formatSignedCount(value: number) {
+  return `${value > 0 ? "+" : ""}${numberFormatter.format(value)}`;
 }
 
 function LineChart({
@@ -509,7 +786,7 @@ function DashboardSkeleton() {
   return (
     <div aria-label="Indlæser dashboard" aria-live="polite">
       <section className="kpi-grid">
-        {Array.from({ length: 6 }, (_, index) => (
+        {Array.from({ length: 10 }, (_, index) => (
           <div className="kpi-card skeleton-card" key={index}>
             <span />
             <strong />
@@ -517,8 +794,16 @@ function DashboardSkeleton() {
           </div>
         ))}
       </section>
+      <section className="dashboard-insight-grid">
+        <div className="dashboard-panel skeleton-insight" />
+        <div className="dashboard-panel skeleton-insight" />
+      </section>
+      <section className="dashboard-subscription-grid">
+        <div className="dashboard-panel skeleton-insight" />
+        <div className="dashboard-panel skeleton-insight" />
+      </section>
       <section className="chart-grid">
-        {Array.from({ length: 4 }, (_, index) => (
+        {Array.from({ length: 6 }, (_, index) => (
           <div className="chart-card skeleton-chart" key={index} />
         ))}
       </section>
@@ -531,6 +816,17 @@ function formatDateTime(value: string) {
     dateStyle: "short",
     timeStyle: "short"
   }).format(new Date(value));
+}
+
+function formatDateRange(from: string, to: string) {
+  const formatter = new Intl.DateTimeFormat("da-DK", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC"
+  });
+
+  return `${formatter.format(new Date(from))} – ${formatter.format(new Date(to))}`;
 }
 
 function formatBucket(value: string) {

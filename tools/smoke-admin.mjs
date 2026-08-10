@@ -52,6 +52,12 @@ function assertDashboardShape(dashboard, expectedPeriod) {
   const sharedCounts = [
     ...Object.values(dashboard.totals),
     ...Object.values(dashboard.periodMetrics),
+    dashboard.subscriptionMetrics.proUsers,
+    dashboard.subscriptionMetrics.freeUsers,
+    dashboard.subscriptionMetrics.trialUsers,
+    dashboard.subscriptionMetrics.billingIssueUsers,
+    dashboard.subscriptionMetrics.upgradesInPeriod,
+    dashboard.subscriptionMetrics.downgradesInPeriod,
     ...Object.values(dashboard.funnel)
   ];
 
@@ -62,6 +68,14 @@ function assertDashboardShape(dashboard, expectedPeriod) {
   assert.ok(sharedCounts.every((value) => Number.isInteger(value) && value >= 0));
   assert.ok(
     Object.values(dashboard.ratios).every((value) => value >= 0 && value <= 1)
+  );
+  assert.ok(
+    dashboard.subscriptionMetrics.proRate >= 0 &&
+      dashboard.subscriptionMetrics.proRate <= 1
+  );
+  assert.equal(
+    dashboard.subscriptionMetrics.proUsers + dashboard.subscriptionMetrics.freeUsers,
+    dashboard.totals.users
   );
   assert.equal(dashboard.dataQuality.acceptedRecommendations, "estimated");
 
@@ -93,6 +107,23 @@ async function insertDashboardFixture(pool, userId) {
   await pool.query(
     "update user_profiles set display_name = $2, updated_at = now() where user_id = $1",
     [userId, "Admin dashboard smoke"]
+  );
+  await pool.query(
+    `
+      insert into user_entitlements (user_id, plan, status, source, starts_at, updated_at)
+      values ($1, 'pro', 'active', 'admin', now(), now())
+      on conflict (user_id) do update set
+        plan = 'pro', status = 'active', source = 'admin',
+        starts_at = now(), expires_at = null, updated_at = now()
+    `,
+    [userId]
+  );
+  await pool.query(
+    `
+      insert into entitlement_audit_log (target_user_id, action, plan, status, details)
+      values ($1, 'user_plan_updated', 'pro', 'active', '{"source":"smoke"}'::jsonb)
+    `,
+    [userId]
   );
   await pool.query(
     `
@@ -649,6 +680,12 @@ async function runSmoke() {
     assert.equal(
       after.periodMetrics.permanentRecommendationHides,
       before.periodMetrics.permanentRecommendationHides + 1
+    );
+    assert.equal(after.subscriptionMetrics.proUsers, before.subscriptionMetrics.proUsers + 1);
+    assert.equal(after.subscriptionMetrics.freeUsers, before.subscriptionMetrics.freeUsers - 1);
+    assert.equal(
+      after.subscriptionMetrics.upgradesInPeriod,
+      before.subscriptionMetrics.upgradesInPeriod + 1
     );
     assert.equal(
       after.funnel.usersWithCompletedProfile,

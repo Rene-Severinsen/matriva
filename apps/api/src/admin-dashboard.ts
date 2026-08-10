@@ -46,6 +46,11 @@ type DashboardAggregateRow = {
   active_memberships: number;
   houses_with_multiple_members: number;
   pending_claims: number;
+  pro_users: number;
+  trial_users: number;
+  billing_issue_users: number;
+  pro_upgrades: number;
+  pro_downgrades: number;
 };
 
 type SeriesRow = {
@@ -79,6 +84,16 @@ const seriesDefinitions = {
     table: "maintenance_recommendations",
     timestamp: "updated_at",
     where: "status = 'accepted'"
+  },
+  proUpgrades: {
+    table: "entitlement_audit_log",
+    timestamp: "created_at",
+    where: "action = 'user_plan_updated' and plan = 'pro'"
+  },
+  proDowngrades: {
+    table: "entitlement_audit_log",
+    timestamp: "created_at",
+    where: "action = 'user_plan_updated' and plan = 'free'"
   }
 } satisfies Record<string, SeriesDefinition>;
 
@@ -164,6 +179,39 @@ export async function getAdminDashboard(
           where last_used_at >= $1 and last_used_at < $2
         ) as active_users,
         (select count(*)::int from houses where created_at >= $1 and created_at < $2) as new_houses,
+        (
+          select count(*)::int
+          from users u
+          left join user_entitlements ue on ue.user_id = u.id
+          where coalesce(ue.plan, 'free') = 'pro'
+            and coalesce(ue.status, 'free') in ('trial', 'active', 'grace_period')
+            and (ue.expires_at is null or ue.expires_at > now())
+        ) as pro_users,
+        (
+          select count(*)::int
+          from user_entitlements
+          where status = 'trial'
+            and (expires_at is null or expires_at > now())
+        ) as trial_users,
+        (
+          select count(*)::int
+          from user_entitlements
+          where status = 'billing_issue'
+        ) as billing_issue_users,
+        (
+          select count(*)::int
+          from entitlement_audit_log
+          where action = 'user_plan_updated'
+            and plan = 'pro'
+            and created_at >= $1 and created_at < $2
+        ) as pro_upgrades,
+        (
+          select count(*)::int
+          from entitlement_audit_log
+          where action = 'user_plan_updated'
+            and plan = 'free'
+            and created_at >= $1 and created_at < $2
+        ) as pro_downgrades,
         (
           select count(*)::int
           from maintenance_tasks
@@ -260,12 +308,16 @@ export async function getAdminDashboard(
     newUsers,
     newHouses,
     completedTasks,
-    acceptedRecommendations
+    acceptedRecommendations,
+    proUpgrades,
+    proDowngrades
   ] = await Promise.all([
     loadSeries(seriesDefinitions.newUsers, period, from, to),
     loadSeries(seriesDefinitions.newHouses, period, from, to),
     loadSeries(seriesDefinitions.completedTasks, period, from, to),
-    loadSeries(seriesDefinitions.acceptedRecommendations, period, from, to)
+    loadSeries(seriesDefinitions.acceptedRecommendations, period, from, to),
+    loadSeries(seriesDefinitions.proUpgrades, period, from, to),
+    loadSeries(seriesDefinitions.proDowngrades, period, from, to)
   ]);
 
   const totalUsers = count(aggregate.total_users);
@@ -302,6 +354,15 @@ export async function getAdminDashboard(
       housesWithMultipleMembers: count(aggregate.houses_with_multiple_members),
       pendingClaims: count(aggregate.pending_claims)
     },
+    subscriptionMetrics: {
+      proUsers: count(aggregate.pro_users),
+      freeUsers: Math.max(0, totalUsers - count(aggregate.pro_users)),
+      proRate: ratio(count(aggregate.pro_users), totalUsers),
+      trialUsers: count(aggregate.trial_users),
+      billingIssueUsers: count(aggregate.billing_issue_users),
+      upgradesInPeriod: count(aggregate.pro_upgrades),
+      downgradesInPeriod: count(aggregate.pro_downgrades)
+    },
     funnel: {
       registeredUsers: totalUsers,
       usersWithCompletedProfile: count(aggregate.completed_profiles),
@@ -313,7 +374,9 @@ export async function getAdminDashboard(
       newUsers,
       newHouses,
       completedTasks,
-      acceptedRecommendations
+      acceptedRecommendations,
+      proUpgrades,
+      proDowngrades
     },
     dataQuality: {
       acceptedRecommendations: "estimated"

@@ -68,7 +68,7 @@ export const maintenanceCatalogItems: ReadonlyArray<MaintenanceCatalogItem> = [
       "Fjern blade og snavs fra tagrender, så regnvand lettere kan ledes væk fra huset.",
     season: "autumn",
     recommendedPeriod: { type: "month_range", startMonth: 9, endMonth: 11 },
-    defaultRecurrenceInterval: "yearly",
+    defaultRecurrenceInterval: "half_yearly",
     priority: "normal",
     eligibilityRules: { type: "universal_house" },
     disclaimerClass: "general",

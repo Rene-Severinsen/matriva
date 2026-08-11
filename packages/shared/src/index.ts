@@ -12,6 +12,13 @@ export type HomeCardId = Brand<string, "HomeCardId">;
 export type TaskId = Brand<string, "TaskId">;
 export type MaintenanceRecommendationId = Brand<string, "MaintenanceRecommendationId">;
 export type MaintenanceCompletionId = Brand<string, "MaintenanceCompletionId">;
+export type GuideTemplateId = Brand<string, "GuideTemplateId">;
+export type GuideVersionId = Brand<string, "GuideVersionId">;
+export type GuideAssetId = Brand<string, "GuideAssetId">;
+export type GuideHotspotId = Brand<string, "GuideHotspotId">;
+export type HouseProfileId = Brand<string, "HouseProfileId">;
+export type HouseRelevanceRuleSetId = Brand<string, "HouseRelevanceRuleSetId">;
+export type HouseRecommendationAnalysisJobId = Brand<string, "HouseRecommendationAnalysisJobId">;
 export type DocumentId = Brand<string, "DocumentId">;
 export type ImprovementId = Brand<string, "ImprovementId">;
 export type MediaId = Brand<string, "MediaId">;
@@ -60,6 +67,41 @@ export const maintenanceCompletionIdSchema = z
   .string()
   .regex(new RegExp(`^mcomp_${opaqueSuffixPattern}$`))
   .transform((value): MaintenanceCompletionId => value as MaintenanceCompletionId);
+
+export const guideTemplateIdSchema = z
+  .string()
+  .regex(new RegExp(`^guide_${opaqueSuffixPattern}$`))
+  .transform((value): GuideTemplateId => value as GuideTemplateId);
+
+export const guideVersionIdSchema = z
+  .string()
+  .regex(new RegExp(`^gver_${opaqueSuffixPattern}$`))
+  .transform((value): GuideVersionId => value as GuideVersionId);
+
+export const guideAssetIdSchema = z
+  .string()
+  .regex(new RegExp(`^gasset_${opaqueSuffixPattern}$`))
+  .transform((value): GuideAssetId => value as GuideAssetId);
+
+export const guideHotspotIdSchema = z
+  .string()
+  .regex(new RegExp(`^ghot_${opaqueSuffixPattern}$`))
+  .transform((value): GuideHotspotId => value as GuideHotspotId);
+
+export const houseProfileIdSchema = z
+  .string()
+  .regex(new RegExp(`^hprof_${opaqueSuffixPattern}$`))
+  .transform((value): HouseProfileId => value as HouseProfileId);
+
+export const houseRelevanceRuleSetIdSchema = z
+  .string()
+  .regex(new RegExp(`^hrule_${opaqueSuffixPattern}$`))
+  .transform((value): HouseRelevanceRuleSetId => value as HouseRelevanceRuleSetId);
+
+export const houseRecommendationAnalysisJobIdSchema = z
+  .string()
+  .regex(new RegExp(`^rjob_${opaqueSuffixPattern}$`))
+  .transform((value): HouseRecommendationAnalysisJobId => value as HouseRecommendationAnalysisJobId);
 
 export const documentIdSchema = z
   .string()
@@ -1025,6 +1067,156 @@ export type HouseDraftOverviewPreviewDataConfidence = z.infer<
   typeof houseDraftOverviewPreviewDataConfidenceSchema
 >;
 
+export const guidePublicationStatusSchema = z.enum([
+  "draft",
+  "published",
+  "archived"
+]);
+
+export type GuidePublicationStatus = z.infer<typeof guidePublicationStatusSchema>;
+
+export const guideValidationStatusSchema = z.enum([
+  "not_requested",
+  "in_review",
+  "changes_requested",
+  "approved"
+]);
+
+export type GuideValidationStatus = z.infer<typeof guideValidationStatusSchema>;
+
+export const guideSectionTypeSchema = z.enum([
+  "introduction",
+  "why_it_matters",
+  "overview",
+  "tools_materials",
+  "safety",
+  "preparation",
+  "step",
+  "common_mistakes",
+  "completion_check",
+  "professional_help",
+  "print_note",
+  "custom"
+]);
+
+export const guideHotspotTypeSchema = z.enum([
+  "tip",
+  "warning",
+  "checkpoint",
+  "correct_result"
+]);
+
+export const guideAssetSourceTypeSchema = z.enum([
+  "ai_generated",
+  "photograph",
+  "illustration",
+  "licensed",
+  "other"
+]);
+
+export const guideSectionSchema = z.object({
+  id: z.string().regex(new RegExp(`^gsec_${opaqueSuffixPattern}$`)),
+  sectionType: guideSectionTypeSchema,
+  sectionKey: z.string().min(1),
+  position: z.number().int().nonnegative(),
+  title: z.string().min(1).nullable(),
+  content: z.record(z.string(), z.unknown())
+});
+
+export type GuideSection = z.infer<typeof guideSectionSchema>;
+
+export const guideHotspotSchema = z.object({
+  id: guideHotspotIdSchema,
+  hotspotType: guideHotspotTypeSchema,
+  position: z.number().int().nonnegative(),
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+  title: z.string().min(1),
+  body: z.string().min(1),
+  detailGuideAssetId: guideAssetIdSchema.nullable()
+});
+
+export type GuideHotspot = z.infer<typeof guideHotspotSchema>;
+
+export const guideAssetSchema = z.object({
+  id: guideAssetIdSchema,
+  assetKey: z.string().min(1),
+  mimeType: z.enum([
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/avif",
+    "image/svg+xml"
+  ]),
+  sourceType: guideAssetSourceTypeSchema,
+  altText: z.string().min(1).nullable(),
+  caption: z.string().min(1).nullable(),
+  placement: z.enum(["cover", "inline", "step", "before", "after", "print_appendix"]),
+  position: z.number().int().nonnegative(),
+  printVisible: z.boolean(),
+  hotspots: z.array(guideHotspotSchema)
+});
+
+export type GuideAsset = z.infer<typeof guideAssetSchema>;
+
+export const guidePrintMetadataSchema = z.object({
+  paperFormat: z.literal("A4"),
+  printTitle: z.string().min(1).nullable(),
+  printSubtitle: z.string().min(1).nullable(),
+  footerText: z.string().min(1).nullable(),
+  showHotspotLegend: z.boolean(),
+  sectionOrder: z.array(z.string().min(1)),
+  renderOptions: z.record(z.string(), z.unknown())
+});
+
+export type GuidePrintMetadata = z.infer<typeof guidePrintMetadataSchema>;
+
+export const guideVersionSchema = z.object({
+  id: guideVersionIdSchema,
+  versionNumber: z.number().int().positive(),
+  locale: z.literal("da-DK"),
+  title: z.string().min(1),
+  summary: z.string().min(1).nullable(),
+  publicationStatus: guidePublicationStatusSchema,
+  validationStatus: guideValidationStatusSchema,
+  sections: z.array(guideSectionSchema),
+  assets: z.array(guideAssetSchema),
+  searchTerms: z.array(z.string().min(1)),
+  printMetadata: guidePrintMetadataSchema.nullable()
+});
+
+export type GuideVersion = z.infer<typeof guideVersionSchema>;
+
+export const guideTemplateSchema = z.object({
+  id: guideTemplateIdSchema,
+  guideKey: z.string().min(1),
+  currentPublishedVersionId: guideVersionIdSchema.nullable(),
+  isActive: z.boolean()
+});
+
+export type GuideTemplate = z.infer<typeof guideTemplateSchema>;
+
+export const houseRecommendationGenerationTypeSchema = z.enum([
+  "generic",
+  "personalized"
+]);
+
+export type HouseRecommendationGenerationType = z.infer<
+  typeof houseRecommendationGenerationTypeSchema
+>;
+
+export const houseRecommendationAnalysisJobStatusSchema = z.enum([
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "cancelled"
+]);
+
+export type HouseRecommendationAnalysisJobStatus = z.infer<
+  typeof houseRecommendationAnalysisJobStatusSchema
+>;
+
 export const maintenanceTaskSourceSchema = z.enum([
   "user_created",
   "matriva_recommended",
@@ -1235,6 +1427,7 @@ export function parseDanishPriceInput(input: string): DanishPriceParseResult {
 export const maintenanceTaskTimingSchema = z
   .object({
     type: maintenanceTimingTypeSchema,
+    startDate: z.string().date().optional(),
     dueDate: z.string().date().optional(),
     season: maintenanceSeasonSchema.optional(),
     daysUntilDue: z.number().int().nonnegative().optional(),
@@ -1257,6 +1450,14 @@ export const maintenanceTaskTimingSchema = z
           message: "seasonal maintenance tasks must not include dueDate"
         });
       }
+
+      if (timing.startDate) {
+        context.addIssue({
+          code: "custom",
+          path: ["startDate"],
+          message: "seasonal maintenance tasks must not include startDate"
+        });
+      }
     }
 
     if (timing.type === "specific_deadline" && !timing.dueDate) {
@@ -1267,12 +1468,33 @@ export const maintenanceTaskTimingSchema = z
       });
     }
 
+    if (
+      timing.type === "specific_deadline" &&
+      timing.startDate &&
+      timing.dueDate &&
+      timing.startDate > timing.dueDate
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["startDate"],
+        message: "startDate must not be after dueDate"
+      });
+    }
+
     if (timing.type === "none") {
       if (timing.dueDate) {
         context.addIssue({
           code: "custom",
           path: ["dueDate"],
           message: "maintenance tasks without timing must not include dueDate"
+        });
+      }
+
+      if (timing.startDate) {
+        context.addIssue({
+          code: "custom",
+          path: ["startDate"],
+          message: "maintenance tasks without timing must not include startDate"
         });
       }
 
@@ -1319,6 +1541,9 @@ export const maintenanceTaskSchema = z
     priceAmountMinor: priceAmountMinorSchema.nullable(),
     priceCurrency: dkkCurrencySchema,
     recommendation: recommendedMaintenanceTaskMetadataSchema.optional(),
+    guideTemplateId: guideTemplateIdSchema.nullable().optional(),
+    guideVersionId: guideVersionIdSchema.nullable().optional(),
+    creationContext: z.enum(["manual", "recommendation_acceptance", "guide_library"]).optional(),
     recurrence: maintenanceRecurrenceSchema.nullable().optional(),
     originCatalogKey: z.string().min(1).nullable().optional(),
     originCatalogVersion: z.string().min(1).nullable().optional(),
@@ -1360,6 +1585,17 @@ export const maintenanceTaskSchema = z
         path: ["recommendation"],
         message:
           "recommendation metadata is only allowed for Matriva-recommended maintenance tasks"
+      });
+    }
+
+    if (
+      (task.guideTemplateId !== null && task.guideTemplateId !== undefined) !==
+      (task.guideVersionId !== null && task.guideVersionId !== undefined)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["guideVersionId"],
+        message: "guide template and version must be present together"
       });
     }
   });
@@ -1485,6 +1721,7 @@ export type SavedHousesResponse = z.infer<typeof savedHousesResponseSchema>;
 export const createMaintenanceTaskTimingSchema = z
   .object({
     type: maintenanceTimingTypeSchema,
+    startDate: z.string().date().optional(),
     dueDate: z.string().date().optional(),
     season: maintenanceSeasonSchema.optional()
   })
@@ -1505,6 +1742,14 @@ export const createMaintenanceTaskTimingSchema = z
           message: "seasonal maintenance tasks must not include dueDate"
         });
       }
+
+      if (timing.startDate) {
+        context.addIssue({
+          code: "custom",
+          path: ["startDate"],
+          message: "seasonal maintenance tasks must not include startDate"
+        });
+      }
     }
 
     if (timing.type === "specific_deadline" && !timing.dueDate) {
@@ -1515,12 +1760,33 @@ export const createMaintenanceTaskTimingSchema = z
       });
     }
 
+    if (
+      timing.type === "specific_deadline" &&
+      timing.startDate &&
+      timing.dueDate &&
+      timing.startDate > timing.dueDate
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["startDate"],
+        message: "startDate must not be after dueDate"
+      });
+    }
+
     if (timing.type === "none") {
       if (timing.dueDate) {
         context.addIssue({
           code: "custom",
           path: ["dueDate"],
           message: "maintenance tasks without timing must not include dueDate"
+        });
+      }
+
+      if (timing.startDate) {
+        context.addIssue({
+          code: "custom",
+          path: ["startDate"],
+          message: "maintenance tasks without timing must not include startDate"
         });
       }
 
@@ -1547,7 +1813,10 @@ export const createMaintenanceTaskRequestSchema = z
     timing: createMaintenanceTaskTimingSchema,
     priceAmountMinor: priceAmountMinorSchema.nullable().optional(),
     priceCurrency: dkkCurrencySchema.optional(),
-    recurrence: maintenanceRecurrenceSchema.nullable().optional()
+    recurrence: maintenanceRecurrenceSchema.nullable().optional(),
+    guideTemplateId: guideTemplateIdSchema.optional(),
+    guideVersionId: guideVersionIdSchema.optional(),
+    creationContext: z.enum(["manual", "guide_library"]).optional()
   })
   .superRefine((input, context) => {
     if (input.priceAmountMinor !== undefined && input.priceAmountMinor !== null) {
@@ -1565,6 +1834,22 @@ export const createMaintenanceTaskRequestSchema = z
         code: "custom",
         path: ["priceCurrency"],
         message: "Maintenance price currency must be DKK."
+      });
+    }
+
+    if (Boolean(input.guideTemplateId) !== Boolean(input.guideVersionId)) {
+      context.addIssue({
+        code: "custom",
+        path: ["guideVersionId"],
+        message: "guide template and version must be supplied together"
+      });
+    }
+
+    if (input.creationContext === "guide_library" && !input.guideVersionId) {
+      context.addIssue({
+        code: "custom",
+        path: ["creationContext"],
+        message: "guide library tasks require a guide version"
       });
     }
   });
@@ -1850,11 +2135,16 @@ export const maintenanceRecommendationSchema = z.object({
   status: maintenanceRecommendationStatusSchema,
   catalogKey: z.string().min(1).optional(),
   catalogVersion: z.string().min(1).optional(),
+  guideTemplateId: guideTemplateIdSchema.nullable().optional(),
+  guideVersionId: guideVersionIdSchema.nullable().optional(),
+  generationType: houseRecommendationGenerationTypeSchema.optional(),
+  analysisJobId: houseRecommendationAnalysisJobIdSchema.nullable().optional(),
   title: z.string().min(1),
   description: z.string().min(1),
   recommendedTimingLabel: z.string().min(1),
   recommendedPeriod: maintenanceRecommendationPeriodSchema.optional(),
   periodKey: z.string().min(1).optional(),
+  suggestedStartDate: z.string().date().optional(),
   suggestedDueDate: z.string().date().optional(),
   defaultRecurrence: maintenanceRecurrenceSchema.nullable().optional(),
   priority: maintenanceRecommendationPrioritySchema.optional(),

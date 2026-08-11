@@ -61,6 +61,14 @@ import type {
 } from "@matriva/shared";
 import type { FeatureKey, EntitlementValue, UpdateAdminEntitlementPlanConfigRequest } from "@matriva/shared";
 import {
+  guideContentSeeds,
+  type GuideContentSeed
+} from "./guide-content.ts";
+import {
+  houseProfileSeeds,
+  type HouseProfileSeed
+} from "./house-profile-content.ts";
+import {
   maintenanceCatalogItems,
   recommendedPeriodLabel,
   type MaintenanceCatalogItem,
@@ -147,11 +155,15 @@ type MaintenanceTaskRow = {
   source: MaintenanceTask["source"];
   status: MaintenanceTaskStatus;
   timing_type: MaintenanceTaskTiming["type"];
+  start_date: string | null;
   due_date: string | null;
   season: MaintenanceTaskTiming["season"] | null;
   price_amount_minor: number | null;
   price_currency: "DKK";
   recommendation: RecommendedMaintenanceTaskMetadata | null;
+  guide_template_id: string | null;
+  guide_version_id: string | null;
+  creation_context: "manual" | "recommendation_acceptance" | "guide_library";
   created_at: Date;
   updated_at: Date;
   completed_at: Date | null;
@@ -174,6 +186,10 @@ type MaintenanceRecommendationRow = {
   house_id: string;
   catalog_key: string | null;
   catalog_version: string | null;
+  guide_template_id: string | null;
+  guide_version_id: string | null;
+  generation_type: "generic" | "personalized";
+  analysis_job_id: string | null;
   source_type: MaintenanceRecommendation["sourceType"];
   status: MaintenanceRecommendation["status"];
   title: string;
@@ -181,6 +197,7 @@ type MaintenanceRecommendationRow = {
   recommended_timing_label: string;
   recommended_period: MaintenanceRecommendation["recommendedPeriod"] | null;
   period_key: string | null;
+  suggested_start_date: string | null;
   suggested_due_date: string | null;
   priority: MaintenanceRecommendation["priority"] | null;
   disclaimer_class: MaintenanceRecommendation["disclaimerClass"] | null;
@@ -211,6 +228,8 @@ type MaintenanceCatalogItemRow = {
   eligibility_rules: MaintenanceCatalogItem["eligibilityRules"];
   disclaimer_class: MaintenanceRecommendation["disclaimerClass"];
   is_active: boolean;
+  guide_template_id: string | null;
+  guide_version_id: string | null;
 };
 
 type MaintenanceCompletionRow = {
@@ -831,11 +850,15 @@ function maintenanceTaskReturningColumns() {
     source,
     status,
     timing_type,
+    to_char(start_date, 'YYYY-MM-DD') as start_date,
     to_char(due_date, 'YYYY-MM-DD') as due_date,
     season,
     price_amount_minor,
     price_currency,
     recommendation,
+    guide_template_id,
+    guide_version_id,
+    creation_context,
     recurrence_interval,
     recurrence_anchor,
     archived_at,
@@ -860,6 +883,10 @@ function maintenanceRecommendationReturningColumns() {
     house_id,
     catalog_key,
     catalog_version,
+    guide_template_id,
+    guide_version_id,
+    generation_type,
+    analysis_job_id,
     source_type,
     status,
     title,
@@ -867,6 +894,7 @@ function maintenanceRecommendationReturningColumns() {
     recommended_timing_label,
     recommended_period,
     period_key,
+    to_char(suggested_start_date, 'YYYY-MM-DD') as suggested_start_date,
     to_char(suggested_due_date, 'YYYY-MM-DD') as suggested_due_date,
     priority,
     disclaimer_class,
@@ -911,6 +939,7 @@ function maintenanceGeneratedTaskFingerprint(task: {
   source: string;
   status: string;
   timing_type: string;
+  start_date: string | null;
   due_date: string | null;
   season: string | null | undefined;
   price_amount_minor: number | null;
@@ -926,6 +955,7 @@ function maintenanceGeneratedTaskFingerprint(task: {
     source: task.source,
     status: task.status,
     timingType: task.timing_type,
+    startDate: task.start_date,
     dueDate: task.due_date,
     season: task.season,
     priceAmountMinor: task.price_amount_minor,
@@ -1062,6 +1092,7 @@ function toMaintenanceTask(row: MaintenanceTaskRow): MaintenanceTask {
   const timing = addDerivedTiming(
     {
       type: row.timing_type,
+      ...(row.start_date ? { startDate: row.start_date } : {}),
       ...(row.due_date ? { dueDate: row.due_date } : {}),
       ...(row.season ? { season: row.season } : {})
     },
@@ -1081,6 +1112,9 @@ function toMaintenanceTask(row: MaintenanceTaskRow): MaintenanceTask {
     priceAmountMinor: nullableNumber(row.price_amount_minor),
     priceCurrency: row.price_currency,
     ...(row.recommendation ? { recommendation: row.recommendation } : {}),
+    guideTemplateId: row.guide_template_id,
+    guideVersionId: row.guide_version_id,
+    creationContext: row.creation_context,
     recurrence: row.recurrence_interval
       ? {
           interval: row.recurrence_interval,
@@ -1112,11 +1146,16 @@ function toMaintenanceRecommendation(
     status: row.status,
     ...(row.catalog_key ? { catalogKey: row.catalog_key } : {}),
     ...(row.catalog_version ? { catalogVersion: row.catalog_version } : {}),
+    guideTemplateId: row.guide_template_id,
+    guideVersionId: row.guide_version_id,
+    generationType: row.generation_type,
+    analysisJobId: row.analysis_job_id,
     title: row.title,
     description: row.description,
     recommendedTimingLabel: row.recommended_timing_label,
     ...(row.recommended_period ? { recommendedPeriod: row.recommended_period } : {}),
     ...(row.period_key ? { periodKey: row.period_key } : {}),
+    ...(row.suggested_start_date ? { suggestedStartDate: row.suggested_start_date } : {}),
     ...(row.suggested_due_date ? { suggestedDueDate: row.suggested_due_date } : {}),
     defaultRecurrence: row.recurrence_interval
       ? {
@@ -1129,6 +1168,7 @@ function toMaintenanceRecommendation(
     ...(row.why ? { why: row.why } : {}),
     timing: {
       type: row.timing_type,
+      ...(row.suggested_start_date ? { startDate: row.suggested_start_date } : {}),
       ...(row.due_date ? { dueDate: row.due_date } : {}),
       ...(row.season ? { season: row.season } : {})
     },
@@ -1284,6 +1324,9 @@ export async function migrateDatabase() {
   } finally {
     client.release();
   }
+
+  await syncHouseProfileSeeds();
+  await syncMaintenanceCatalogItems();
 }
 
 export async function closeDatabase() {
@@ -2041,16 +2084,20 @@ export async function createMaintenanceTaskForHouse(
         source,
         status,
         timing_type,
+        start_date,
         due_date,
         season,
         price_amount_minor,
         price_currency,
         recommendation,
+        guide_template_id,
+        guide_version_id,
+        creation_context,
         recurrence_interval,
         recurrence_anchor,
         completed_at
       )
-      values ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10, $11, $12, $13::jsonb, $14, $15, $16)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10::date, $11, $12, $13, $14::jsonb, $15, $16, $17, $18, $19, $20)
       returning
         ${maintenanceTaskReturningColumns()}
     `,
@@ -2063,11 +2110,15 @@ export async function createMaintenanceTaskForHouse(
       input.source ?? "user_created",
       status,
       input.timing.type,
+      input.timing.startDate ?? null,
       input.timing.dueDate ?? null,
       input.timing.season ?? null,
       input.priceAmountMinor ?? null,
       input.priceCurrency ?? "DKK",
       null,
+      input.guideTemplateId ?? null,
+      input.guideVersionId ?? null,
+      input.creationContext ?? "manual",
       input.recurrence?.interval ?? null,
       input.recurrence?.anchor ?? null,
       completedAt
@@ -2203,12 +2254,13 @@ export async function updateMaintenanceTaskForHouse(
         description = case when $4::boolean then $5 else description end,
         status = coalesce($6, status),
         timing_type = coalesce($7, timing_type),
-        due_date = case when $7 is null then due_date else $8::date end,
-        season = case when $7 is null then season else $9 end,
-        recurrence_interval = case when $10::boolean then $11 else recurrence_interval end,
-        recurrence_anchor = case when $10::boolean then $12 else recurrence_anchor end,
-        price_amount_minor = case when $13::boolean then $14 else price_amount_minor end,
-        price_currency = case when $13::boolean then coalesce($15, 'DKK') else price_currency end,
+        start_date = case when $7 is null then start_date else $8::date end,
+        due_date = case when $7 is null then due_date else $9::date end,
+        season = case when $7 is null then season else $10 end,
+        recurrence_interval = case when $11::boolean then $12 else recurrence_interval end,
+        recurrence_anchor = case when $11::boolean then $13 else recurrence_anchor end,
+        price_amount_minor = case when $14::boolean then $15 else price_amount_minor end,
+        price_currency = case when $14::boolean then coalesce($16, 'DKK') else price_currency end,
         updated_at = now()
       where id = $1 and house_id = $2 and deleted_at is null and archived_at is null
       returning
@@ -2222,6 +2274,7 @@ export async function updateMaintenanceTaskForHouse(
       input.description?.trim() || null,
       input.status ?? null,
       input.timing?.type ?? null,
+      input.timing?.startDate ?? null,
       input.timing?.dueDate ?? null,
       input.timing?.season ?? null,
       Object.prototype.hasOwnProperty.call(input, "recurrence"),
@@ -2325,6 +2378,196 @@ async function syncMaintenanceCatalogItems() {
       ]
     );
   }
+
+  await syncGuideContentSeeds();
+}
+
+async function syncHouseProfileSeeds() {
+  for (const profile of houseProfileSeeds) {
+    await pool.query(
+      `
+        insert into house_profiles (
+          id, profile_key, title, description, reference_house_label
+        )
+        values ($1, $2, $3, $4, $5)
+        on conflict (profile_key) do nothing
+      `,
+      [
+        profile.id,
+        profile.profileKey,
+        profile.title,
+        profile.description,
+        profile.referenceHouseLabel
+      ]
+    );
+  }
+}
+
+async function syncGuideContentSeeds() {
+  for (const guide of guideContentSeeds) {
+    await pool.query(
+      `
+        insert into guide_templates (id, guide_key)
+        values ($1, $2)
+        on conflict (guide_key) do nothing
+      `,
+      [guide.template.id, guide.template.guideKey]
+    );
+
+    await pool.query(
+      `
+        insert into guide_versions (
+          id,
+          guide_template_id,
+          version_number,
+          title,
+          summary,
+          publication_status,
+          validation_status
+        )
+        values ($1, $2, $3, $4, $5, 'draft', 'not_requested')
+        on conflict (guide_template_id, version_number) do nothing
+      `,
+      [
+        guide.version.id,
+        guide.template.id,
+        guide.version.versionNumber,
+        guide.version.title,
+        guide.version.summary
+      ]
+    );
+
+    for (const section of guide.sections) {
+      await pool.query(
+        `
+          insert into guide_sections (
+            id, guide_version_id, section_type, section_key, position, title, content
+          )
+          values ($1, $2, $3, $4, $5, $6, $7::jsonb)
+          on conflict (guide_version_id, section_key) do nothing
+        `,
+        [
+          section.id,
+          guide.version.id,
+          section.sectionType,
+          section.sectionKey,
+          section.position,
+          section.title,
+          JSON.stringify(section.content)
+        ]
+      );
+    }
+
+    for (const tag of guide.tags) {
+      const tagResult = await pool.query<{ id: string }>(
+        `
+          insert into guide_tags (id, tag_key, label, tag_type)
+          values ($1, $2, $3, $4)
+          on conflict (tag_key) do nothing
+          returning id
+        `,
+        [tag.id, tag.tagKey, tag.label, tag.tagType]
+      );
+      const tagId = tagResult.rows[0]?.id ?? (
+        await pool.query<{ id: string }>(
+          "select id from guide_tags where tag_key = $1",
+          [tag.tagKey]
+        )
+      ).rows[0]?.id;
+
+      if (!tagId) {
+        throw new Error(`Guide tag ${tag.tagKey} could not be resolved.`);
+      }
+
+      await pool.query(
+        `
+          insert into guide_version_tags (guide_version_id, guide_tag_id)
+          values ($1, $2)
+          on conflict do nothing
+        `,
+        [guide.version.id, tagId]
+      );
+    }
+
+    for (const term of guide.searchTerms) {
+      await pool.query(
+        `
+          insert into guide_search_terms (id, guide_version_id, term, term_type, weight)
+          values ($1, $2, $3, $4, $5)
+          on conflict (guide_version_id, term) do nothing
+        `,
+        [term.id, guide.version.id, term.term, term.termType, term.weight]
+      );
+    }
+
+    await pool.query(
+      `
+        insert into guide_version_print_metadata (
+          guide_version_id,
+          print_title,
+          print_subtitle,
+          footer_text,
+          show_hotspot_legend,
+          section_order,
+          render_options
+        )
+        values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)
+        on conflict (guide_version_id) do nothing
+      `,
+      [
+        guide.version.id,
+        guide.printMetadata.printTitle,
+        guide.printMetadata.printSubtitle,
+        guide.printMetadata.footerText,
+        guide.printMetadata.showHotspotLegend,
+        JSON.stringify(guide.printMetadata.sectionOrder),
+        JSON.stringify(guide.printMetadata.renderOptions)
+      ]
+    );
+
+    await linkGuideContentSeedToCatalog(guide);
+  }
+}
+
+async function linkGuideContentSeedToCatalog(guide: GuideContentSeed) {
+  const result = await pool.query<{
+    id: string;
+    guide_template_id: string | null;
+    guide_version_id: string | null;
+  }>(
+    `
+      select id, guide_template_id, guide_version_id
+      from maintenance_catalog_items
+      where catalog_key = $1 and catalog_version = $2
+      for update
+    `,
+    [guide.catalogLink.catalogKey, guide.catalogLink.catalogVersion]
+  );
+  const catalogItem = result.rows[0];
+
+  if (!catalogItem) {
+    throw new Error(
+      `Guide seed ${guide.template.guideKey} requires catalog item ${guide.catalogLink.catalogKey}@${guide.catalogLink.catalogVersion}.`
+    );
+  }
+
+  if (
+    (catalogItem.guide_template_id && catalogItem.guide_template_id !== guide.template.id) ||
+    (catalogItem.guide_version_id && catalogItem.guide_version_id !== guide.version.id)
+  ) {
+    throw new Error(
+      `Catalog item ${guide.catalogLink.catalogKey}@${guide.catalogLink.catalogVersion} is already linked to another guide version.`
+    );
+  }
+
+  await pool.query(
+    `
+      update maintenance_catalog_items
+      set guide_template_id = $1, guide_version_id = $2, updated_at = now()
+      where id = $3
+    `,
+    [guide.template.id, guide.version.id, catalogItem.id]
+  );
 }
 
 async function ensureMaintenanceRecommendationInstancesForHouse(
@@ -2346,7 +2589,9 @@ async function ensureMaintenanceRecommendationInstancesForHouse(
         priority,
         eligibility_rules,
         disclaimer_class,
-        is_active
+        is_active,
+        guide_template_id,
+        guide_version_id
       from maintenance_catalog_items
       where is_active
       order by catalog_key, catalog_version
@@ -2400,6 +2645,8 @@ async function ensureMaintenanceRecommendationInstancesForHouse(
           catalog_item_id,
           catalog_key,
           catalog_version,
+          guide_template_id,
+          guide_version_id,
           source_type,
           title,
           description,
@@ -2427,25 +2674,27 @@ async function ensureMaintenanceRecommendationInstancesForHouse(
           $4,
           $5,
           $6,
-          'matriva_catalog',
           $7,
           $8,
+          'matriva_catalog',
           $9,
-          $10::jsonb,
+          $10,
           $11,
-          $12::date,
-          'specific_deadline',
-          $12::date,
-          null,
+          $12::jsonb,
           $13,
+          $14::date,
+          'specific_deadline',
+          $14::date,
+          null,
+          $15,
           'completed_date',
-          $14::jsonb,
-          $15::jsonb,
+          $16::jsonb,
+          $17::jsonb,
           $5,
-          $16,
-          $17,
           $18,
-          $19
+          $19,
+          $20,
+          $21
         )
         on conflict (house_id, catalog_item_id, period_key)
         where catalog_item_id is not null and period_key is not null
@@ -2458,6 +2707,8 @@ async function ensureMaintenanceRecommendationInstancesForHouse(
         item.id,
         item.catalog_key,
         item.catalog_version,
+        item.guide_template_id,
+        item.guide_version_id,
         item.title,
         item.short_description,
         recommendedPeriodLabel(item.recommended_period),
@@ -2576,6 +2827,9 @@ export async function acceptMaintenanceRecommendationForHouse(
 
     const timing = input.timing ?? {
       type: "specific_deadline" as const,
+      ...(recommendation.suggested_start_date
+        ? { startDate: recommendation.suggested_start_date }
+        : {}),
       dueDate: selectedDueDate
     };
     const recurrence = Object.prototype.hasOwnProperty.call(input, "recurrence")
@@ -2622,10 +2876,14 @@ export async function acceptMaintenanceRecommendationForHouse(
           source,
           status,
           timing_type,
+          start_date,
           due_date,
           season,
           recommendation,
           recommendation_id,
+          guide_template_id,
+          guide_version_id,
+          creation_context,
           recurrence_interval,
           recurrence_anchor,
           origin_catalog_key,
@@ -2633,7 +2891,7 @@ export async function acceptMaintenanceRecommendationForHouse(
           origin_recommendation_instance_id,
           origin_snapshot
         )
-        values ($1, $2, $3, $4, $5, 'recommendation_accepted', 'planned', $6, $7::date, $8, $9::jsonb, $10, $11, $12, $13, $14, $10, $15::jsonb)
+        values ($1, $2, $3, $4, $5, 'recommendation_accepted', 'planned', $6, $7::date, $8::date, $9, $10::jsonb, $11, $12, $13, 'recommendation_acceptance', $14, $15, $16, $17, $11, $18::jsonb)
         returning
           ${maintenanceTaskReturningColumns()}
       `,
@@ -2644,6 +2902,7 @@ export async function acceptMaintenanceRecommendationForHouse(
         recommendation.title,
         input.description ?? recommendation.description,
         timing.type,
+        timing.startDate ?? null,
         timing.dueDate ?? null,
         timing.season ?? null,
         JSON.stringify({
@@ -2656,6 +2915,8 @@ export async function acceptMaintenanceRecommendationForHouse(
           reason: recommendation.description
         }),
         recommendation.id,
+        recommendation.guide_template_id,
+        recommendation.guide_version_id,
         recurrence?.interval ?? null,
         recurrence?.anchor ?? null,
         originSnapshot.catalogKey,
@@ -2924,12 +3185,16 @@ export async function completeMaintenanceTaskForHouse(
               source,
               status,
               timing_type,
+              start_date,
               due_date,
               season,
               price_amount_minor,
               price_currency,
               recommendation,
               recommendation_id,
+              guide_template_id,
+              guide_version_id,
+              creation_context,
               recurrence_interval,
               recurrence_anchor,
               origin_catalog_key,
@@ -2939,7 +3204,7 @@ export async function completeMaintenanceTaskForHouse(
               generated_from_completion_id,
               generated_state_fingerprint
             )
-            values ($1, $2, $3, $4, $5, $6, 'planned', $7, $8::date, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, $18, $19::jsonb, $20, $21)
+            values ($1, $2, $3, $4, $5, $6, 'planned', $7, $8::date, $9::date, $10, $11, $12, $13::jsonb, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23::jsonb, $24, $25)
           `,
           [
             createOpaqueId("task"),
@@ -2949,12 +3214,16 @@ export async function completeMaintenanceTaskForHouse(
             task.description,
             task.source,
             task.timing_type === "specific_deadline" ? "specific_deadline" : task.timing_type,
+            null,
             task.timing_type === "specific_deadline" ? nextDate : null,
             task.season,
             task.price_amount_minor,
             task.price_currency,
             task.recommendation ? JSON.stringify(task.recommendation) : null,
             task.recommendation_id,
+            task.guide_template_id,
+            task.guide_version_id,
+            task.creation_context,
             task.recurrence_interval,
             task.recurrence_anchor ?? "completed_date",
             task.origin_catalog_key,
@@ -2968,6 +3237,7 @@ export async function completeMaintenanceTaskForHouse(
               source: task.source,
               status: "planned",
               timing_type: task.timing_type,
+              start_date: null,
               due_date: task.timing_type === "specific_deadline" ? nextDate : null,
               season: task.season ?? null,
               price_amount_minor: task.price_amount_minor,

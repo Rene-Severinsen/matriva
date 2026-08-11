@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "id": "matriva_modern_2023_house_a_canonical_cameras_v1",
+  "status": "approved_for_a02_a03_pilot",
+  "canonicalGeometryId": "matriva_modern_2023_house_a_canonical_geometry",
+  "coordinateUnit": "mm",
+  "worldConvention": "Matches canonical geometry: x west-to-east, y front/south-to-rear/north, z vertically above finished floor level.",
+  "renderFrame": {
+    "widthPx": 1600,
+    "heightPx": 900,
+    "aspectRatio": "16:9"
+  },
+  "projection": "rectilinear perspective",
+  "cameras": [
+    {
+      "id": "CAM_FRONT_HERO",
+      "purpose": "front hero geometric reference",
+      "positionMm": [25000, -22000, 2400],
+      "targetMm": [8200, 4200, 1900],
+      "heightMm": 2400,
+      "upVector": [0, 0, 1],
+      "fieldOfViewDegrees": 50,
+      "focalLengthEquivalentMm": 38,
+      "orientation": "front/south-east oblique looking north-west",
+      "aspectRatio": "16:9"
+    },
+    {
+      "id": "CAM_FRONT",
+      "purpose": "A02 front canonical render",
+      "positionMm": [8200, -26000, 1900],
+      "targetMm": [8200, 4300, 1800],
+      "heightMm": 1900,
+      "upVector": [0, 0, 1],
+      "fieldOfViewDegrees": 48,
+      "focalLengthEquivalentMm": 40,
+      "orientation": "front/south centred, looking north",
+      "aspectRatio": "16:9"
+    },
+    {
+      "id": "CAM_REAR",
+      "purpose": "A03 rear/garden canonical render",
+      "positionMm": [8200, 38000, 1900],
+      "targetMm": [8200, 7800, 1800],
+      "heightMm": 1900,
+      "upVector": [0, 0, 1],
+      "fieldOfViewDegrees": 48,
+      "focalLengthEquivalentMm": 40,
+      "orientation": "rear/north centred, looking south",
+      "aspectRatio": "16:9"
+    },
+    {
+      "id": "CAM_LEFT",
+      "purpose": "left geometric reference",
+      "positionMm": [-26000, 6000, 1900],
+      "targetMm": [4200, 6000, 1800],
+      "heightMm": 1900,
+      "upVector": [0, 0, 1],
+      "fieldOfViewDegrees": 48,
+      "focalLengthEquivalentMm": 40,
+      "orientation": "west/left centred, looking east",
+      "aspectRatio": "16:9"
+    },
+    {
+      "id": "CAM_RIGHT",
+      "purpose": "right geometric reference",
+      "positionMm": [42400, 6000, 1900],
+      "targetMm": [12200, 6000, 1800],
+      "heightMm": 1900,
+      "upVector": [0, 0, 1],
+      "fieldOfViewDegrees": 48,
+      "focalLengthEquivalentMm": 40,
+      "orientation": "east/right centred, looking west",
+      "aspectRatio": "16:9"
+    }
+  ],
+  "lockingRules": [
+    "Camera changes never mutate canonical geometry.",
+    "A02 uses CAM_FRONT and A03 uses CAM_REAR; only the camera may differ between those renders.",
+    "Every photorealistic render must receive its matching deterministic geometric preview as a geometry reference.",
+    "A01 may supply visual/material style only and never hidden geometry.",
+    "A04–A15 remain outside the current approval gate."
+  ]
+}

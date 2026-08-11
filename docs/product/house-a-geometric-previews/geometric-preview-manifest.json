@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "geometryId": "matriva_modern_2023_house_a_canonical_geometry",
+  "geometrySha256": "5a1c2a6c5e5373b9a67c26e86ca9d2ba70bfc536b6209a9f65adfd13723e98cb",
+  "cameraSystemId": "matriva_modern_2023_house_a_canonical_cameras_v1",
+  "cameraSystemSha256": "698ccb016888f49ea200aff3d213504bdc63b3b00556e49ba6272b964168b726",
+  "renderer": "deterministic-svg-perspective-v1",
+  "outputs": [
+    {
+      "cameraId": "CAM_FRONT_HERO",
+      "svg": "cam-front-hero.svg",
+      "png": "cam-front-hero.png",
+      "svgSha256": "7baacfc4ad188fe5ed70845746efa77f3bc72b38442fc539d47a7a41afa10cd5",
+      "pngSha256": "96bd54c5d7af96fe5b71daac0e899e43e697ed20000ef0e8172275b1a2af060e"
+    },
+    {
+      "cameraId": "CAM_FRONT",
+      "svg": "cam-front.svg",
+      "png": "cam-front.png",
+      "svgSha256": "9da7613af4914158ea110d948f5aad4d3311314b350d4e969be134dae86fae91",
+      "pngSha256": "5003be891c51f72a2495fcee34e6172b0eac06e005d67c06b0e83c836fa18cbe"
+    },
+    {
+      "cameraId": "CAM_REAR",
+      "svg": "cam-rear.svg",
+      "png": "cam-rear.png",
+      "svgSha256": "b877c4e2129b95ec0644a3632ad67e890d7d22bfdb31ee4f69cd58ca7cf13c57",
+      "pngSha256": "8d8abd3e012b37168ec547fd38ced6104ed270d0f30486cc97a874fba36469c6"
+    },
+    {
+      "cameraId": "CAM_LEFT",
+      "svg": "cam-left.svg",
+      "png": "cam-left.png",
+      "svgSha256": "a46246ee6feaca49b0512413386163638502dc75660470e002927cc75db40a6c",
+      "pngSha256": "7757ec0b08b7ea9598a0ecbacffba5d1fe6bd32f421e15ad9a7af951e79931d6"
+    },
+    {
+      "cameraId": "CAM_RIGHT",
+      "svg": "cam-right.svg",
+      "png": "cam-right.png",
+      "svgSha256": "5d7d73336e5aaa371e0a6ca44ef05297be75c7d94deb51b823794f58f5d9eef7",
+      "pngSha256": "d8b19970ee6854d20ca5c4753105be530de89f630bdfb883d3f96b4e11fb2a03"
+    }
+  ]
+}

@@ -1,10 +1,89 @@
 # Matriva Modern 2023 – visuelt referenceunivers
 
-Status: A01 godkendt visuel/materialemæssig reference · A02–A15 pilot/superseded/rejected for canonical use
+Status: A01 godkendt visuel/materialemæssig reference · A02–A15 pilot/superseded/rejected for canonical use · Canonical House A-geometri er godkendt som den nuværende arkitektoniske source of truth
 
 Profil: `matriva_modern_2023` · `hprof_matriva_modern_2023`
 
 Dette dokument er den reproducerbare visuelle specifikation for Matriva Modern 2023. Det er ikke en BBR-regel: referenceåret 2023 beskriver huset selv og må ikke bruges til automatisk profilvalg, før House A/B/C-grænser er besluttet.
+
+## Canonical House A geometry – godkendt source of truth
+
+House A beskriver én fysisk, reproducerbar bygning, som alle nye fotorealistiske billeder skal afledes fra. Canonical-pakken er en deterministisk teknisk model – ikke AI-art og ikke en afledning af skjult geometri i A01.
+
+**Status: `approved_current_source_of_truth`.** Godkendelsen er: **“Ja – dette er nu Matriva House A, for nu.”** Mål, planløsning, åbninger, tag- og site-valg er godkendte canonical designbeslutninger. De er ikke observerede fakta om A01 eller egentlige byggetegninger. Fremtidige ændringer skal først foretages i canonical-modellen og derefter regenerere alle afledte assets.
+
+### Source-of-truth-hierarki
+
+1. **A01 / `a01-exterior-entry-original-v1.png`** = visuel og materialemæssig source of truth. Den fastlægger kun de synlige kvaliteter: lyse varme mursten, mørkt tag, sorte vinduer/dør, tagrender/nedløb samt lys- og haveudtryk. Den fastlægger ikke skjult geometri.
+2. **`house-a-canonical-geometry.json`** = arkitektonisk og geometrisk source of truth: footprint, garage, tag, facader, åbninger og faste koordinater.
+3. **`08-room-and-interior-visibility-map.svg`** = interiør source of truth: hvilket rum der ligger bag hver åbning og hvilke elementer der realistisk må være synlige.
+4. **`09-site-plan.svg`** = landskabs-/spatial source of truth: indkørsel, hovedsti, terrasse, hæk, bede og træpositioner.
+5. **Fremtidige fotorealistiske billeder** = afledte repræsentationer. De kan aldrig ændre en højere source of truth.
+
+Et billede, en prompt eller en redigering må aldrig ændre disse data. En modstrid afvises; den afledte repræsentation rettes eller forkastes. Geometrien ændres kun ved en eksplicit godkendt ændring af JSON-kilden efter human approval.
+
+### Reproducerbar pakke
+
+Kilden ligger i `docs/product/house-a-canonical-geometry.json`; SVG’erne under `docs/product/house-a-canonical-geometry/` er genererede, versionsstyrede tekniske artefakter:
+
+- `01-dimensioned-floor-plan.svg`
+- `02-roof-plan.svg`
+- `03-front-elevation.svg` til `06-right-elevation.svg`
+- `07-opening-schedule.svg`
+- `08-room-and-interior-visibility-map.svg`
+- `09-site-plan.svg`
+- `10-materials-and-immutable-rules.svg`
+- `11-technical-referenceboard.svg`
+
+Regenerér kun fra kilden:
+
+```bash
+npm run generate:house-a-geometry
+npm run test:house-a-geometry
+```
+
+Generatoren validerer footprint, garage, tagets udhæng/kip, åbninger, rumrelationer, nedløb og site containment. Testen regenererer pakken to gange i midlertidige mapper og kræver byte-identiske SVG-filer. Det gør målændringer synlige, reproducerbare og mulige at reviewe som en almindelig kodeændring.
+
+### Immutable geometry rules
+
+Følgende er låst i den godkendte canonical-model og skal krydstjekkes på alle fremtidige views:
+
+- Ét rektangulært footprint: 16,400 mm × 12,000 mm.
+- Én integreret front-vest-garage: 5,800 mm × 7,200 mm.
+- Ét 25° valmtag over hele footprintet med 450 mm udhæng, øst-vest-kip og fire faste nedløb; ingen skjulte kviste, ovenlys, skorsten eller taggennemføringer.
+- Hver ydre åbning har stabilt ID, facade, offset, størrelse, brystning og rum bagved.
+- Indkørsel, hovedsti, terrasse, perimeterhæk, to bede og to træer har faste koordinater; sæson og plantefylde må variere uden at flytte de permanente elementer.
+
+Den fulde, maskinlæsbare regelmængde findes som `immutableGeometryRules` i JSON-filen og er visualiseret i `10-materials-and-immutable-rules.svg`.
+
+### Render-valideringsregler efter godkendelse
+
+Canonical-pakken er nu godkendt, så A02 FRONT og A03 REAR/GARDEN må fremstilles som kontrollerede pilot-renderinger. A04–A15 og nye guidebilleder er fortsat uden for den aktuelle approval gate.
+
+Efter godkendelse skal hvert fotorealistisk view valideres mod JSON og SVG’er før det kan bruges:
+
+1. **Footprint og garage:** samme bygningsvolumen og front-vest-garage; ingen ekstra vinger eller forskudte garager.
+2. **Tag:** samme 25° valmtag, kipretning, udhæng, tagrende og nedløbslogik. Front, bag, venstre, højre og top skal kunne forklares af den samme konstruktion.
+3. **Åbninger:** kun de schedulede åbninger med korrekt facade, rækkefølge og omtrentlige proportioner. Ingen ekstra panoramavinduer, døre eller flyttede vinduer.
+4. **Interiør:** hvert kig gennem glas skal følge room/visibility-mappet. Køkken/alrum og stue må ikke få ens gentagne borde/stole; huset må ikke læse som forsamlingshus, restaurant, hotel eller showroom.
+5. **Site:** terrasse, sti, indkørsel, hæk, bede og træer skal være i deres canonical relation til huset. Plantning skal være varieret, ikke en gentaget række af ens runde buske.
+6. **Materiale:** A01’s lyse mursten, mørke tag, sorte rammer/dør og sorte afvanding bevares som visuel/materialemæssig reference. Produktnavne, vægopbygninger og uobserverede byggedetaljer må ikke opfindes.
+
+Hvis en render fejler ét punkt, er resultatet **REJECT**. Den må ikke bruges til at “rette” kildegeometrien; renderen skal regenereres eller redigeres mod den godkendte model.
+
+### Canonical camera- og render-pipeline
+
+Kamerasystemet ligger i `house-a-canonical-camera-system.json`. De fem låste kameraer er `CAM_FRONT_HERO`, `CAM_FRONT`, `CAM_REAR`, `CAM_LEFT` og `CAM_RIGHT`; de deler 16:9-format, rectilinear perspective og samme millimeterbaserede koordinatsystem som geometrimodellen. A02 må kun bruge `CAM_FRONT`, og A03 må kun bruge `CAM_REAR`.
+
+`npm run generate:house-a-previews` regenererer fem skematiske SVG/PNG-views direkte fra canonical geometri og kameraer. `npm run test:house-a-previews` kræver byte-identisk regeneration og validerer geometry- og camera-checksums. Disse previews er geometriske kontrolbilleder, ikke fotorealistiske assets.
+
+Den fotorealistiske A02/A03-pilot er registreret i `house-a-photorealistic-pilot.json`. Hver render peger på præcis geometry-version, camera-ID, preview, A01-reference, opening-ID’er, fil-checksum og billeddimensioner. `npm run test:house-a-photorealistic-pilot` afviser manglende/ændrede kilder, forkerte kameraer, andre render-ID’er end A02/A03, forkerte opening-lister og ændrede billedfiler.
+
+Maskinel validering dokumenterer input- og filintegritet; den kan ikke bevise, at AI-genererede pixels er geometrisk korrekte. Derfor skal referenceboardet og valideringsrapporten altid gennemgås ved en human approval gate. Indtil denne godkendelse er A02 og A03 `VALIDATED`, men ikke `APPROVED`.
+
+### Superseded pilot-historik
+
+De tidligere A02–A15-pilotbilleder blev skabt før den canonical geometri- og kamerapipeline. De forbliver historiske spor med status **SUPERSEDED / REJECTED FOR CANONICAL USE** og må hverken bruges som geometriinput eller overskrives af den nye pilot. Kun de nye, særskilt navngivne A02/A03 canonical drafts indgår i den aktuelle approval gate.
 
 ## Visuelle invariants
 

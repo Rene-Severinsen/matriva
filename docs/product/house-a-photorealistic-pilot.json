@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "id": "matriva_modern_2023_house_a_a02_a03_photorealistic_pilot_v1",
+  "houseProfileId": "hprof_matriva_modern_2023",
+  "profileKey": "matriva_modern_2023",
+  "scope": ["A02", "A03"],
+  "status": "VALIDATED",
+  "humanApproval": "PENDING",
+  "canonicalGeometry": {
+    "path": "docs/product/house-a-canonical-geometry.json",
+    "id": "matriva_modern_2023_house_a_canonical_geometry",
+    "sha256": "5a1c2a6c5e5373b9a67c26e86ca9d2ba70bfc536b6209a9f65adfd13723e98cb"
+  },
+  "cameraSystem": {
+    "path": "docs/product/house-a-canonical-camera-system.json",
+    "id": "matriva_modern_2023_house_a_canonical_cameras_v1",
+    "sha256": "698ccb016888f49ea200aff3d213504bdc63b3b00556e49ba6272b964168b726"
+  },
+  "materialReference": {
+    "path": "apps/api/assets/guides/matriva-modern-2023/masters/a01-exterior-entry-original-v1.png",
+    "role": "visual and material authority only; never geometry",
+    "sha256": "1b4416fdbbf431107fb021e7be9b567a79537e1b0860bfdc4ec7998c4f990573"
+  },
+  "generation": {
+    "method": "OpenAI built-in image generation, sketch-to-render",
+    "toolModelVersion": "not exposed by the image-generation tool",
+    "sessionDate": "2026-08-11",
+    "geometryRule": "The matching deterministic preview is authoritative; A01 supplies material and photographic style only. An AI render never changes canonical geometry."
+  },
+  "renders": [
+    {
+      "id": "A02",
+      "title": "FRONT",
+      "status": "VALIDATED",
+      "humanApproval": "PENDING",
+      "cameraId": "CAM_FRONT",
+      "facade": "front",
+      "canonicalOpeningIds": ["GARAGE_DOOR_01", "FRONT_DOOR_01", "FRONT_WINDOW_01", "FRONT_WINDOW_02"],
+      "visibleLeftToRightOpeningIds": ["GARAGE_DOOR_01", "FRONT_DOOR_01", "FRONT_WINDOW_01", "FRONT_WINDOW_02"],
+      "preview": {
+        "path": "docs/product/house-a-geometric-previews/cam-front.png",
+        "sha256": "5003be891c51f72a2495fcee34e6172b0eac06e005d67c06b0e83c836fa18cbe"
+      },
+      "image": {
+        "path": "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/a02-front-canonical-draft-v1.png",
+        "sha256": "dcf7c0ada9a50f92aae009f26b10041c0075e6dddc1c765aa2358ca08d155d38",
+        "widthPx": 1672,
+        "heightPx": 941
+      },
+      "promptContract": "Copy CAM_FRONT preview geometry exactly: one 16.4 x 12.0 m rectangular one-storey volume, integrated front-west garage, one 25 degree hipped roof, four front openings in canonical order, two front corner downpipes, canonical driveway/path; apply A01 materials, garden and warm photographic light only; add no geometry."
+    },
+    {
+      "id": "A03",
+      "title": "REAR / GARDEN",
+      "status": "VALIDATED",
+      "humanApproval": "PENDING",
+      "cameraId": "CAM_REAR",
+      "facade": "rear",
+      "canonicalOpeningIds": ["REAR_WINDOW_01", "REAR_SLIDER_01", "REAR_WINDOW_02", "REAR_SLIDER_02"],
+      "visibleLeftToRightOpeningIds": ["REAR_SLIDER_02", "REAR_WINDOW_02", "REAR_SLIDER_01", "REAR_WINDOW_01"],
+      "preview": {
+        "path": "docs/product/house-a-geometric-previews/cam-rear.png",
+        "sha256": "8d8abd3e012b37168ec547fd38ced6104ed270d0f30486cc97a874fba36469c6"
+      },
+      "image": {
+        "path": "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/a03-rear-garden-canonical-draft-v1.png",
+        "sha256": "3b69e94a11ae8b490769b4cefd5ce8147a0f11a035a9dbbc56ae879d7e24a6ec",
+        "widthPx": 1672,
+        "heightPx": 941
+      },
+      "promptContract": "Copy CAM_REAR preview geometry exactly: the same rectangular volume and hipped roof, four rear openings visible large-small-large-small, two rear corner downpipes and canonical terrace; map living, kitchen and bedroom visibility to the scheduled openings; apply A01 materials, varied garden and warm photographic light only; add no geometry."
+    }
+  ],
+  "manualValidation": {
+    "result": "PASS_FOR_HUMAN_APPROVAL_GATE",
+    "checks": [
+      "A02 contains exactly the four scheduled front openings in canonical order.",
+      "A03 contains exactly the four scheduled rear openings in camera-visible large-small-large-small order.",
+      "Both images retain a single rectangular one-storey volume and one continuous hipped roof.",
+      "Both images show the facade-corner downpipe pair required by their view.",
+      "Visible A03 interiors follow the room and interior visibility map without duplicated room functions.",
+      "A01 material intent is retained without using A01 as geometric evidence.",
+      "No A04-A15, House B/C or guide imagery is included."
+    ]
+  },
+  "supersededHistory": "All earlier A02-A15 pilot images remain SUPERSEDED / REJECTED FOR CANONICAL USE and are not sources for this pilot."
+}

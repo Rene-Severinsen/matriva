@@ -41,6 +41,13 @@
     "db:reset-qa-user-house-data": "node tools/reset-qa-user-house-data.mjs",
     "test:qa-reset-order": "node tools/test-qa-user-house-reset-order.mjs",
     "check:bbr-codebooks": "node tools/check-bbr-codebooks.mjs",
+    "generate:house-a-geometry": "node tools/generate-house-a-canonical-geometry.mjs",
+    "test:house-a-geometry": "node tools/test-house-a-canonical-geometry.mjs",
+    "generate:house-a-previews": "node tools/generate-house-a-geometric-previews.mjs",
+    "test:house-a-previews": "node tools/test-house-a-geometric-previews.mjs",
+    "generate:house-a-pilot-board": "node tools/generate-house-a-photorealistic-pilot-board.mjs",
+    "test:house-a-photorealistic-pilot": "node tools/test-house-a-photorealistic-pilot.mjs",
+    "test:house-a-pilot-board": "node tools/test-house-a-photorealistic-pilot-board.mjs",
     "dev:website": "npm run dev -w @matriva/website",
     "build:website": "npm run build -w @matriva/website"
   },

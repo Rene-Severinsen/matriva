@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "id": "matriva_modern_2023_house_a_canonical_geometry",
+  "title": "Matriva Modern 2023 – House A canonical geometry",
+  "status": "approved_current_source_of_truth",
+  "coordinateSystem": {
+    "unit": "mm",
+    "origin": "south-west external wall corner",
+    "xAxis": "west to east; front/rear opening offsets are measured from west",
+    "yAxis": "front/south to rear/north; side opening offsets are measured from south"
+  },
+  "approvalNotice": "Approved for current House A use. A01 does not reveal these dimensions, room positions, roof parameters, openings or site geometry; they remain explicit design decisions. Any future change must start in this canonical model and regenerate all derived assets.",
+  "footprint": {
+    "widthMm": 16400,
+    "depthMm": 12000,
+    "areaM2": 196.8,
+    "corners": [
+      { "id": "C01", "x": 0, "y": 0 },
+      { "id": "C02", "x": 16400, "y": 0 },
+      { "id": "C03", "x": 16400, "y": 12000 },
+      { "id": "C04", "x": 0, "y": 12000 }
+    ]
+  },
+  "garage": {
+    "id": "GARAGE_01",
+    "x": 0,
+    "y": 0,
+    "widthMm": 5800,
+    "depthMm": 7200,
+    "areaM2": 41.76,
+    "placement": "front-west; integrated within the single canonical footprint"
+  },
+  "dwellingAreaM2": 155.04,
+  "levels": {
+    "finishedFloorMm": 0,
+    "eavesMm": 2700,
+    "roofPitchDegrees": 25,
+    "ridgeMm": 5707
+  },
+  "roof": {
+    "type": "single symmetrical hipped roof across the full rectangular footprint",
+    "overhangMm": 450,
+    "eavesOutline": [
+      { "x": -450, "y": -450 },
+      { "x": 16850, "y": -450 },
+      { "x": 16850, "y": 12450 },
+      { "x": -450, "y": 12450 }
+    ],
+    "ridge": {
+      "start": { "x": 6000, "y": 6000 },
+      "end": { "x": 10400, "y": 6000 },
+      "direction": "east-west"
+    },
+    "gutter": "continuous black gutter to all four eaves",
+    "downpipes": [
+      { "id": "DP_01", "x": -450, "y": -450, "facade": "front" },
+      { "id": "DP_02", "x": 16850, "y": -450, "facade": "front" },
+      { "id": "DP_03", "x": 16850, "y": 12450, "facade": "rear" },
+      { "id": "DP_04", "x": -450, "y": 12450, "facade": "rear" }
+    ],
+    "prohibitedRoofElements": ["chimney", "roof window", "dormer", "roof ventilation penetration"]
+  },
+  "rooms": [
+    { "id": "garage", "label": "Garage", "kind": "garage", "x": 0, "y": 0, "widthMm": 5800, "depthMm": 7200, "color": "#d8dce0" },
+    { "id": "utility", "label": "Bryggers", "kind": "utility", "x": 5800, "y": 0, "widthMm": 2200, "depthMm": 3500, "color": "#d9e8e6" },
+    { "id": "entry", "label": "Entré", "kind": "entry", "x": 8000, "y": 0, "widthMm": 2000, "depthMm": 3000, "color": "#f6ead7" },
+    { "id": "bathroom", "label": "Bad", "kind": "bathroom", "x": 5800, "y": 3500, "widthMm": 2200, "depthMm": 2500, "color": "#e9dfd0" },
+    { "id": "bedroom_1", "label": "Værelse 1", "kind": "bedroom", "x": 10000, "y": 0, "widthMm": 3200, "depthMm": 3500, "color": "#dfe8f0" },
+    { "id": "bedroom_2", "label": "Værelse 2", "kind": "bedroom", "x": 13200, "y": 0, "widthMm": 3200, "depthMm": 3500, "color": "#dfe8f0" },
+    { "id": "master_bedroom", "label": "Soveværelse", "kind": "bedroom", "x": 0, "y": 7200, "widthMm": 4300, "depthMm": 4800, "color": "#dfe8f0" },
+    { "id": "kitchen_dining", "label": "Køkken / alrum", "kind": "kitchen_dining", "x": 4300, "y": 6500, "widthMm": 7300, "depthMm": 5500, "color": "#e7efd8" },
+    { "id": "living_room", "label": "Stue", "kind": "living", "x": 11600, "y": 6500, "widthMm": 4800, "depthMm": 5500, "color": "#f5e7d6" },
+    {
+      "id": "hallway",
+      "label": "Fordeling / gang",
+      "kind": "hallway",
+      "polygon": [[5800,6000],[8000,6000],[8000,3000],[10000,3000],[10000,3500],[16400,3500],[16400,6500],[8000,6500],[8000,7200],[5800,7200]],
+      "color": "#f2f0e8"
+    }
+  ],
+  "openings": [
+    { "id": "GARAGE_DOOR_01", "facade": "front", "offsetMm": 400, "widthMm": 5000, "heightMm": 2250, "sillMm": 0, "type": "sectional_garage_door", "roomId": "garage", "visible": ["parked car or storage only; no domestic furniture"] },
+    { "id": "FRONT_DOOR_01", "facade": "front", "offsetMm": 8450, "widthMm": 1100, "heightMm": 2100, "sillMm": 0, "type": "external_door", "roomId": "entry", "visible": ["entry circulation; no staged repeated interior"] },
+    { "id": "FRONT_WINDOW_01", "facade": "front", "offsetMm": 10600, "widthMm": 1800, "heightMm": 1200, "sillMm": 800, "type": "window", "roomId": "bedroom_1", "visible": ["bed, bedside table, one reading lamp"] },
+    { "id": "FRONT_WINDOW_02", "facade": "front", "offsetMm": 13800, "widthMm": 1800, "heightMm": 1200, "sillMm": 800, "type": "window", "roomId": "bedroom_2", "visible": ["bed or desk, restrained personal storage"] },
+    { "id": "REAR_WINDOW_01", "facade": "rear", "offsetMm": 1000, "widthMm": 1800, "heightMm": 1200, "sillMm": 800, "type": "window", "roomId": "master_bedroom", "visible": ["bed, bedside tables, soft textiles"] },
+    { "id": "REAR_SLIDER_01", "facade": "rear", "offsetMm": 4800, "widthMm": 3200, "heightMm": 2200, "sillMm": 0, "type": "sliding_door", "roomId": "kitchen_dining", "visible": ["kitchen island, dining table, pendant lights"] },
+    { "id": "REAR_WINDOW_02", "facade": "rear", "offsetMm": 8500, "widthMm": 1800, "heightMm": 1200, "sillMm": 800, "type": "window", "roomId": "kitchen_dining", "visible": ["kitchen worktop, plants, restrained table setting"] },
+    { "id": "REAR_SLIDER_02", "facade": "rear", "offsetMm": 12100, "widthMm": 3000, "heightMm": 2200, "sillMm": 0, "type": "sliding_door", "roomId": "living_room", "visible": ["sofa, coffee table, floor lamp, art or low shelving"] },
+    { "id": "LEFT_GARAGE_DOOR_01", "facade": "left", "offsetMm": 4800, "widthMm": 1000, "heightMm": 2100, "sillMm": 0, "type": "external_door", "roomId": "garage", "visible": ["garage circulation only"] },
+    { "id": "LEFT_WINDOW_01", "facade": "left", "offsetMm": 8300, "widthMm": 1400, "heightMm": 1200, "sillMm": 800, "type": "window", "roomId": "master_bedroom", "visible": ["bed, calm textile palette"] },
+    { "id": "RIGHT_WINDOW_01", "facade": "right", "offsetMm": 1300, "widthMm": 1200, "heightMm": 1200, "sillMm": 800, "type": "window", "roomId": "bedroom_2", "visible": ["bed or desk, one reading lamp"] },
+    { "id": "RIGHT_WINDOW_02", "facade": "right", "offsetMm": 8300, "widthMm": 2000, "heightMm": 1200, "sillMm": 800, "type": "window", "roomId": "living_room", "visible": ["sofa side, floor lamp, art or low shelving"] }
+  ],
+  "site": {
+    "boundary": { "widthMm": 30000, "depthMm": 26000 },
+    "houseOrigin": { "x": 6800, "y": 6500 },
+    "orientation": "front faces south / bottom of plan",
+    "driveway": { "x": 6800, "y": 0, "widthMm": 5800, "depthMm": 6500 },
+    "frontPath": { "x": 13200, "y": 0, "widthMm": 1500, "depthMm": 6500 },
+    "terrace": { "x": 10800, "y": 18500, "widthMm": 11200, "depthMm": 3600 },
+    "hedge": "continuous mixed hedge at site perimeter",
+    "planting": [
+      { "id": "BED_01", "kind": "perennial and ornamental grass bed", "x": 2000, "y": 4000, "widthMm": 4000, "depthMm": 5000 },
+      { "id": "BED_02", "kind": "mixed shrub and perennial bed", "x": 21000, "y": 4500, "widthMm": 5000, "depthMm": 3500 },
+      { "id": "TREE_01", "kind": "single deciduous tree", "x": 3400, "y": 18000, "radiusMm": 1000 },
+      { "id": "TREE_02", "kind": "single deciduous tree", "x": 25800, "y": 19500, "radiusMm": 1100 }
+    ]
+  },
+  "materials": [
+    { "element": "Facade", "visualSpecification": "light warm brick", "source": "A01 observed visual/material reference", "physicalProduct": "not specified" },
+    { "element": "Roof", "visualSpecification": "dark/black low-profile tiled roof", "source": "A01 observed visual/material reference", "physicalProduct": "not specified" },
+    { "element": "Windows and external doors", "visualSpecification": "slim black frames; black front door", "source": "A01 observed visual/material reference", "physicalProduct": "not specified" },
+    { "element": "Gutters and downpipes", "visualSpecification": "black", "source": "A01 observed visual/material reference", "physicalProduct": "not specified" },
+    { "element": "Hard landscape", "visualSpecification": "restrained grey concrete paving", "source": "approved canonical design decision", "physicalProduct": "not specified" }
+  ],
+  "immutableGeometryRules": [
+    "The footprint is the single 16,400 mm × 12,000 mm rectangle defined by C01–C04; no view may add, remove or offset a volume.",
+    "GARAGE_01 is 5,800 mm × 7,200 mm at the front-west corner in every plan, elevation and derived render.",
+    "The roof is one symmetrical 25° hipped roof across the complete footprint, with 450 mm eaves, east-west ridge and no unmodelled penetrations.",
+    "Every exterior opening is identified by its stable ID and may occur only on its listed facade, at its listed offset, size, sill and room.",
+    "Terrace, driveway, front path, perimeter hedge and listed tree/bed positions are canonical site elements; seasonal planting may vary without moving them.",
+    "A01 supplies visual/material intent only. The canonical geometry JSON supplies architecture; neither A02–A15 nor later imagery may modify it.",
+    "Future photorealistic render prompts, edits and QA must be derived from this model and must be rejected on any geometric conflict."
+  ]
+}

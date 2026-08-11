@@ -1303,6 +1303,7 @@ const server = createServer((request, response) => {
         accessPlan: "free",
         status: "free",
         source: "default",
+        complimentaryProGrant: null,
         features: {
           "houses.maxActive": { kind: "limit", value: 1 },
           "documents.maxCount": { kind: "limit", value: 2 },

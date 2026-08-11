@@ -432,14 +432,25 @@ async function loadEntitlementPolicy(userId: string, executor: DbExecutor = pool
   const assignment = await executor.query<{
     plan: "free" | "pro";
     status: string;
-    source: "default" | "admin" | "billing";
+    source: "default" | "admin" | "subscription" | "complimentary" | "billing";
     expires_at: Date | null;
-  }>("select plan, status, source, expires_at from user_entitlements where user_id = $1", [userId]);
+    granted_by_user_id: string | null;
+    granted_at: Date | null;
+    reason: string | null;
+    updated_at: Date;
+  }>("select plan, status, source, expires_at, granted_by_user_id, granted_at, reason, updated_at from user_entitlements where user_id = $1", [userId]);
   const assigned = assignment.rows[0];
   const configuredPlan = assigned?.plan ?? "free";
   const status = (assigned?.status ?? "free") as Entitlements["status"];
   const source = assigned?.source ?? "default";
   const expiresAt = assigned?.expires_at ? new Date(assigned.expires_at).toISOString() : undefined;
+  const complimentaryProGrant = assigned && assigned.plan === "pro" && assigned.source === "complimentary"
+    ? {
+        grantedByUserId: assigned.granted_by_user_id as UserId | null,
+        grantedAt: new Date(assigned.granted_at ?? assigned.updated_at).toISOString(),
+        reason: assigned.reason ?? "Manuelt tildelt af en administrator."
+      }
+    : null;
   const proAccess = configuredPlan === "pro" && ["trial", "active", "grace_period"].includes(status) && (!assigned?.expires_at || assigned.expires_at > new Date());
   const accessPlan = proAccess ? "pro" : "free";
   const config = await executor.query<{ features: unknown }>("select features from entitlement_plan_configs where plan = $1", [accessPlan]);
@@ -456,6 +467,7 @@ async function loadEntitlementPolicy(userId: string, executor: DbExecutor = pool
     accessPlan,
     status,
     source,
+    complimentaryProGrant,
     features,
     usage: {
       houses: { active: usage.houses, limit },
@@ -490,7 +502,7 @@ export async function getEntitlementsForUser(userId: string) {
     return await loadEntitlementPolicy(userId);
   } catch {
     const usage = { houses: { active: 0, limit: 1 }, documents: { active: 0, storageBytes: 0, limit: 2, storageLimitBytes: 10 * 1024 * 1024 }, tasks: { active: 0, limit: 4 } };
-    return entitlementsSchema.parse({ plan: "free", configuredPlan: "free", accessPlan: "free", status: "billing_issue", source: "default", features: safeFreeFeatures, usage, evaluatedAt: new Date().toISOString() });
+    return entitlementsSchema.parse({ plan: "free", configuredPlan: "free", accessPlan: "free", status: "billing_issue", source: "default", complimentaryProGrant: null, features: safeFreeFeatures, usage, evaluatedAt: new Date().toISOString() });
   }
 }
 
@@ -592,27 +604,115 @@ export async function updateAdminUserEntitlement(
       throw new ApiError(404, "admin_user_not_found", "Brugeren blev ikke fundet.");
     }
 
-    const status = input.plan === "pro" ? "active" : "free";
-    await client.query(
-      `insert into user_entitlements
-         (user_id, plan, status, source, starts_at, expires_at, updated_at, updated_by_user_id)
-       values ($1, $2, $3, 'admin', now(), null, now(), $4)
-       on conflict (user_id) do update set
-         plan = excluded.plan,
-         status = excluded.status,
-         source = 'admin',
-         starts_at = excluded.starts_at,
-         expires_at = null,
-         updated_at = now(),
-         updated_by_user_id = excluded.updated_by_user_id`,
-      [userId, input.plan, status, adminUserId]
+    const current = await client.query<{
+      plan: "free" | "pro";
+      status: string;
+      source: "default" | "admin" | "subscription" | "complimentary" | "billing";
+      expires_at: Date | null;
+      granted_by_user_id: string | null;
+      granted_at: Date | null;
+      reason: string | null;
+    }>(
+      `select plan, status, source, expires_at, granted_by_user_id, granted_at, reason
+       from user_entitlements
+       where user_id = $1
+       for update`,
+      [userId]
     );
-    await client.query(
-      `insert into entitlement_audit_log
-         (actor_user_id, target_user_id, action, plan, status, details)
-       values ($1, $2, 'user_plan_updated', $3, $4, $5::jsonb)`,
-      [adminUserId, userId, input.plan, status, JSON.stringify({ source: "admin" })]
-    );
+    const existing = current.rows[0];
+
+    if (input.action === "set_plan") {
+      if (input.plan === "free") {
+        const wasComplimentaryPro = existing?.plan === "pro" && existing.source === "complimentary";
+        await client.query("delete from user_entitlements where user_id = $1", [userId]);
+        await client.query(
+          `insert into entitlement_audit_log
+             (actor_user_id, target_user_id, action, plan, status, details)
+           values ($1, $2, $3, 'free', 'free', $4::jsonb)`,
+          [
+            adminUserId,
+            userId,
+            wasComplimentaryPro ? "complimentary_pro_removed" : "user_plan_updated",
+            JSON.stringify({ source: "default", reason: wasComplimentaryPro ? "plan_set_free" : "admin_plan_change" })
+          ]
+        );
+      } else if (!(existing?.plan === "pro" && existing.source === "complimentary")) {
+        await client.query(
+          `insert into user_entitlements
+             (user_id, plan, status, source, starts_at, expires_at, updated_at, updated_by_user_id, granted_by_user_id, granted_at, reason)
+           values ($1, 'pro', 'active', 'subscription', now(), null, now(), $2, null, null, null)
+           on conflict (user_id) do update set
+             plan = 'pro',
+             status = 'active',
+             source = case when user_entitlements.source = 'billing' then 'billing' else 'subscription' end,
+             starts_at = coalesce(user_entitlements.starts_at, now()),
+             expires_at = case when user_entitlements.source = 'billing' then user_entitlements.expires_at else null end,
+             updated_at = now(),
+             updated_by_user_id = excluded.updated_by_user_id,
+             granted_by_user_id = null,
+             granted_at = null,
+             reason = null`,
+          [userId, adminUserId]
+        );
+        await client.query(
+          `insert into entitlement_audit_log
+             (actor_user_id, target_user_id, action, plan, status, details)
+           values ($1, $2, 'user_plan_updated', 'pro', 'active', $3::jsonb)`,
+          [adminUserId, userId, JSON.stringify({ source: existing?.source === "billing" ? "billing" : "subscription" })]
+        );
+      }
+    } else if (input.action === "grant_complimentary_pro") {
+      if (input.expiresAt && new Date(input.expiresAt) <= new Date()) {
+        throw new ApiError(400, "complimentary_pro_expiry_invalid", "Gratis PRO skal udløbe i fremtiden.");
+      }
+      if ((existing?.source === "admin" || existing?.source === "billing" || existing?.source === "subscription") && existing.plan === "pro") {
+        throw new ApiError(409, "complimentary_pro_paid_conflict", "Brugeren har allerede betalende PRO og skal ikke overskrives af Gratis PRO.");
+      }
+      const hadComplimentaryPro = existing?.plan === "pro" && existing.source === "complimentary";
+      const action = hadComplimentaryPro ? "complimentary_pro_updated" : "complimentary_pro_granted";
+      await client.query(
+        `insert into user_entitlements
+           (user_id, plan, status, source, starts_at, expires_at, updated_at, updated_by_user_id, granted_by_user_id, granted_at, reason)
+         values ($1, 'pro', 'active', 'complimentary', now(), $2, now(), $3, $3, now(), $4)
+         on conflict (user_id) do update set
+           plan = 'pro',
+           status = 'active',
+           source = 'complimentary',
+           starts_at = case when user_entitlements.plan = 'pro' then user_entitlements.starts_at else now() end,
+           expires_at = excluded.expires_at,
+           updated_at = now(),
+           updated_by_user_id = excluded.updated_by_user_id,
+           granted_by_user_id = coalesce(user_entitlements.granted_by_user_id, excluded.granted_by_user_id),
+           granted_at = coalesce(user_entitlements.granted_at, excluded.granted_at),
+           reason = excluded.reason`,
+        [userId, input.expiresAt, adminUserId, input.reason]
+      );
+      await client.query(
+        `insert into entitlement_audit_log
+           (actor_user_id, target_user_id, action, plan, status, details)
+         values ($1, $2, $3, 'pro', 'active', $4::jsonb)`,
+        [adminUserId, userId, action, JSON.stringify({ source: "complimentary", expiresAt: input.expiresAt, reason: input.reason })]
+      );
+    } else {
+      if ((existing?.source === "admin" || existing?.source === "billing" || existing?.source === "subscription") && existing.plan === "pro") {
+        throw new ApiError(409, "complimentary_pro_paid_conflict", "Brugeren har betalende PRO; Gratis PRO kan ikke fjernes fra denne adgang.");
+      }
+      if (existing && existing.source === "complimentary" && existing.plan === "pro") {
+        await client.query("delete from user_entitlements where user_id = $1", [userId]);
+        await client.query(
+          `insert into entitlement_audit_log
+             (actor_user_id, target_user_id, action, plan, status, details)
+           values ($1, $2, 'complimentary_pro_removed', 'free', 'free', $3::jsonb)`,
+          [adminUserId, userId, JSON.stringify({
+            source: existing.source,
+            expiresAt: existing.expires_at,
+            grantedByUserId: existing.granted_by_user_id,
+            grantedAt: existing.granted_at,
+            reason: existing.reason
+          })]
+        );
+      }
+    }
     await client.query("commit");
     return getAdminUserEntitlements(userId);
   } catch (error) {

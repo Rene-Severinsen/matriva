@@ -393,6 +393,8 @@ export const adminUserListItemSchema = z.object({
   taskCount: adminListCountSchema,
   completionCount: adminListCountSchema,
   subscriptionPlan: z.enum(["free", "pro"]),
+  subscriptionSource: z.enum(["default", "admin", "subscription", "complimentary", "billing"]),
+  subscriptionExpiresAt: z.string().datetime().nullable(),
   roles: z.array(adminRoleSchema),
   onboardingState: onboardingStateSchema
 });
@@ -3563,8 +3565,15 @@ export const entitlementStatusSchema = z.enum([
 ]);
 export type EntitlementStatus = z.infer<typeof entitlementStatusSchema>;
 
-export const entitlementSourceSchema = z.enum(["default", "admin", "billing"]);
+export const entitlementSourceSchema = z.enum(["default", "admin", "subscription", "complimentary", "billing"]);
 export type EntitlementSource = z.infer<typeof entitlementSourceSchema>;
+
+export const complimentaryProGrantSchema = z.object({
+  grantedByUserId: userIdSchema.nullable(),
+  grantedAt: z.string().datetime(),
+  reason: z.string().min(1)
+});
+export type ComplimentaryProGrant = z.infer<typeof complimentaryProGrantSchema>;
 
 export const entitlementUsageSchema = z.object({
   houses: z.object({ active: z.number().int().nonnegative(), limit: z.number().int().nonnegative().nullable() }),
@@ -3579,6 +3588,7 @@ export const entitlementsSchema = z.object({
   accessPlan: entitlementPlanSchema,
   status: entitlementStatusSchema,
   source: entitlementSourceSchema,
+  complimentaryProGrant: complimentaryProGrantSchema.nullable(),
   features: z.record(featureKeySchema, entitlementValueSchema),
   usage: entitlementUsageSchema,
   evaluatedAt: z.string().datetime(),
@@ -3617,9 +3627,20 @@ export const adminUserEntitlementResponseSchema = z.object({
 });
 export type AdminUserEntitlementResponse = z.infer<typeof adminUserEntitlementResponseSchema>;
 
-export const updateAdminUserEntitlementRequestSchema = z.object({
-  plan: entitlementPlanSchema
-});
+export const updateAdminUserEntitlementRequestSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("set_plan"),
+    plan: entitlementPlanSchema
+  }),
+  z.object({
+    action: z.literal("grant_complimentary_pro"),
+    expiresAt: z.string().datetime().nullable(),
+    reason: z.string().trim().min(1).max(500)
+  }),
+  z.object({
+    action: z.literal("remove_complimentary_pro")
+  })
+]);
 export type UpdateAdminUserEntitlementRequest = z.infer<
   typeof updateAdminUserEntitlementRequestSchema
 >;

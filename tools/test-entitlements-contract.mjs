@@ -4,10 +4,12 @@ import test from "node:test";
 
 import {
   apiErrorSchema,
-  entitlementsSchema
+  entitlementsSchema,
+  updateAdminUserEntitlementRequestSchema
 } from "../packages/shared/dist/index.js";
 
 const migration = await readFile(new URL("../apps/api/src/migrations/0024_entitlements_v1.sql", import.meta.url), "utf8");
+const complimentaryMigration = await readFile(new URL("../apps/api/src/migrations/0025_complimentary_pro_v1.sql", import.meta.url), "utf8");
 
 const freeFeatures = {
   "houses.maxActive": { kind: "limit", value: 1 },
@@ -34,6 +36,7 @@ test("Free entitlement contract has the product limits", () => {
     accessPlan: "free",
     status: "free",
     source: "default",
+    complimentaryProGrant: null,
     features: freeFeatures,
     usage: {
       houses: { active: 0, limit: 1 },
@@ -66,4 +69,46 @@ test("migration seeds both configurable plans and audit storage", () => {
   assert.match(migration, /create table if not exists entitlement_audit_log/);
   assert.match(migration, /\('free'/);
   assert.match(migration, /\('pro'/);
+  assert.match(complimentaryMigration, /granted_by_user_id/);
+  assert.match(complimentaryMigration, /granted_at/);
+  assert.match(complimentaryMigration, /reason/);
+  assert.match(complimentaryMigration, /source = 'subscription'/);
+  assert.match(complimentaryMigration, /'subscription'/);
+});
+
+test("Complimentary PRO keeps the PRO plan and supports permanent grants", () => {
+  const result = entitlementsSchema.parse({
+    plan: "pro",
+    configuredPlan: "pro",
+    accessPlan: "pro",
+    status: "active",
+    source: "complimentary",
+    complimentaryProGrant: {
+      grantedByUserId: "usr_12345678",
+      grantedAt: new Date().toISOString(),
+      reason: "Familie"
+    },
+    features: freeFeatures,
+    usage: {
+      houses: { active: 0, limit: null },
+      documents: { active: 0, storageBytes: 0, limit: null, storageLimitBytes: null },
+      tasks: { active: 0, limit: null }
+    },
+    evaluatedAt: new Date().toISOString()
+  });
+
+  assert.equal(result.plan, "pro");
+  assert.equal(result.source, "complimentary");
+  assert.equal(updateAdminUserEntitlementRequestSchema.parse({
+    action: "set_plan",
+    plan: "pro"
+  }).plan, "pro");
+  assert.equal(updateAdminUserEntitlementRequestSchema.parse({
+    action: "grant_complimentary_pro",
+    expiresAt: null,
+    reason: "Familie"
+  }).action, "grant_complimentary_pro");
+  assert.equal(updateAdminUserEntitlementRequestSchema.parse({
+    action: "remove_complimentary_pro"
+  }).action, "remove_complimentary_pro");
 });

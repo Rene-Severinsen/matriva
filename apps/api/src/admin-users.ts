@@ -98,6 +98,8 @@ function mapUser(row: Record<string, any>) {
     taskCount: count(row.task_count),
     completionCount: count(row.completion_count),
     subscriptionPlan: row.subscription_plan === "pro" ? "pro" : "free",
+    subscriptionSource: row.subscription_source ?? "default",
+    subscriptionExpiresAt: iso(row.subscription_expires_at),
     roles: row.roles ?? [],
     onboardingState
   };
@@ -170,6 +172,8 @@ export async function listAdminUsers(
           uc.task_count,
           uc.completion_count,
           coalesce(ue.plan, 'free') as subscription_plan,
+          coalesce(ue.source, 'default') as subscription_source,
+          ue.expires_at as subscription_expires_at,
           uc.latest_session_activity_at,
           uc.roles,
           count(*) over()::int as total_count
@@ -231,6 +235,8 @@ export async function getAdminUser(userId: string): Promise<AdminUserResponse> {
         uc.task_count,
         uc.completion_count,
         coalesce(ue.plan, 'free') as subscription_plan,
+        coalesce(ue.source, 'default') as subscription_source,
+        ue.expires_at as subscription_expires_at,
         uc.latest_session_activity_at,
         uc.roles
       from users u

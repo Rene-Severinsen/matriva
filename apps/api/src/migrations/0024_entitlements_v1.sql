@@ -17,7 +17,7 @@ create table if not exists user_entitlements (
   updated_by_user_id text references users(id) on delete set null,
   constraint user_entitlements_plan_valid check (plan in ('free', 'pro')),
   constraint user_entitlements_status_valid check (status in ('free', 'trial', 'active', 'grace_period', 'billing_issue', 'expired', 'cancelled', 'refunded_revoked')),
-  constraint user_entitlements_source_valid check (source in ('default', 'admin', 'billing')),
+  constraint user_entitlements_source_valid check (source in ('default', 'admin', 'subscription', 'billing', 'complimentary')),
   constraint user_entitlements_dates_valid check (expires_at is null or starts_at is null or expires_at >= starts_at)
 );
 

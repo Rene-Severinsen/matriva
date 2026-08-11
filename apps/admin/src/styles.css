@@ -840,6 +840,20 @@ button:disabled {
   color: #21613d;
 }
 
+.subscription-subscription,
+.subscription-billing {
+  background: #e2f1e6;
+  border-color: #bddbc5;
+  color: #21613d;
+}
+
+.subscription-complimentary,
+.subscription-admin {
+  background: #fff2d8;
+  border-color: #efd39a;
+  color: #8a5b0c;
+}
+
 .houses-table {
   --table-mobile-min-width: 1240px;
 }
@@ -1148,8 +1162,18 @@ button:disabled {
   width: 100%;
 }
 
+.subscription-controls .subscription-reason {
+  max-width: 360px;
+}
+
 .subscription-controls .primary-action {
   white-space: nowrap;
+}
+
+.form-hint {
+  color: #718078;
+  font-size: 12px;
+  margin: 12px 0 0;
 }
 
 .dashboard-heading {

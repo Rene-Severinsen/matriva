@@ -175,7 +175,11 @@ async function assertApiClientContract() {
           publicDataSummaries: [buildHousePublicDataSummary(target.id, publicData)],
           entitlements: {
             plan: "free",
+            configuredPlan: "free",
+            accessPlan: "free",
             status: "free",
+            source: "default",
+            complimentaryProGrant: null,
             features: {
               "documents.maxCount": { kind: "limit", value: 0 },
               "documents.maxStorageMb": { kind: "limit", value: 0 },

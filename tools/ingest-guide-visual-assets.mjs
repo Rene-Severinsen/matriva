@@ -63,7 +63,11 @@ async function ensureStorageObject(asset, source, checksum) {
 
 function productionMetadata(asset) {
   return {
+    houseProfileId: houseProfile.id,
     houseProfileKey: houseProfile.key,
+    guideId: asset.guideId ?? null,
+    guideKey: asset.guideKey ?? null,
+    guideVersion: asset.guideVersion ?? null,
     assetCategory: asset.category,
     viewOrComponent: asset.viewOrComponent,
     purpose: asset.purpose,
@@ -71,6 +75,8 @@ function productionMetadata(asset) {
     canonicalUse: asset.canonicalUse,
     statusNote: asset.statusNote,
     referenceAssetKeys: asset.referenceAssetKeys,
+    derivedProvenance: asset.derivedProvenance,
+    validationStatus: asset.validationStatus ?? "not_requested",
     provenance: asset.sourceType === "other"
       ? { type: "repository_original", sourcePath: "apps/website/public/images/HeroImage.png", provenanceStatus: "pending_external_source_confirmation" }
       : { type: "ai_generated", tool: "built_in_image_gen", model: null },
@@ -116,6 +122,23 @@ async function run() {
       );
     }
 
+    const activePlacementIds = gutterGuidePlacements.map((placement) => placement.id);
+    await client.query(
+      `delete from guide_hotspots
+       where guide_version_asset_id in (
+         select id from guide_version_assets
+         where guide_version_id = 'gver_rens_tagrender_v1'
+           and not (id = any($1::text[]))
+       )`,
+      [activePlacementIds]
+    );
+    await client.query(
+      `delete from guide_version_assets
+       where guide_version_id = 'gver_rens_tagrender_v1'
+         and not (id = any($1::text[]))`,
+      [activePlacementIds]
+    );
+
     for (const placement of gutterGuidePlacements) {
       const asset = visualAssets.find((candidate) => candidate.id === placement.assetId);
       assert.ok(asset, `Guide placement ${placement.id} refers to an unknown asset.`);
@@ -123,7 +146,13 @@ async function run() {
         `insert into guide_version_assets (
           id, guide_version_id, guide_asset_id, placement, position, alt_text, caption, print_visible
         ) values ($1, 'gver_rens_tagrender_v1', $2, $3, $4, $5, $6, true)
-        on conflict (guide_version_id, placement, position) do nothing`,
+        on conflict (guide_version_id, placement, position) do update
+          set id = excluded.id,
+              guide_asset_id = excluded.guide_asset_id,
+              alt_text = excluded.alt_text,
+              caption = excluded.caption,
+              print_visible = excluded.print_visible,
+              updated_at = now()`,
         [placement.id, placement.assetId, placement.placement, placement.position, asset.altText, placement.caption]
       );
     }

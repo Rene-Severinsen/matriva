@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "id": "matriva_modern_2023_house_a_roof_edge_gutter_reference_v1",
+  "status": "DERIVED_REFERENCE_CANDIDATE",
+  "approvalStatus": "PILOT",
+  "validationStatus": "NOT_REQUESTED",
+  "humanApproval": "PENDING",
+  "houseProfileId": "hprof_matriva_modern_2023",
+  "houseProfileKey": "matriva_modern_2023",
+  "path": "apps/api/assets/house-profiles/matriva-modern-2023/derived-references/roof-edge-gutter-corner-reference-v1.png",
+  "sha256": "77bd03ae1fa5a140f5dc6a86c383891ec070a30b2b8ae8de10a70905539342e3",
+  "widthPx": 1672,
+  "heightPx": 941,
+  "sourceType": "ai_generated",
+  "derivedFrom": [
+    {
+      "path": "docs/product/house-a-canonical-geometry.json",
+      "sha256": "5a1c2a6c5e5373b9a67c26e86ca9d2ba70bfc536b6209a9f65adfd13723e98cb",
+      "role": "geometry_authority"
+    },
+    {
+      "path": "docs/product/house-a-canonical-material-specification.json",
+      "sha256": "f4e22be4388991d44b03c2253d86a69b2485cd3bb92a5a510820aa69826f6431",
+      "role": "material_authority"
+    },
+    {
+      "path": "docs/product/house-a-canonical-landscape-specification.json",
+      "sha256": "c73ffb0dee23a28bfe788fd3cceab5afa6bc29941645e0fe60c5cbcefe49af39",
+      "role": "landscape_authority"
+    },
+    {
+      "path": "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/a05-right-canonical-v1.png",
+      "sha256": "3323073cf0783d8cde248722f510f25591718fcb5e4e4a4ea05ac8e76fc7e589",
+      "role": "primary_visual_and_drainage_reference"
+    }
+  ],
+  "use": "geometry_material_reference_only",
+  "constraints": {
+    "cleanReference": true,
+    "debris": false,
+    "water": false,
+    "hands": false,
+    "tools": false,
+    "ladder": false,
+    "person": false,
+    "brickFacade": false,
+    "extraDrainage": false
+  },
+  "technicalValidation": {
+    "status": "PASS",
+    "checks": {
+      "houseIdentity": "PASS",
+      "roofGeometry": "PASS",
+      "roofPitchLook": "PASS",
+      "roofEdge": "PASS",
+      "eavesOverhang": "PASS",
+      "gutterPlacement": "PASS",
+      "gutterProfileRealism": "PASS",
+      "drainageConsistency": "PASS",
+      "facadeMaterial": "PASS",
+      "materialConsistency": "PASS",
+      "noBrick": "PASS",
+      "noNewOpenings": "PASS",
+      "noAiGeometryArtefacts": "PASS"
+    }
+  }
+}

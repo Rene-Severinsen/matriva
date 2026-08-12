@@ -56,6 +56,7 @@ async function run() {
       assert.equal(asset.production_metadata.approvalStatus, expected.approvalStatus);
       assert.equal(asset.production_metadata.canonicalUse, expected.canonicalUse);
       assert.equal(asset.production_metadata.statusNote, expected.statusNote);
+      assert.deepEqual(asset.production_metadata.derivedProvenance ?? null, expected.derivedProvenance ?? null);
       const storagePath = join(localObjectStorageRoot, asset.storage_key);
       const stored = await readFile(storagePath);
       assert.equal(sha256(stored), asset.checksum_sha256, `${expected.assetKey} storage checksum must match metadata.`);

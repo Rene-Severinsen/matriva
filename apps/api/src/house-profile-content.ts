@@ -15,7 +15,7 @@ export const houseProfileSeeds: ReadonlyArray<HouseProfileSeed> = [
     profileKey: "matriva_modern_2023",
     title: "Matriva Modern 2023",
     description:
-      "House A visuelt/materialemæssigt referenceprofil baseret på den godkendte A01-reference: moderne dansk étplanshus fra 2023 med lyse mursten, mørkt tag, sorte vinduer, døre, tagrender og nedløb samt et minimalistisk have- og terrasseunivers. Canonical geometry er godkendt som den nuværende arkitektoniske source of truth.",
+      "House A visuelt/materialemæssigt referenceprofil baseret på den godkendte A01-reference: moderne dansk étplanshus fra 2023 med lys varm-neutral pudset facade, mørkt tag, sorte vinduer, døre, tagrender og nedløb samt et naturligt moderne dansk have- og terrasseunivers. Canonical geometry er godkendt som den nuværende arkitektoniske source of truth.",
     referenceHouseLabel: "Matriva Modern 2023 · House A"
   }
 ];

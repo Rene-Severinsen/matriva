@@ -84,7 +84,7 @@ const seededGuides = [
     expectedSectionCount: 16,
     expectedSearchTerms: 7,
     expectedTags: 5,
-    expectedAssetPlacementCount: 5,
+    expectedAssetPlacementCount: 4,
     expectedHotspotCount: 4
   },
   {

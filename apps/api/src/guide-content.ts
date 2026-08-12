@@ -297,7 +297,7 @@ export const guideContentSeeds: ReadonlyArray<GuideContentSeed> = [
         position: 13,
         title: "Billed- og hotspotplan",
         content: {
-          assetStatus: "planned_no_asset_file",
+          assetStatus: "pilot_assets_registered",
           referenceUniverse: "Matriva-huset",
           houseProfileAssessment: {
             value: "relevant_when_reference_assets_are_available",
@@ -305,11 +305,10 @@ export const guideContentSeeds: ReadonlyArray<GuideContentSeed> = [
               "Tagrender, nedløb, materialer og monteringsdetaljer kan variere synligt mellem referencehuse. Der oprettes ingen House A/B/C-grænser eller asset-varianter, før referencehusene og billederne er godkendt."
           },
           images: [
-            { key: "gutter_overview", placement: "cover", altText: "Matriva-hus med synlig tagrende og nedløb.", caption: "Find tagrenden og nedløbet, før du begynder.", description: "Oversigtsbillede af Matriva-huset med relevant tagrende." },
-            { key: "gutter_debris", placement: "inline", altText: "Nærbillede af tagrende med blade og snavs.", caption: "Fjern løst snavs uden at presse det ned i nedløbet.", description: "Nærbillede af blade, mos og andet snavs." },
-            { key: "gutter_cleaning", placement: "step", altText: "Sikker arbejdssituation ved rensning af tagrende.", caption: "Arbejd kun, når adgangsforholdene er sikre.", description: "Arbejdssituation med sikker stigeplacering." },
-            { key: "gutter_waterflow", placement: "step", altText: "Vand løber fra tagrende mod nedløb.", caption: "Vandet skal have fri vej mod nedløbet.", description: "Kontrol af vandflow og nedløb." },
-            { key: "gutter_complete", placement: "after", altText: "Ren tagrende med fungerende vandafledning.", caption: "En ren rende leder vandet videre uden synlige problemer.", description: "Færdigt resultat med ren og korrekt fungerende tagrende." }
+            { key: "gutter_orientation", placement: "cover", altText: "House A med synlig tagrende og nedløb.", caption: "Find tagrenden og nedløbet, før du begynder.", description: "Orientering ved House A's tagkant og nedløb." },
+            { key: "gutter_remove_debris", placement: "step", altText: "En behandsket hånd fjerner løse blade og almindeligt tørt snavs fra tagrenden.", caption: "Fjern løst snavs uden at presse det ned i nedløbet.", description: "Rutinemæssig rensning af en to år gammel tagrende med spredte blade, småkviste og almindeligt tørt organisk snavs." },
+            { key: "gutter_flow_downpipe", placement: "step", altText: "Vand bevæger sig gennem tagrenden mod nedløbet.", caption: "Vandet skal have fri vej mod nedløbet.", description: "Kontrol af vandflow ved tagrendens hjørne og nedløb." },
+            { key: "gutter_correct_result", placement: "after", altText: "Ren tagrende med frit nedløb ved House A.", caption: "En normalt ren rende leder vandet videre uden synlige problemer.", description: "Funktionelt rent slutresultat ved tagrendens hjørne." }
           ],
           plannedHotspots: [
             { label: "Blade og snavs", type: "tip", body: "Fjern løst materiale i stedet for at føre det ned i nedløbet." },

@@ -3,6 +3,16 @@ export const houseProfile = {
   key: "matriva_modern_2023"
 };
 
+const guide01DerivedProvenance = {
+  referenceManifest: "docs/product/house-a-roof-edge-gutter-reference-manifest.json",
+  sourceChecksums: {
+    geometry: "5a1c2a6c5e5373b9a67c26e86ca9d2ba70bfc536b6209a9f65adfd13723e98cb",
+    material: "f4e22be4388991d44b03c2253d86a69b2485cd3bb92a5a510820aa69826f6431",
+    landscape: "c73ffb0dee23a28bfe788fd3cceab5afa6bc29941645e0fe60c5cbcefe49af39",
+    a05: "3323073cf0783d8cde248722f510f25591718fcb5e4e4a4ea05ac8e76fc7e589"
+  }
+};
+
 const master = (
   id,
   assetKey,
@@ -29,7 +39,7 @@ const master = (
   statusNote: review.statusNote ?? "House A pilot material preserved for QA and regression reference; not a canonical master."
 });
 
-const guide = (id, assetKey, sourcePath, viewOrComponent, altText, referenceAssetKeys) => ({
+const guide = (id, assetKey, sourcePath, viewOrComponent, altText, referenceAssetKeys, statusNote = "Rens tagrender pilot material preserved for QA and regression reference; not the final visual guide standard.", derivedProvenance = null) => ({
   id,
   assetKey,
   sourcePath,
@@ -40,9 +50,15 @@ const guide = (id, assetKey, sourcePath, viewOrComponent, altText, referenceAsse
   sourceType: "ai_generated",
   altText,
   referenceAssetKeys,
+  houseProfileId: houseProfile.id,
+  guideId: "guide_rens_tagrender",
+  guideKey: "rens_tagrender",
+  guideVersion: "gver_rens_tagrender_v1",
+  validationStatus: "not_requested",
   approvalStatus: "pilot",
   canonicalUse: "not_final_guide_standard",
-  statusNote: "Rens tagrender pilot material preserved for QA and regression reference; not the final visual guide standard."
+  derivedProvenance,
+  statusNote
 });
 
 export const visualAssets = [
@@ -78,20 +94,24 @@ export const visualAssets = [
   guide("gasset_gutter_g02_problem", "rens_tagrender_problem_debris", "guides/rens-tagrender/g02-problem-debris-v1.png", "problem_debris", "Blade og organisk snavs i en sort tagrende på Matriva Modern 2023.", ["matriva_modern_2023_gutter_straight_master", "matriva_modern_2023_gutter_corner_master"]),
   guide("gasset_gutter_g03_cleaning", "rens_tagrender_cleaning", "guides/rens-tagrender/g03-cleaning-v1.png", "cleaning", "En behandsket hånd fjerner blade fra tagrenden på Matriva Modern 2023.", ["rens_tagrender_problem_debris", "matriva_modern_2023_gutter_straight_master"]),
   guide("gasset_gutter_g04_flow", "rens_tagrender_flow_check", "guides/rens-tagrender/g04-flow-check-v1.png", "flow_check", "Kontrolleret skylning mod nedløbet ved tagrendens hjørne på Matriva Modern 2023.", ["matriva_modern_2023_gutter_corner_master", "matriva_modern_2023_downpipe_top_master"]),
-  guide("gasset_gutter_g05_result", "rens_tagrender_correct_result", "guides/rens-tagrender/g05-correct-result-v1.png", "correct_result", "Ren sort tagrende og frit nedløb ved lys murstensfacade på Matriva Modern 2023.", ["matriva_modern_2023_gutter_straight_master", "matriva_modern_2023_downpipe_foot_master"])
+  guide("gasset_gutter_g05_result", "rens_tagrender_correct_result", "guides/rens-tagrender/g05-correct-result-v1.png", "correct_result", "Ren sort tagrende og frit nedløb ved lys murstensfacade på Matriva Modern 2023.", ["matriva_modern_2023_gutter_straight_master", "matriva_modern_2023_downpipe_foot_master"]),
+  guide("gasset_gutter_g01_orientation_v1", "rens_tagrender_orientation_v1", "guides/rens-tagrender/g01-orientation-v1.png", "orientation", "House A med synlig sort tagrende og korrekt nedløb ved taghjørnet.", ["house_a_roof_edge_gutter_corner_reference_v1", "matriva_modern_2023_house_a05_canonical_render"], "Rens tagrender guide candidate generated from current House A references; human approval pending.", guide01DerivedProvenance),
+  guide("gasset_gutter_g02_remove_debris_v1", "rens_tagrender_remove_debris_v1", "guides/rens-tagrender/g02-remove-debris-v1.png", "remove_debris", "En behandsket hånd fjerner løse blade fra den sorte tagrende på House A.", ["house_a_roof_edge_gutter_corner_reference_v1", "matriva_modern_2023_house_a05_canonical_render"], "Rens tagrender guide candidate generated from current House A references; human approval pending.", guide01DerivedProvenance),
+  guide("gasset_gutter_g02_remove_debris_v2", "rens_tagrender_remove_debris_v2", "guides/rens-tagrender/g02-remove-debris-v2.png", "remove_debris", "En behandsket hånd fjerner løse blade og almindeligt tørt snavs fra den sorte tagrende på House A.", ["house_a_roof_edge_gutter_corner_reference_v1", "matriva_modern_2023_house_a05_canonical_render"], "Rens tagrender guide candidate generated from current House A references; human approval pending.", guide01DerivedProvenance),
+  guide("gasset_gutter_g03_flow_downpipe_v1", "rens_tagrender_flow_downpipe_v1", "guides/rens-tagrender/g03-flow-downpipe-v1.png", "flow_downpipe", "Vand bevæger sig gennem House A's sorte tagrende mod det korrekte nedløb.", ["house_a_roof_edge_gutter_corner_reference_v1", "matriva_modern_2023_house_a05_canonical_render"], "Rens tagrender guide candidate generated from current House A references; human approval pending.", guide01DerivedProvenance),
+  guide("gasset_gutter_g04_correct_result_v1", "rens_tagrender_correct_result_v1", "guides/rens-tagrender/g04-correct-result-v1.png", "correct_result", "Ren sort tagrende med fri vandvej og korrekt nedløb ved House A.", ["house_a_roof_edge_gutter_corner_reference_v1", "matriva_modern_2023_house_a05_canonical_render"], "Rens tagrender guide candidate generated from current House A references; human approval pending.", guide01DerivedProvenance)
 ];
 
 export const gutterGuidePlacements = [
-  { id: "gva_rens_g01_overview", assetId: "gasset_ma23_a06_rear", placement: "cover", position: 0, caption: "Overblik: tagrender og nedløb er en del af husets samlede vandafledning." },
-  { id: "gva_rens_g02_problem", assetId: "gasset_gutter_g02_problem", placement: "step", position: 0, caption: "Fjern blade og løst snavs, før det føres mod nedløbet." },
-  { id: "gva_rens_g03_cleaning", assetId: "gasset_gutter_g03_cleaning", placement: "step", position: 1, caption: "Arbejd kun fra et stabilt og sikkert arbejdssted." },
-  { id: "gva_rens_g04_flow", assetId: "gasset_gutter_g04_flow", placement: "step", position: 2, caption: "Skyl forsigtigt og kontrollér vandets vej mod nedløbet." },
-  { id: "gva_rens_g05_result", assetId: "gasset_gutter_g05_result", placement: "after", position: 0, caption: "Resultat: ren rende, synlig vandvej og frit nedløb." }
+  { id: "gva_rens_g01_orientation_v1", assetId: "gasset_gutter_g01_orientation_v1", placement: "cover", position: 0, caption: "Find tagrenden og nedløbet, før du begynder." },
+  { id: "gva_rens_g02_remove_debris_v2", assetId: "gasset_gutter_g02_remove_debris_v2", placement: "step", position: 0, caption: "Fjern løst snavs uden at presse det ned i nedløbet." },
+  { id: "gva_rens_g03_flow_downpipe_v1", assetId: "gasset_gutter_g03_flow_downpipe_v1", placement: "step", position: 1, caption: "Skyl forsigtigt og kontrollér vandets vej mod nedløbet." },
+  { id: "gva_rens_g04_correct_result_v1", assetId: "gasset_gutter_g04_correct_result_v1", placement: "after", position: 0, caption: "Resultat: ren rende, synlig vandvej og frit nedløb." }
 ];
 
 export const gutterGuideHotspots = [
-  { id: "ghot_rens_g02_debris", guideVersionAssetId: "gva_rens_g02_problem", hotspotType: "tip", position: 0, x: 0.52, y: 0.30, title: "Blade og snavs", body: "Fjern løst materiale lidt ad gangen og læg det i en spand eller pose i stedet for at skubbe det mod nedløbet." },
-  { id: "ghot_rens_g04_fall", guideVersionAssetId: "gva_rens_g04_flow", hotspotType: "checkpoint", position: 0, x: 0.37, y: 0.39, title: "Kontrollér faldet", body: "Vandet skal bevæge sig mod nedløbet uden at stå stille eller løbe over kanten." },
-  { id: "ghot_rens_g04_joint", guideVersionAssetId: "gva_rens_g04_flow", hotspotType: "checkpoint", position: 1, x: 0.50, y: 0.43, title: "Kontrollér samlingen", body: "Se efter synlige dryp eller vand, der presser ud ved samlingen efter skylning." },
-  { id: "ghot_rens_g04_downpipe", guideVersionAssetId: "gva_rens_g04_flow", hotspotType: "checkpoint", position: 2, x: 0.67, y: 0.62, title: "Tjek nedløbet", body: "Vandet skal fortsætte frit i nedløbet uden tydelige blokeringer." }
+  { id: "ghot_rens_g02_remove_debris_v2", guideVersionAssetId: "gva_rens_g02_remove_debris_v2", hotspotType: "tip", position: 0, x: 0.58, y: 0.48, title: "Blade og snavs", body: "Fjern løst materiale lidt ad gangen og læg det i en spand eller pose i stedet for at skubbe det mod nedløbet." },
+  { id: "ghot_rens_g03_flow_v1", guideVersionAssetId: "gva_rens_g03_flow_downpipe_v1", hotspotType: "checkpoint", position: 0, x: 0.45, y: 0.42, title: "Kontrollér vandets vej", body: "Vandet skal bevæge sig mod nedløbet uden at stå stille eller løbe over kanten." },
+  { id: "ghot_rens_g03_joint_v1", guideVersionAssetId: "gva_rens_g03_flow_downpipe_v1", hotspotType: "checkpoint", position: 1, x: 0.58, y: 0.46, title: "Kontrollér samlingen", body: "Se efter synlige dryp eller vand, der presser ud ved samlingen efter skylning." },
+  { id: "ghot_rens_g03_downpipe_v1", guideVersionAssetId: "gva_rens_g03_flow_downpipe_v1", hotspotType: "checkpoint", position: 2, x: 0.72, y: 0.62, title: "Tjek nedløbet", body: "Vandet skal fortsætte frit i nedløbet uden tydelige blokeringer." }
 ];

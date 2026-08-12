@@ -22,11 +22,12 @@ async function verifyFile(record) {
 }
 
 assert.equal(geometry.status, "approved_current_source_of_truth");
-assert.equal(provenance.status, "VALIDATED");
-assert.equal(provenance.humanApproval, "PENDING");
-assert.deepEqual(provenance.scope, ["A02", "A03"], "pilot scope must contain A02 and A03 only");
-assert.equal(provenance.renders.length, 2, "pilot must contain exactly two renders");
-assert.deepEqual(provenance.renders.map((render) => render.id), ["A02", "A03"]);
+assert.equal(provenance.status, "SUPERSEDED_RETAINED_FOR_GEOMETRY_AND_RENDER_PROVENANCE");
+assert.equal(provenance.humanApproval, "HISTORICAL_A02_A03_APPROVED_AT_8b846b4_A04_A05_PRE_PROMOTION_RECORD");
+assert.equal(provenance.currentCanonicalManifest, "docs/product/house-a-canonical-render-manifest.json");
+assert.deepEqual(provenance.scope, ["A02", "A03", "A04", "A05"], "pilot scope must contain A02-A05 only");
+assert.equal(provenance.renders.length, 4, "pilot must contain exactly four renders");
+assert.deepEqual(provenance.renders.map((render) => render.id), ["A02", "A03", "A04", "A05"]);
 assert.equal(sha256(await readFile(join(projectRoot, provenance.canonicalGeometry.path))), provenance.canonicalGeometry.sha256);
 assert.equal(sha256(await readFile(join(projectRoot, provenance.cameraSystem.path))), provenance.cameraSystem.sha256);
 assert.equal(provenance.canonicalGeometry.id, geometry.id);
@@ -34,15 +35,17 @@ assert.equal(provenance.cameraSystem.id, cameras.id);
 await verifyFile(provenance.materialReference);
 
 const expected = {
-  A02: { cameraId: "CAM_FRONT", facade: "front", visible: ["GARAGE_DOOR_01", "FRONT_DOOR_01", "FRONT_WINDOW_01", "FRONT_WINDOW_02"] },
-  A03: { cameraId: "CAM_REAR", facade: "rear", visible: ["REAR_SLIDER_02", "REAR_WINDOW_02", "REAR_SLIDER_01", "REAR_WINDOW_01"] }
+  A02: { cameraId: "CAM_FRONT", facade: "front", status: "APPROVED", visible: ["GARAGE_DOOR_01", "FRONT_DOOR_01", "FRONT_WINDOW_01", "FRONT_WINDOW_02"] },
+  A03: { cameraId: "CAM_REAR", facade: "rear", status: "APPROVED", visible: ["REAR_SLIDER_02", "REAR_WINDOW_02", "REAR_SLIDER_01", "REAR_WINDOW_01"] },
+  A04: { cameraId: "CAM_LEFT", facade: "left", status: "VALIDATED", visible: ["LEFT_WINDOW_01", "LEFT_GARAGE_DOOR_01"] },
+  A05: { cameraId: "CAM_RIGHT", facade: "right", status: "VALIDATED", visible: ["RIGHT_WINDOW_01", "RIGHT_WINDOW_02"] }
 };
 
 for (const render of provenance.renders) {
   const rule = expected[render.id];
-  assert(rule, `${render.id} is outside the A02/A03 approval gate`);
-  assert.equal(render.status, "VALIDATED");
-  assert.equal(render.humanApproval, "PENDING");
+  assert(rule, `${render.id} is outside the A02-A05 approval scope`);
+  assert.equal(render.status, rule.status);
+  assert.equal(render.humanApproval, rule.status === "APPROVED" ? "APPROVED" : "PENDING");
   assert.equal(render.cameraId, rule.cameraId);
   assert.equal(render.facade, rule.facade);
   assert(cameras.cameras.some((camera) => camera.id === render.cameraId), `${render.cameraId} must exist`);
@@ -59,4 +62,4 @@ for (const render of provenance.renders) {
 }
 
 assert.equal(provenance.manualValidation.result, "PASS_FOR_HUMAN_APPROVAL_GATE");
-console.log("House A A02/A03 provenance, camera binding and artifact integrity validated.");
+console.log("House A A02-A05 provenance, camera binding and artifact integrity validated.");

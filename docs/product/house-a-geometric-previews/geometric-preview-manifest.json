@@ -3,7 +3,7 @@
   "geometryId": "matriva_modern_2023_house_a_canonical_geometry",
   "geometrySha256": "5a1c2a6c5e5373b9a67c26e86ca9d2ba70bfc536b6209a9f65adfd13723e98cb",
   "cameraSystemId": "matriva_modern_2023_house_a_canonical_cameras_v1",
-  "cameraSystemSha256": "698ccb016888f49ea200aff3d213504bdc63b3b00556e49ba6272b964168b726",
+  "cameraSystemSha256": "ad9516cff7c8acfee8457b231a303b6b41147783873b5cb6d7d5d2297de78e73",
   "renderer": "deterministic-svg-perspective-v1",
   "outputs": [
     {

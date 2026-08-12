@@ -1,6 +1,6 @@
 # House A A02/A03 – validation ved Human Approval Gate
 
-Status: `VALIDATED` · Human approval: `PENDING`
+Status: `APPROVED` · Human approval: `APPROVED` ved checkpoint `8b846b4`
 
 Denne gate sammenholder de to fotorealistiske drafts med den samme godkendte canonical geometri. Maskinel validering kontrollerer bindinger, checksums, kameraer, openings og billedformat. Visuel validering kontrollerer de dele af AI-outputtet, som ikke kan bevises programmatisk på pixelniveau.
 
@@ -16,4 +16,4 @@ Denne gate sammenholder de to fotorealistiske drafts med den samme godkendte can
 | A01-materialeudtryk | PASS | PASS |
 | Uautoriseret geometri | Ingen observeret | Ingen observeret |
 
-Konklusion: A02 og A03 er dokumenteret som to kameraer på den samme canonical House A-model og er klar til menneskelig vurdering. De er ikke `APPROVED`, før denne gate godkendes eksplicit. En senere AI-render eller billedredigering må aldrig bruges til at ændre canonical geometri.
+Konklusion: A02 og A03 er dokumenteret og menneskeligt godkendt som to kameraer på den samme canonical House A-model. En senere AI-render eller billedredigering må aldrig bruges til at ændre canonical geometri.

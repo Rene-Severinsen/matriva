@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "patternId": "matriva_modern_2023_house_a_masonry_pattern_v1",
+  "configSha256": "48daf1a148c03897e6fe28a9936deca2c885499207b7b35dd172e7dcd5758a82",
+  "sourceImage": "apps/api/assets/guides/matriva-modern-2023/masters/a01-exterior-entry-original-v1.png",
+  "sourceSha256": "1b4416fdbbf431107fb021e7be9b567a79537e1b0860bfdc4ec7998c4f990573",
+  "method": "deterministic masked inverse-homography compositing with source-derived low-frequency illumination",
+  "status": "REJECTED_SUPERSEDED",
+  "canonicalUse": "PROHIBITED",
+  "visualGate": {
+    "status": "FAIL",
+    "decision": "REJECTED_SUPERSEDED_BY_RENDERED_FACADE_DECISION",
+    "reasons": [
+      "The corrected patch remains visibly smoother and flatter than the surrounding A01 masonry.",
+      "The transition between the deterministic patch and the photographic source remains perceptible."
+    ]
+  },
+  "destinationQuadPx": [
+    {
+      "x": 1244,
+      "y": 361
+    },
+    {
+      "x": 1362,
+      "y": 346
+    },
+    {
+      "x": 1362,
+      "y": 548
+    },
+    {
+      "x": 1244,
+      "y": 566
+    }
+  ],
+  "destinationToPlaneHomography": [
+    6.945061242,
+    0,
+    -8639.6561850871,
+    0.5372108015,
+    4.2260583053,
+    -2193.8972852948,
+    -0.0001074422,
+    0,
+    1
+  ],
+  "sampledAverageBrickRgb": [
+    115,
+    110,
+    100
+  ],
+  "outputs": {
+    "a01-masonry-test-patch-after.png": "7fa661f4ed2e5998e2d6bedf05ecff0411a3ad0e1ae43573ccc01c08a3497445",
+    "masonry-pattern-tile.png": "a140526449954be11adb285a0eb8c956ec27c73d85d13cdf459b0e8832ae50d4",
+    "masonry-test-patch-board.png": "37573655088aa0baa9c238119a610437412fa3bb0ed8246bcb6ec02b2844b510"
+  }
+}

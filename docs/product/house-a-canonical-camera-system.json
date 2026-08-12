@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "matriva_modern_2023_house_a_canonical_cameras_v1",
-  "status": "approved_for_a02_a03_pilot",
+  "status": "approved_for_a02_a05_pilots",
   "canonicalGeometryId": "matriva_modern_2023_house_a_canonical_geometry",
   "coordinateUnit": "mm",
   "worldConvention": "Matches canonical geometry: x west-to-east, y front/south-to-rear/north, z vertically above finished floor level.",
@@ -75,9 +75,9 @@
   ],
   "lockingRules": [
     "Camera changes never mutate canonical geometry.",
-    "A02 uses CAM_FRONT and A03 uses CAM_REAR; only the camera may differ between those renders.",
+    "A02 uses CAM_FRONT, A03 uses CAM_REAR, A04 uses CAM_LEFT and A05 uses CAM_RIGHT; only the camera may differ between those renders.",
     "Every photorealistic render must receive its matching deterministic geometric preview as a geometry reference.",
     "A01 may supply visual/material style only and never hidden geometry.",
-    "A04–A15 remain outside the current approval gate."
+    "A01–A05 current canonical photorealistic bindings are recorded in house-a-canonical-render-manifest.json; A06–A15 remain outside the current canonical series."
   ]
 }

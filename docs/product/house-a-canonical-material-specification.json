@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "id": "matriva_modern_2023_house_a_canonical_materials_v1",
+  "status": "APPROVED_CURRENT_CANONICAL_MATERIAL",
+  "approvedAt": "2026-08-12",
+  "approvalStatus": "HUMAN_APPROVED",
+  "decision": "NEW HUMAN DESIGN DECISION",
+  "canonicalGeometryId": "matriva_modern_2023_house_a_canonical_geometry",
+  "canonicalGeometrySha256": "5a1c2a6c5e5373b9a67c26e86ca9d2ba70bfc536b6209a9f65adfd13723e98cb",
+  "geometryMutation": "NONE",
+  "facade": {
+    "canonicalMaterial": "LIGHT RENDERED / PLASTERED FACADE",
+    "appearance": {
+      "tone": "light warm-neutral",
+      "finish": "matte",
+      "texture": "subtle mineral/plastered surface variation",
+      "roughnessLook": "diffuse and physically plausible; neither plastic-smooth nor coarse rustic",
+      "crossViewConsistency": "one continuous facade system across every exterior facade and every view"
+    },
+    "prohibitedAppearance": [
+      "visible brick",
+      "masonry joints or grid",
+      "block or tile pattern",
+      "random panels",
+      "unmodelled facade divisions",
+      "different facade colors between views",
+      "different plaster systems or texture scales between views"
+    ]
+  },
+  "immutableVisualMaterialRules": [
+    "All House A exterior facade surfaces must appear as the same continuous light rendered/plastered facade system.",
+    "Variation may come only from perspective, natural light, shadow, weathering or ambient occlusion, and minor realistic surface variation.",
+    "No image edit or render may change canonical geometry, openings, room map, site plan, roof, camera or approved visible interior composition.",
+    "An AI image is always a derived representation and can never alter this material specification or canonical geometry."
+  ],
+  "sourceOfTruth": {
+    "facadeMaterialAuthority": "this file",
+    "geometryAuthority": "docs/product/house-a-canonical-geometry.json",
+    "photographicReference": "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/a01-front-hero-canonical-v1.png",
+    "a01RetainedAuthority": [
+      "photographic style",
+      "overall light",
+      "dark roof character",
+      "black windows",
+      "black front door",
+      "black gutters and downpipes",
+      "natural garden character",
+      "compositional quality"
+    ],
+    "a01SupersededAuthority": "The original A01 exposed-brick material is superseded; the original remains a historical visual reference. Canonical specifications remain authoritative over pixels."
+  },
+  "historicSupersession": {
+    "supersedesFacadeFieldInCanonicalGeometryV1": "light warm brick",
+    "masonryTrackStatus": "REJECTED / SUPERSEDED",
+    "reason": "AI masonry used stacked/grid joints; precise object editing was unstable; deterministic texture projection produced offset geometry but a flat, skewed and visually artificial facade; a human decision changed House A to a light rendered facade.",
+    "historicArtifactsRemainNonCanonical": true
+  },
+  "photorealisticReference": {
+    "status": "HUMAN_APPROVED_CURRENT_CANONICAL_REFERENCE",
+    "path": "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/a01-front-hero-canonical-v1.png",
+    "sha256": "d9549012d55f2405e9c6d3f0581f5e49ae5502f23ff3c6e067bd7d3fcbf2c919",
+    "approvalScope": "facade tone, finish and texture; photographic style; lighting; black roof, openings and drainage; natural garden character; overall House A hero expression",
+    "derivedRepresentation": true
+  }
+}

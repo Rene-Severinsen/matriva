@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "id": "matriva_modern_2023_house_a_masonry_pattern_v1",
+  "status": "REJECTED_SUPERSEDED",
+  "canonicalUse": "PROHIBITED",
+  "historicOnly": true,
+  "supersededBy": "docs/product/house-a-canonical-material-specification.json",
+  "closureReason": "The original AI masonry used stacked/grid joints; precise-object-edit did not correct it reliably; deterministic texture projection produced an offset bond but remained flat, skewed and visually artificial; a human decision changed House A to a light rendered/plastered facade.",
+  "geometryRole": "visual material rule only; never canonical building geometry",
+  "pattern": {
+    "brickVisibleLengthMm": 228,
+    "brickVisibleHeightMm": 54,
+    "verticalJointMm": 12,
+    "horizontalJointMm": 12.6667,
+    "horizontalModuleMm": 240,
+    "verticalModuleMm": 66.6667,
+    "adjacentRowOffsetMm": 120,
+    "bondName": "deliberately unspecified",
+    "immutableVisualRules": [
+      "Horizontal courses use one consistent brick and joint scale.",
+      "Every adjacent course offsets head joints by half one horizontal module.",
+      "No vertical head joint may continue through adjacent courses.",
+      "Pattern geometry remains deterministic; photographic color and low-frequency illumination come from A01."
+    ]
+  },
+  "physicalDimensionSource": {
+    "title": "Målafsætning – Mur & Tag",
+    "url": "https://www.mur-tag.dk/udfoerelse/opmuring/maalafsaetning/",
+    "verifiedFacts": [
+      "Danish normal-format brick declared dimensions are 228 × 108 × 54 mm.",
+      "Three masonry courses equal 200 mm, yielding a 66.6667 mm vertical course module."
+    ]
+  },
+  "materialReference": {
+    "path": "apps/api/assets/guides/matriva-modern-2023/masters/a01-exterior-entry-original-v1.png",
+    "role": "light warm brick color, mortar character, texture, illumination and photographic variation only",
+    "supersededAspect": "A01 stacked/grid head-joint geometry is rejected and is never sampled as pattern geometry"
+  },
+  "testPatch": {
+    "id": "A01_MASONRY_TEST_PATCH_01",
+    "visualGate": {
+      "status": "FAIL",
+      "decision": "REJECTED_SUPERSEDED_BY_RENDERED_FACADE_DECISION",
+      "reasons": [
+        "The corrected patch remains visibly smoother and flatter than the surrounding A01 masonry.",
+        "The transition between the deterministic patch and the photographic source remains perceptible."
+      ]
+    },
+    "sourceImage": "apps/api/assets/guides/matriva-modern-2023/masters/a01-exterior-entry-original-v1.png",
+    "sourcePlaneSizeMm": { "width": 960, "height": 1000 },
+    "destinationQuadPx": [
+      { "x": 1244, "y": 361 },
+      { "x": 1362, "y": 346 },
+      { "x": 1362, "y": 548 },
+      { "x": 1244, "y": 566 }
+    ],
+    "maskRules": [
+      "Only pixels inside the four-point facade-plane mask may change.",
+      "The selected test patch contains no opening, roof, gutter, downpipe or foreground vegetation.",
+      "A deterministic twelve-pixel smooth feather is permitted at the mask boundary."
+    ],
+    "projection": "inverse projective homography from destination image quad to the deterministic masonry plane",
+    "photographicPreservation": "low-frequency A01 color and illumination plus bounded source detail; low-contrast mortar; deterministic micro-variation; original pixels outside mask"
+  }
+}

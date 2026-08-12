@@ -1,0 +1,201 @@
+{
+  "schemaVersion": 1,
+  "id": "matriva_modern_2023_house_a_current_canonical_renders_v1",
+  "status": "CURRENT_CANONICAL_REFERENCE",
+  "approvedAt": "2026-08-12",
+  "approvalStatus": "HUMAN_APPROVED",
+  "changePolicy": "Not immutable forever. Future canonical-reference changes must be explicit, versioned, documented, provenance-preserving, validated and human-approved where applicable; no silent overwrite.",
+  "scope": [
+    "A01",
+    "A02",
+    "A03",
+    "A04",
+    "A05"
+  ],
+  "authorities": {
+    "geometry": {
+      "path": "docs/product/house-a-canonical-geometry.json",
+      "id": "matriva_modern_2023_house_a_canonical_geometry",
+      "sha256": "5a1c2a6c5e5373b9a67c26e86ca9d2ba70bfc536b6209a9f65adfd13723e98cb"
+    },
+    "material": {
+      "path": "docs/product/house-a-canonical-material-specification.json",
+      "id": "matriva_modern_2023_house_a_canonical_materials_v1",
+      "sha256": "f4e22be4388991d44b03c2253d86a69b2485cd3bb92a5a510820aa69826f6431"
+    },
+    "landscape": {
+      "path": "docs/product/house-a-canonical-landscape-specification.json",
+      "id": "matriva_modern_2023_house_a_canonical_landscape_v1",
+      "sha256": "c73ffb0dee23a28bfe788fd3cceab5afa6bc29941645e0fe60c5cbcefe49af39"
+    },
+    "cameraSystem": {
+      "path": "docs/product/house-a-canonical-camera-system.json",
+      "id": "matriva_modern_2023_house_a_canonical_cameras_v1",
+      "sha256": "ad9516cff7c8acfee8457b231a303b6b41147783873b5cb6d7d5d2297de78e73"
+    }
+  },
+  "derivedRepresentationRule": "Photorealistic renders are derived representations and cannot modify architectural geometry, material specification, landscape specification, camera bindings or room/interior visibility authority.",
+  "renders": [
+    {
+      "renderId": "A01",
+      "canonicalPath": "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/a01-front-hero-canonical-v1.png",
+      "approvedCandidatePath": "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/corrections/a01-rendered-facade-natural-garden-candidate-v1.png",
+      "sha256": "d9549012d55f2405e9c6d3f0581f5e49ae5502f23ff3c6e067bd7d3fcbf2c919",
+      "widthPx": 1672,
+      "heightPx": 941,
+      "geometryVersion": "matriva_modern_2023_house_a_canonical_geometry",
+      "geometrySha256": "5a1c2a6c5e5373b9a67c26e86ca9d2ba70bfc536b6209a9f65adfd13723e98cb",
+      "cameraId": "CAM_FRONT_HERO",
+      "materialSpecificationVersion": "matriva_modern_2023_house_a_canonical_materials_v1",
+      "materialSpecificationSha256": "f4e22be4388991d44b03c2253d86a69b2485cd3bb92a5a510820aa69826f6431",
+      "landscapeSpecificationVersion": "matriva_modern_2023_house_a_canonical_landscape_v1",
+      "landscapeSpecificationSha256": "c73ffb0dee23a28bfe788fd3cceab5afa6bc29941645e0fe60c5cbcefe49af39",
+      "approvalStatus": "HUMAN_APPROVED",
+      "approvedAt": "2026-08-12",
+      "approvalReference": {
+        "path": "docs/product/house-a-rendered-facade-natural-garden-drainage-approval-board.png",
+        "sha256": "5b70a0367ba27d4bd6e65acde4434200a0f0cbeafe6dfcdb80391df8946b7aec"
+      },
+      "approvalScope": [
+        "rendered facade",
+        "natural garden",
+        "overall House A visual look"
+      ],
+      "supersedes": [
+        "apps/api/assets/guides/matriva-modern-2023/masters/a01-exterior-entry-original-v1.png as current photorealistic/material reference; original retained as historical visual reference"
+      ]
+    },
+    {
+      "renderId": "A02",
+      "canonicalPath": "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/a02-front-canonical-v1.png",
+      "approvedCandidatePath": "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/corrections/a02-front-rendered-facade-natural-garden-door-handle-candidate-v3.png",
+      "sha256": "8804dc550186126a4632f99f87d17674a1fcc9b3b3a634f5815445f83a597f8e",
+      "widthPx": 1672,
+      "heightPx": 941,
+      "geometryVersion": "matriva_modern_2023_house_a_canonical_geometry",
+      "geometrySha256": "5a1c2a6c5e5373b9a67c26e86ca9d2ba70bfc536b6209a9f65adfd13723e98cb",
+      "cameraId": "CAM_FRONT",
+      "materialSpecificationVersion": "matriva_modern_2023_house_a_canonical_materials_v1",
+      "materialSpecificationSha256": "f4e22be4388991d44b03c2253d86a69b2485cd3bb92a5a510820aa69826f6431",
+      "landscapeSpecificationVersion": "matriva_modern_2023_house_a_canonical_landscape_v1",
+      "landscapeSpecificationSha256": "c73ffb0dee23a28bfe788fd3cceab5afa6bc29941645e0fe60c5cbcefe49af39",
+      "approvalStatus": "HUMAN_APPROVED",
+      "approvedAt": "2026-08-12",
+      "approvalReference": {
+        "path": "docs/product/house-a-rendered-facade-natural-garden-drainage-approval-board.png",
+        "sha256": "5b70a0367ba27d4bd6e65acde4434200a0f0cbeafe6dfcdb80391df8946b7aec"
+      },
+      "approvalScope": [
+        "rendered facade",
+        "natural garden",
+        "geometry consistency",
+        "deterministic single door handle correction"
+      ],
+      "supersedes": [
+        "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/a02-front-canonical-draft-v1.png",
+        "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/corrections/a02-front-rendered-facade-natural-garden-candidate-v1.png"
+      ]
+    },
+    {
+      "renderId": "A03",
+      "canonicalPath": "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/a03-rear-garden-canonical-v1.png",
+      "approvedCandidatePath": "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/corrections/a03-rear-garden-rendered-facade-natural-garden-candidate-v1.png",
+      "sha256": "130c096440cf863ee87a9b6da168196b37d3a464db838c8bc966556b69fec84b",
+      "widthPx": 1672,
+      "heightPx": 941,
+      "geometryVersion": "matriva_modern_2023_house_a_canonical_geometry",
+      "geometrySha256": "5a1c2a6c5e5373b9a67c26e86ca9d2ba70bfc536b6209a9f65adfd13723e98cb",
+      "cameraId": "CAM_REAR",
+      "materialSpecificationVersion": "matriva_modern_2023_house_a_canonical_materials_v1",
+      "materialSpecificationSha256": "f4e22be4388991d44b03c2253d86a69b2485cd3bb92a5a510820aa69826f6431",
+      "landscapeSpecificationVersion": "matriva_modern_2023_house_a_canonical_landscape_v1",
+      "landscapeSpecificationSha256": "c73ffb0dee23a28bfe788fd3cceab5afa6bc29941645e0fe60c5cbcefe49af39",
+      "approvalStatus": "HUMAN_APPROVED",
+      "approvedAt": "2026-08-12",
+      "approvalReference": {
+        "path": "docs/product/house-a-rendered-facade-natural-garden-drainage-approval-board.png",
+        "sha256": "5b70a0367ba27d4bd6e65acde4434200a0f0cbeafe6dfcdb80391df8946b7aec"
+      },
+      "approvalScope": [
+        "rendered facade",
+        "natural garden",
+        "previously approved geometry and interior",
+        "current House A consistency"
+      ],
+      "supersedes": [
+        "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/a03-rear-garden-canonical-draft-v1.png"
+      ]
+    },
+    {
+      "renderId": "A04",
+      "canonicalPath": "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/a04-left-canonical-v1.png",
+      "approvedCandidatePath": "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/corrections/a04-left-rendered-facade-natural-garden-candidate-v1.png",
+      "sha256": "dc2045c1623d4569cdc3151755b9ed1c8cca025cfcb5d743b808766d4925405d",
+      "widthPx": 1672,
+      "heightPx": 941,
+      "geometryVersion": "matriva_modern_2023_house_a_canonical_geometry",
+      "geometrySha256": "5a1c2a6c5e5373b9a67c26e86ca9d2ba70bfc536b6209a9f65adfd13723e98cb",
+      "cameraId": "CAM_LEFT",
+      "materialSpecificationVersion": "matriva_modern_2023_house_a_canonical_materials_v1",
+      "materialSpecificationSha256": "f4e22be4388991d44b03c2253d86a69b2485cd3bb92a5a510820aa69826f6431",
+      "landscapeSpecificationVersion": "matriva_modern_2023_house_a_canonical_landscape_v1",
+      "landscapeSpecificationSha256": "c73ffb0dee23a28bfe788fd3cceab5afa6bc29941645e0fe60c5cbcefe49af39",
+      "approvalStatus": "HUMAN_APPROVED",
+      "approvedAt": "2026-08-12",
+      "approvalReference": {
+        "path": "docs/product/house-a-rendered-facade-natural-garden-drainage-approval-board.png",
+        "sha256": "5b70a0367ba27d4bd6e65acde4434200a0f0cbeafe6dfcdb80391df8946b7aec"
+      },
+      "approvalScope": [
+        "rendered facade",
+        "natural garden",
+        "previously approved geometry and interior",
+        "current House A consistency"
+      ],
+      "supersedes": [
+        "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/a04-left-canonical-draft-v1.png"
+      ]
+    },
+    {
+      "renderId": "A05",
+      "canonicalPath": "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/a05-right-canonical-v1.png",
+      "approvedCandidatePath": "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/corrections/a05-right-rendered-facade-natural-garden-drainage-candidate-v2.png",
+      "sha256": "3323073cf0783d8cde248722f510f25591718fcb5e4e4a4ea05ac8e76fc7e589",
+      "widthPx": 1672,
+      "heightPx": 941,
+      "geometryVersion": "matriva_modern_2023_house_a_canonical_geometry",
+      "geometrySha256": "5a1c2a6c5e5373b9a67c26e86ca9d2ba70bfc536b6209a9f65adfd13723e98cb",
+      "cameraId": "CAM_RIGHT",
+      "materialSpecificationVersion": "matriva_modern_2023_house_a_canonical_materials_v1",
+      "materialSpecificationSha256": "f4e22be4388991d44b03c2253d86a69b2485cd3bb92a5a510820aa69826f6431",
+      "landscapeSpecificationVersion": "matriva_modern_2023_house_a_canonical_landscape_v1",
+      "landscapeSpecificationSha256": "c73ffb0dee23a28bfe788fd3cceab5afa6bc29941645e0fe60c5cbcefe49af39",
+      "approvalStatus": "HUMAN_APPROVED",
+      "approvedAt": "2026-08-12",
+      "approvalReference": {
+        "path": "docs/product/house-a-rendered-facade-natural-garden-drainage-approval-board.png",
+        "sha256": "5b70a0367ba27d4bd6e65acde4434200a0f0cbeafe6dfcdb80391df8946b7aec"
+      },
+      "approvalScope": [
+        "rendered facade",
+        "natural garden",
+        "current House A consistency",
+        "drainage v2"
+      ],
+      "supersedes": [
+        "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/a05-right-canonical-draft-v1.png",
+        "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/corrections/a05-right-rendered-facade-natural-garden-before-drainage-v1.png",
+        "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/corrections/a05-right-rendered-facade-natural-garden-drainage-candidate-v1.png"
+      ]
+    }
+  ],
+  "historicalReferences": {
+    "originalA01": {
+      "path": "apps/api/assets/guides/matriva-modern-2023/masters/a01-exterior-entry-original-v1.png",
+      "sha256": "1b4416fdbbf431107fb021e7be9b567a79537e1b0860bfdc4ec7998c4f990573",
+      "status": "HISTORICAL_VISUAL_REFERENCE_BRICK_MATERIAL_SUPERSEDED"
+    },
+    "masonryTrackStatus": "REJECTED_SUPERSEDED_CANONICAL_USE_PROHIBITED",
+    "previousPilotStatus": "SUPERSEDED_RETAINED_FOR_PROVENANCE"
+  }
+}

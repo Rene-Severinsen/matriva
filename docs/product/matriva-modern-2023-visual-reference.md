@@ -1,6 +1,6 @@
 # Matriva Modern 2023 – visuelt referenceunivers
 
-Status: A01 godkendt visuel/materialemæssig reference · A02–A15 pilot/superseded/rejected for canonical use · Canonical House A-geometri er godkendt som den nuværende arkitektoniske source of truth
+Status: A01–A05 er `HUMAN_APPROVED` den 2026-08-12 og promoveret til `CURRENT_CANONICAL_REFERENCE` · canonical geometri er uændret · facade, garden character, house consistency, A02 single-handle correction og A05 drainage-v2 er godkendt · masonry-sporet og den gamle A02–A15-pilot er superseded/rejected for canonical use
 
 Profil: `matriva_modern_2023` · `hprof_matriva_modern_2023`
 
@@ -14,13 +14,15 @@ House A beskriver én fysisk, reproducerbar bygning, som alle nye fotorealistisk
 
 ### Source-of-truth-hierarki
 
-1. **A01 / `a01-exterior-entry-original-v1.png`** = visuel og materialemæssig source of truth. Den fastlægger kun de synlige kvaliteter: lyse varme mursten, mørkt tag, sorte vinduer/dør, tagrender/nedløb samt lys- og haveudtryk. Den fastlægger ikke skjult geometri.
-2. **`house-a-canonical-geometry.json`** = arkitektonisk og geometrisk source of truth: footprint, garage, tag, facader, åbninger og faste koordinater.
-3. **`08-room-and-interior-visibility-map.svg`** = interiør source of truth: hvilket rum der ligger bag hver åbning og hvilke elementer der realistisk må være synlige.
-4. **`09-site-plan.svg`** = landskabs-/spatial source of truth: indkørsel, hovedsti, terrasse, hæk, bede og træpositioner.
-5. **Fremtidige fotorealistiske billeder** = afledte repræsentationer. De kan aldrig ændre en højere source of truth.
+1. **`house-a-canonical-geometry.json`** = arkitektonisk og geometrisk source of truth: footprint, garage, tag, facader, åbninger og faste koordinater. Filen og dens godkendte hash ændres ikke af materialebeslutningen.
+2. **`house-a-canonical-material-specification.json`** = materialemæssig source of truth for alle udvendige facadeflader: ét sammenhængende lyst, varmt-neutralt, mat og diskret mineralsk pudset facadesystem. Denne specifikation superseder kun geometripakkens historiske facadeværdi `light warm brick`.
+3. **`house-a-canonical-landscape-specification.json`** = garden-character source of truth: naturlig moderne dansk bolighave, varierede stauder/blomster/prydgræsser, væsentligt færre kuglebuske og små registrerede træer. Den ændrer ikke site-planens spatialstruktur.
+4. **`08-room-and-interior-visibility-map.svg`** = interiør source of truth: hvilket rum der ligger bag hver åbning og hvilke elementer der realistisk må være synlige.
+5. **`09-site-plan.svg`** = landskabs-/spatial source of truth: indkørsel, hovedsti, terrasse, hæk, bede og træpositioner.
+6. **`house-a-canonical-render-manifest.json` og de human-approved canonical A01–A05-filer** = current photorealistic reference for facade-look, lys/stemning, mørkt tag, sorte openings/afvanding, natural-garden character og samlet House A-udtryk. De er afledte repræsentationer og kan aldrig ændre en højere source of truth.
+7. **A01-originalen** = `HISTORICAL VISUAL REFERENCE`; dens exposed-brick-materiale er `SUPERSEDED`.
 
-Et billede, en prompt eller en redigering må aldrig ændre disse data. En modstrid afvises; den afledte repræsentation rettes eller forkastes. Geometrien ændres kun ved en eksplicit godkendt ændring af JSON-kilden efter human approval.
+Et billede, en prompt eller en redigering må aldrig ændre disse data. En modstrid afvises; den afledte repræsentation rettes eller forkastes. `CURRENT_CANONICAL_REFERENCE` betyder den godkendte nuværende version, ikke immutable forever. Fremtidige ændringer skal være eksplicitte, versionsstyrede, dokumenterede, provenance-bevarende og validerede samt kræve ny human approval, når canonical reference ændres.
 
 ### Reproducerbar pakke
 
@@ -58,7 +60,7 @@ Den fulde, maskinlæsbare regelmængde findes som `immutableGeometryRules` i JSO
 
 ### Render-valideringsregler efter godkendelse
 
-Canonical-pakken er nu godkendt, så A02 FRONT og A03 REAR/GARDEN må fremstilles som kontrollerede pilot-renderinger. A04–A15 og nye guidebilleder er fortsat uden for den aktuelle approval gate.
+Canonical-pakken og den samlede A01–A05 approval gate er godkendt. De stabile filer og deres checksums ligger i `house-a-canonical-render-manifest.json`. A06–A15 og nye guidebilleder er fortsat uden for scope.
 
 Efter godkendelse skal hvert fotorealistisk view valideres mod JSON og SVG’er før det kan bruges:
 
@@ -67,23 +69,55 @@ Efter godkendelse skal hvert fotorealistisk view valideres mod JSON og SVG’er 
 3. **Åbninger:** kun de schedulede åbninger med korrekt facade, rækkefølge og omtrentlige proportioner. Ingen ekstra panoramavinduer, døre eller flyttede vinduer.
 4. **Interiør:** hvert kig gennem glas skal følge room/visibility-mappet. Køkken/alrum og stue må ikke få ens gentagne borde/stole; huset må ikke læse som forsamlingshus, restaurant, hotel eller showroom.
 5. **Site:** terrasse, sti, indkørsel, hæk, bede og træer skal være i deres canonical relation til huset. Plantning skal være varieret, ikke en gentaget række af ens runde buske.
-6. **Materiale:** A01’s lyse mursten, mørke tag, sorte rammer/dør og sorte afvanding bevares som visuel/materialemæssig reference. Produktnavne, vægopbygninger og uobserverede byggedetaljer må ikke opfindes.
+6. **Materiale:** Alle udvendige facadeflader skal vise samme lyse, varmt-neutrale, matte og diskret mineralske pudsede facadesystem. Mørkt tag, sorte rammer/dør og sort afvanding følger fortsat A01. Synlige mursten, fuger, grids, blokke, paneler eller uautoriserede facadeinddelinger medfører `REJECT`.
 
 Hvis en render fejler ét punkt, er resultatet **REJECT**. Den må ikke bruges til at “rette” kildegeometrien; renderen skal regenereres eller redigeres mod den godkendte model.
 
 ### Canonical camera- og render-pipeline
 
-Kamerasystemet ligger i `house-a-canonical-camera-system.json`. De fem låste kameraer er `CAM_FRONT_HERO`, `CAM_FRONT`, `CAM_REAR`, `CAM_LEFT` og `CAM_RIGHT`; de deler 16:9-format, rectilinear perspective og samme millimeterbaserede koordinatsystem som geometrimodellen. A02 må kun bruge `CAM_FRONT`, og A03 må kun bruge `CAM_REAR`.
+Kamerasystemet ligger i `house-a-canonical-camera-system.json`. De fem låste kameraer er `CAM_FRONT_HERO`, `CAM_FRONT`, `CAM_REAR`, `CAM_LEFT` og `CAM_RIGHT`; de deler 16:9-format, rectilinear perspective og samme millimeterbaserede koordinatsystem som geometrimodellen. A02 må kun bruge `CAM_FRONT`, A03 `CAM_REAR`, A04 `CAM_LEFT` og A05 `CAM_RIGHT`. Ingen kameraværdier blev ændret til A04/A05.
 
 `npm run generate:house-a-previews` regenererer fem skematiske SVG/PNG-views direkte fra canonical geometri og kameraer. `npm run test:house-a-previews` kræver byte-identisk regeneration og validerer geometry- og camera-checksums. Disse previews er geometriske kontrolbilleder, ikke fotorealistiske assets.
 
-Den fotorealistiske A02/A03-pilot er registreret i `house-a-photorealistic-pilot.json`. Hver render peger på præcis geometry-version, camera-ID, preview, A01-reference, opening-ID’er, fil-checksum og billeddimensioner. `npm run test:house-a-photorealistic-pilot` afviser manglende/ændrede kilder, forkerte kameraer, andre render-ID’er end A02/A03, forkerte opening-lister og ændrede billedfiler.
+Den fotorealistiske A02–A05-serie er registreret i `house-a-photorealistic-pilot.json`. Hver render peger på præcis geometry-version, camera-ID, preview, A01-reference, opening-ID’er, fil-checksum og billeddimensioner. `npm run test:house-a-photorealistic-pilot` afviser manglende/ændrede kilder, forkerte kameraer, andre render-ID’er end A02–A05, forkerte opening-lister og ændrede billedfiler.
 
-Maskinel validering dokumenterer input- og filintegritet; den kan ikke bevise, at AI-genererede pixels er geometrisk korrekte. Derfor skal referenceboardet og valideringsrapporten altid gennemgås ved en human approval gate. Indtil denne godkendelse er A02 og A03 `VALIDATED`, men ikke `APPROVED`.
+Maskinel validering dokumenterer input- og filintegritet; den kan ikke alene bevise, at AI-redigerede pixels er geometrisk korrekte. `house-a-rendered-facade-natural-garden-drainage-approval-board.png` er derfor bevaret og checksum-låst som det board, der blev human-approved den 2026-08-12. A02 single-handle-v3 og A05 drainage-v2 er godkendt. `house-a-current-canonical-referenceboard-v1.png` er et efterfølgende deterministisk referenceboard afledt fra de promoverede assets; det erstatter ikke approval-recordet.
+
+### Canonical material decision – lys pudset facade
+
+Den eksplicitte human design decision er: **Matriva House A skal have en lys pudset facade.** Den maskinlæsbare specifikation ligger i `house-a-canonical-material-specification.json`. Alle House A's udvendige facadeflader skal fremstå som samme sammenhængende lyse pudsede facadesystem. Variation må kun skyldes perspektiv, naturligt lys, skygge, vejrlig/ambient occlusion og mindre realistisk overfladevariation.
+
+Det konkrete photorealistic facade-look i `a01-rendered-facade-test-v1.png` er human-approved og har bestået den beskyttede-element-validering i `house-a-a01-rendered-facade-validation.md`. Det er nu reference for A01–A05's facade-tone, pudsstruktur og roughness-look. Den efterfølgende garden refinement må ikke ændre dette facade-look.
+
+### Canonical garden character – naturlig moderne dansk bolighave
+
+Den spatialt bindende site-plan er uændret. `house-a-canonical-landscape-specification.json` skelner mellem immutable site structure—hus, indkørsel, hovedsti, terrasse, perimeterhæk, `BED_01`, `BED_02`, `TREE_01` og `TREE_02`—og fleksibel plantning som stauder, blomstring, mindre buske, prydgræsser og sæsonvariation.
+
+Der må ikke forekomme gentagne rækker eller klynger af næsten identiske runde buske. Som bred visuel kompositionsregel må højst 2–3 tydeligt runde/kompakte buske dominere ét exterior-view. Beplantningen skal variere naturligt i højde, bredde, vækstform og bladstruktur med rolige blomster, stauder og prydgræsser. `TREE_01` og `TREE_02` forbliver på deres canonical koordinater og må læses som små åbne løv-/frugttræer i boligskala, visuelt højst cirka 3 meter.
+
+A01 natural-garden-versionen blev human-approved uden at tilføje et nyt permanent træ. Ingen nye permanente frugt-/æbletræer er canonical i den aktuelle A01–A05-v1-serie; en senere tilføjelse kræver en eksplicit versionsstyret ændring. A01–A05-output, source-checksums, camera-ID'er, material-/landscape-versioner og beskyttede elementer er registreret i `house-a-rendered-facade-natural-garden-provenance.json` og `house-a-canonical-render-manifest.json`.
+
+### A01–A05 rollout og A05 drainage
+
+Alle fem canonical renders viser samme pudsede facadefamilie og naturlige plantekarakter uden synligt murværk. A05 blev først konverteret med drainage-fejlen bevaret, og første særskilte drainage-forsøg blev afvist, fordi højre rør forblev inset. Den human-approved v2 bevarer venstre rør og placerer højre rør ved højre hushjørne efter samme fysiske princip; tagrenden følger tagfoden.
+
+### Lukket masonry-spor
+
+Alle masonry correction drafts og den deterministiske masonry-test er `REJECTED / SUPERSEDED` og bevares kun som historisk QA-evidens. Det oprindelige AI-murværk havde stacked/grid-fuger; precise-object-edit rettede det ikke stabilt; den deterministiske texture-projection skabte geometrisk forskudt forbandt, men facaden fremstod flad, skæv og kunstig. Ingen af disse artefakter må indgå som aktiv House A render-input eller canonical source of truth.
+
+En fremtidig guide om murværksfuger kan bruge et separat, kontrolleret detailmotiv med korrekt mursten og mørtelfuge. Det motiv er ikke House A og ligger uden for denne opgave.
 
 ### Superseded pilot-historik
 
-De tidligere A02–A15-pilotbilleder blev skabt før den canonical geometri- og kamerapipeline. De forbliver historiske spor med status **SUPERSEDED / REJECTED FOR CANONICAL USE** og må hverken bruges som geometriinput eller overskrives af den nye pilot. Kun de nye, særskilt navngivne A02/A03 canonical drafts indgår i den aktuelle approval gate.
+De tidligere A02–A15-pilotbilleder blev skabt før den canonical geometri- og kamerapipeline. De forbliver historiske spor med status **SUPERSEDED / REJECTED FOR CANONICAL USE** og må hverken bruges som geometriinput eller overskrives af den nye serie. De tidligere A02–A05 drafts og candidates bevares som provenance; kun filerne registreret i `house-a-canonical-render-manifest.json` er current canonical photorealistic reference.
+
+### A04/A05 side-view gate
+
+A04 LEFT er afledt fra `CAM_LEFT` og må vise præcis `LEFT_WINDOW_01` og `LEFT_GARAGE_DOOR_01`. Kameraets skærmretning vender facade-offsettet, så den synlige rækkefølge er master-vindue → garage-sidedør. A05 RIGHT er afledt fra `CAM_RIGHT` og viser `RIGHT_WINDOW_01` → `RIGHT_WINDOW_02`: et mindre bedroom-2-vindue efterfulgt af et bredere living-room-vindue, uden dør.
+
+A04 bevarer det rektangulære footprint, den trekantede sideprojektion af det fælles valmtag, kontinuerlig sort tagrende og facadehjørne-nedløb. A05 drainage-v2 bevarer volume/openings og det korrekte venstre nedløb, mens højre nedløb er korrigeret ved det fysiske højre hushjørne. Begge er human-approved. Pre-correction-observationen bevares i `house-a-a04-a05-validation.md` som historik.
+
+Begrænsning: De centrerede sidekameraer gør sidefacadernes openings matematisk læsbare, men skjuler hovedparten af garage- og terrasseplanen bag hushjørnerne. Disse elementers kontinuitet valideres derfor mod canonical plan/site samt de godkendte A02/A03-views, ikke ved at opfinde et obliqt sidekamera.
 
 ## Visuelle invariants
 
@@ -96,7 +130,7 @@ De tidligere A02–A15-pilotbilleder blev skabt før den canonical geometri- og 
 
 ### Materialer og udearealer
 
-- Lyse, varme mursten; mørkt/sort tag; sorte tagrender og nedløb.
+- Lys, varmt-neutral, mat og diskret mineralsk pudset facade uden synlige mursten, fuger, grids eller paneler; mørkt/sort tag; sorte tagrender og nedløb.
 - Enkel moderne dansk have med græs, diskrete bede, flisearealer og terrasse.
 - Ingen luksusoverdrivelse, overdrevne panoramavinduer, ekstra etager eller arkitektur, der ændrer husets identitet.
 
@@ -132,7 +166,7 @@ Boardet er bevaret som pilot-/QA-output – ikke som et godkendt master-board el
 - Kilde: `apps/website/public/images/HeroImage.png`
 - Dimensioner: 1672 × 941
 - SHA-256: `1b4416fdbbf431107fb021e7be9b567a79537e1b0860bfdc4ec7998c4f990573`
-- Motiv: indgangsside med lys murstensfacade, sort tag, tagrende, sort vindue/dør og det godkendte haveunivers.
+- Motiv: indgangsside med historisk lys murstensfacade, sort tag, tagrende, sort vindue/dør og det godkendte haveunivers. Murstensfacaden er superseded; de øvrige fotografiske kvaliteter bevares som reference.
 
 `apps/mobile/assets/onboarding/welcome-hero_.png` har samme checksum og er derfor en kopi, ikke et selvstændigt master-asset. Originalen skal indlæses i guide-storage med checksum og produktionsmetadata, før den oprettes som `guide_asset`; den registreres ikke med en kunstig storage key imens.
 
@@ -214,7 +248,7 @@ Et mislykket identitetsmatch afvises og regenereres/redigeres.
 
 ## Pilotoutput: House A og Rens tagrender
 
-Pilotens originale filer ligger under `apps/api/assets/guides/matriva-modern-2023/masters/`. A01 er den eneste aktuelle godkendte visuelle/materialemæssige reference. A02–A15 er bevaret som pilot-/QA-/regressionsmateriale, men er superseded og rejected for canonical use, fordi de ikke beskriver samme fysiske hus. `matriva-modern-2023-approved-master-references.html` og `approved-master-references-v1.png` er historiske, superseded boards. Den eksisterende website-original er kopieret ind som A01 uden at ændre den oprindelige website-fil.
+Pilotens originale filer ligger under `apps/api/assets/guides/matriva-modern-2023/masters/`. A01 er fortsat fotografisk reference, men dets murstensfacade er superseded af den canonical pudsede materialespecifikation. A02–A15 er bevaret som pilot-/QA-/regressionsmateriale, men er superseded og rejected for canonical use, fordi de ikke beskriver samme fysiske hus. `matriva-modern-2023-approved-master-references.html` og `approved-master-references-v1.png` er historiske, superseded boards. Den eksisterende website-original er kopieret ind som A01 uden at ændre den oprindelige website-fil.
 
 Første guidebilleder til `Rens tagrender` ligger under `apps/api/assets/guides/matriva-modern-2023/guides/rens-tagrender/`. Pilotens G01-preview genbruger A06-pilotmateriale; G02–G05 er guide-specifikke pilotoriginaler. De er ikke den endelige visuelle guide-standard. Det statiske produktpreview findes i `rens-tagrender-visual-preview.html` og er ikke app-UI.
 

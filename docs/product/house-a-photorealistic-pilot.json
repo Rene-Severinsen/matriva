@@ -1,11 +1,12 @@
 {
   "schemaVersion": 1,
-  "id": "matriva_modern_2023_house_a_a02_a03_photorealistic_pilot_v1",
+  "id": "matriva_modern_2023_house_a_a02_a05_photorealistic_pilot_v2",
   "houseProfileId": "hprof_matriva_modern_2023",
   "profileKey": "matriva_modern_2023",
-  "scope": ["A02", "A03"],
-  "status": "VALIDATED",
-  "humanApproval": "PENDING",
+  "scope": ["A02", "A03", "A04", "A05"],
+  "status": "SUPERSEDED_RETAINED_FOR_GEOMETRY_AND_RENDER_PROVENANCE",
+  "humanApproval": "HISTORICAL_A02_A03_APPROVED_AT_8b846b4_A04_A05_PRE_PROMOTION_RECORD",
+  "currentCanonicalManifest": "docs/product/house-a-canonical-render-manifest.json",
   "canonicalGeometry": {
     "path": "docs/product/house-a-canonical-geometry.json",
     "id": "matriva_modern_2023_house_a_canonical_geometry",
@@ -14,7 +15,7 @@
   "cameraSystem": {
     "path": "docs/product/house-a-canonical-camera-system.json",
     "id": "matriva_modern_2023_house_a_canonical_cameras_v1",
-    "sha256": "698ccb016888f49ea200aff3d213504bdc63b3b00556e49ba6272b964168b726"
+    "sha256": "ad9516cff7c8acfee8457b231a303b6b41147783873b5cb6d7d5d2297de78e73"
   },
   "materialReference": {
     "path": "apps/api/assets/guides/matriva-modern-2023/masters/a01-exterior-entry-original-v1.png",
@@ -31,8 +32,8 @@
     {
       "id": "A02",
       "title": "FRONT",
-      "status": "VALIDATED",
-      "humanApproval": "PENDING",
+      "status": "APPROVED",
+      "humanApproval": "APPROVED",
       "cameraId": "CAM_FRONT",
       "facade": "front",
       "canonicalOpeningIds": ["GARAGE_DOOR_01", "FRONT_DOOR_01", "FRONT_WINDOW_01", "FRONT_WINDOW_02"],
@@ -52,8 +53,8 @@
     {
       "id": "A03",
       "title": "REAR / GARDEN",
-      "status": "VALIDATED",
-      "humanApproval": "PENDING",
+      "status": "APPROVED",
+      "humanApproval": "APPROVED",
       "cameraId": "CAM_REAR",
       "facade": "rear",
       "canonicalOpeningIds": ["REAR_WINDOW_01", "REAR_SLIDER_01", "REAR_WINDOW_02", "REAR_SLIDER_02"],
@@ -69,6 +70,50 @@
         "heightPx": 941
       },
       "promptContract": "Copy CAM_REAR preview geometry exactly: the same rectangular volume and hipped roof, four rear openings visible large-small-large-small, two rear corner downpipes and canonical terrace; map living, kitchen and bedroom visibility to the scheduled openings; apply A01 materials, varied garden and warm photographic light only; add no geometry."
+    },
+    {
+      "id": "A04",
+      "title": "LEFT",
+      "status": "VALIDATED",
+      "humanApproval": "PENDING",
+      "cameraId": "CAM_LEFT",
+      "facade": "left",
+      "canonicalOpeningIds": ["LEFT_GARAGE_DOOR_01", "LEFT_WINDOW_01"],
+      "visibleLeftToRightOpeningIds": ["LEFT_WINDOW_01", "LEFT_GARAGE_DOOR_01"],
+      "preview": {
+        "path": "docs/product/house-a-geometric-previews/cam-left.png",
+        "sha256": "7757ec0b08b7ea9598a0ecbacffba5d1fe6bd32f421e15ad9a7af951e79931d6"
+      },
+      "image": {
+        "path": "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/a04-left-canonical-draft-v1.png",
+        "sha256": "72fe8360224f39f67a552b8766e8e4046668b862b0008a4cf3d9b26d80cf5114",
+        "widthPx": 1672,
+        "heightPx": 941
+      },
+      "sourceRenderIds": ["A02", "A03"],
+      "promptContract": "Copy CAM_LEFT preview geometry exactly: the same rectangular volume and triangular side-valm, master-bedroom window then narrow garage personnel door in screen order, two facade-corner downpipes and canonical west-side landscape; use A01 materials and approved A02/A03 photographic consistency only; add no geometry."
+    },
+    {
+      "id": "A05",
+      "title": "RIGHT",
+      "status": "VALIDATED",
+      "humanApproval": "PENDING",
+      "cameraId": "CAM_RIGHT",
+      "facade": "right",
+      "canonicalOpeningIds": ["RIGHT_WINDOW_01", "RIGHT_WINDOW_02"],
+      "visibleLeftToRightOpeningIds": ["RIGHT_WINDOW_01", "RIGHT_WINDOW_02"],
+      "preview": {
+        "path": "docs/product/house-a-geometric-previews/cam-right.png",
+        "sha256": "d8b19970ee6854d20ca5c4753105be530de89f630bdfb883d3f96b4e11fb2a03"
+      },
+      "image": {
+        "path": "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/a05-right-canonical-draft-v1.png",
+        "sha256": "daddecf8199dea395f2e153716d04528baf42babcf923ec3c93e027f2f343fb2",
+        "widthPx": 1672,
+        "heightPx": 941
+      },
+      "sourceRenderIds": ["A02", "A03", "A04"],
+      "promptContract": "Copy CAM_RIGHT preview geometry exactly: the same rectangular volume and triangular side-valm, smaller bedroom window then wider living-room window in screen order, no door, two facade-corner downpipes and canonical east-side landscape; use A01 materials and A02/A03/A04 photographic consistency only; add no geometry."
     }
   ],
   "manualValidation": {
@@ -76,12 +121,15 @@
     "checks": [
       "A02 contains exactly the four scheduled front openings in canonical order.",
       "A03 contains exactly the four scheduled rear openings in camera-visible large-small-large-small order.",
-      "Both images retain a single rectangular one-storey volume and one continuous hipped roof.",
-      "Both images show the facade-corner downpipe pair required by their view.",
+      "A04 contains exactly the master-bedroom window and garage personnel door in CAM_LEFT screen order.",
+      "A05 contains exactly the smaller bedroom window and wider living-room window in CAM_RIGHT screen order, with no door.",
+      "All four images retain a single rectangular one-storey volume and one continuous hipped roof.",
+      "All four images show the facade-corner downpipe pair required by their view.",
       "Visible A03 interiors follow the room and interior visibility map without duplicated room functions.",
+      "Visible A04/A05 interiors follow the master-bedroom, bedroom-2 and living-room assignments.",
       "A01 material intent is retained without using A01 as geometric evidence.",
-      "No A04-A15, House B/C or guide imagery is included."
+      "No A06-A15, House B/C or guide imagery is included."
     ]
   },
-  "supersededHistory": "All earlier A02-A15 pilot images remain SUPERSEDED / REJECTED FOR CANONICAL USE and are not sources for this pilot."
+  "supersededHistory": "This pilot manifest and all earlier A02-A15 pilot images are retained as historical geometry/render provenance. They are not the current canonical photorealistic asset authority; use house-a-canonical-render-manifest.json."
 }

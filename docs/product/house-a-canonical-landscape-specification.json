@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "id": "matriva_modern_2023_house_a_canonical_landscape_v1",
+  "status": "APPROVED_CURRENT_LANDSCAPE_CHARACTER",
+  "approvedAt": "2026-08-12",
+  "approvalStatus": "HUMAN_APPROVED",
+  "decision": "NEW HUMAN LANDSCAPE DESIGN DECISION",
+  "canonicalGeometryId": "matriva_modern_2023_house_a_canonical_geometry",
+  "canonicalGeometrySha256": "5a1c2a6c5e5373b9a67c26e86ca9d2ba70bfc536b6209a9f65adfd13723e98cb",
+  "siteGeometryMutation": "NONE",
+  "character": "NATURAL MODERN DANISH RESIDENTIAL GARDEN",
+  "immutableSiteStructure": {
+    "authority": "docs/product/house-a-canonical-geometry.json#site",
+    "elements": [
+      "house footprint and origin",
+      "driveway",
+      "front path",
+      "rear terrace",
+      "continuous perimeter hedge",
+      "BED_01",
+      "BED_02",
+      "TREE_01",
+      "TREE_02"
+    ],
+    "rule": "No image edit may move, resize, remove or invent permanent site structure."
+  },
+  "flexiblePlantingCharacter": {
+    "allowedVariation": [
+      "precise perennial placement",
+      "seasonal flowering",
+      "minor shrubs",
+      "ornamental grasses",
+      "minor vegetation and natural growth variation"
+    ],
+    "composition": [
+      "varied heights, widths, growth forms and leaf textures",
+      "natural groups of perennials and restrained flowering plants",
+      "ornamental grasses as light vertical movement and facade contrast",
+      "lush and inhabited without becoming overdesigned or visually chaotic"
+    ],
+    "flowerPalette": "natural, calm and restrained; never a saturated random rainbow or continuous wildflower meadow"
+  },
+  "roundedShrubRule": {
+    "immutableVisualRule": "No repeated rows or clusters of nearly identical rounded shrubs.",
+    "broadViewGuideline": "maximum 2–3 clearly rounded or compact shrubs visible in one broad exterior view",
+    "interpretation": "visual composition rule, not an absolute botanical count across the complete site"
+  },
+  "registeredTrees": [
+    {
+      "id": "TREE_01",
+      "canonicalPosition": { "xMm": 3400, "yMm": 18000 },
+      "visualCharacter": "small open-canopy deciduous or fruit tree at residential scale",
+      "maximumVisualHeightMm": 3000,
+      "movementProhibited": true
+    },
+    {
+      "id": "TREE_02",
+      "canonicalPosition": { "xMm": 25800, "yMm": 19500 },
+      "visualCharacter": "small open-canopy deciduous or fruit tree at residential scale",
+      "maximumVisualHeightMm": 3000,
+      "movementProhibited": true
+    }
+  ],
+  "treeRules": [
+    "Use registered trees sparingly and only when the camera can plausibly see their canonical position.",
+    "A tree must not obscure the house materially or resemble a large park tree.",
+    "Do not introduce an additional recurring permanent fruit tree without first registering its site position."
+  ],
+  "currentSeriesTreeDecision": "No new permanent fruit/apple trees were introduced in the human-approved A01-A05 v1 series. They are not canonical in this version; any later addition requires an explicit versioned change and relevant validation/approval.",
+  "prohibitedAppearance": [
+    "showroom garden",
+    "rows of identical ball-shaped shrubs",
+    "symmetrical hotel planting",
+    "AI repetition",
+    "landscape-contractor catalogue composition",
+    "large new tree above approximately 3 metres",
+    "free redesign of the complete garden"
+  ],
+  "photorealisticReference": {
+    "status": "HUMAN_APPROVED_CURRENT_CANONICAL_REFERENCE",
+    "path": "apps/api/assets/house-profiles/matriva-modern-2023/canonical-renders/a01-front-hero-canonical-v1.png",
+    "sha256": "d9549012d55f2405e9c6d3f0581f5e49ae5502f23ff3c6e067bd7d3fcbf2c919",
+    "treeDecision": "No new permanent tree was added in A01; existing tree positions and silhouettes were preserved."
+  }
+}

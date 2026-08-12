@@ -12,6 +12,11 @@ import {
   adminHouseInvitationsResponseSchema,
   adminRecommendationCatalogItemResponseSchema,
   adminRecommendationCatalogResponseSchema,
+  adminGuideResponseSchema,
+  adminGuidesResponseSchema,
+  guideResponseSchema,
+  guidesResponseSchema,
+  guideStatusUpdateRequestSchema,
   adminPasswordLoginRequestSchema,
   adminUserResponseSchema,
   adminUsersResponseSchema,
@@ -65,6 +70,8 @@ import {
   type AdminRecommendationActiveFilter,
   type AdminRecommendationCatalogItemResponse,
   type AdminRecommendationCatalogResponse,
+  type AdminGuideResponse,
+  type AdminGuidesResponse,
   type AdminRecommendationCatalogSort,
   type AdminPasswordLoginRequest,
   type AdminSortOrder,
@@ -98,6 +105,9 @@ import {
   type HousePhotoResponse,
   type HousePublicDataWithProfileResponseV1,
   type HomeBootstrapResponse,
+  type GuideResponse,
+  type GuidesResponse,
+  type GuideStatusUpdateRequest,
   type LogoutResponse,
   type MaintenanceTaskResponse,
   type MaintenanceTasksResponse,
@@ -280,6 +290,12 @@ export type MatrivaApiClient = {
     catalogKey: string,
     input?: { signal?: AbortSignal }
   ) => Promise<AdminRecommendationCatalogItemResponse>;
+  getAdminGuides: (input?: { status?: "all" | "draft" | "published"; signal?: AbortSignal }) => Promise<AdminGuidesResponse>;
+  getAdminGuide: (guideId: string, input?: { signal?: AbortSignal }) => Promise<AdminGuideResponse>;
+  updateAdminGuideStatus: (guideId: string, input: GuideStatusUpdateRequest) => Promise<AdminGuideResponse>;
+  listGuides: (input?: { previewDrafts?: boolean }) => Promise<GuidesResponse>;
+  getGuide: (guideId: string, input?: { previewDraft?: boolean }) => Promise<GuideResponse>;
+  getGuideAsset: (assetKey: string) => Promise<string>;
   updateProfile: (input: UpdateProfileRequest) => Promise<UpdateProfileResponse>;
   updateMaintenanceSettings: (
     input: UpdateMaintenanceSettingsRequest
@@ -437,6 +453,10 @@ export type MatrivaAdminApiClient = Pick<
   | "resolveAdminHouseClaim"
   | "getAdminRecommendationCatalog"
   | "getAdminRecommendationCatalogItem"
+  | "getAdminGuides"
+  | "getAdminGuide"
+  | "updateAdminGuideStatus"
+  | "getGuideAsset"
 >;
 
 export function createMatrivaAdminApiClient(
@@ -655,6 +675,29 @@ export function createMatrivaAdminApiClient(
           "Could not load admin recommendation catalog item."
         )
       );
+    },
+    async getAdminGuides(input = {}) {
+      const status = input.status ?? "all";
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/guides?status=${encodeURIComponent(status)}`, { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) });
+      return adminGuidesResponseSchema.parse(await parseApiResponse(response, "Could not load admin guides."));
+    },
+    async getAdminGuide(guideId, input = {}) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/guides/${encodeURIComponent(guideId)}`, { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) });
+      return adminGuideResponseSchema.parse(await parseApiResponse(response, "Could not load admin guide."));
+    },
+    async updateAdminGuideStatus(guideId, input) {
+      guideStatusUpdateRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/guides/${encodeURIComponent(guideId)}`, { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) });
+      return adminGuideResponseSchema.parse(await parseApiResponse(response, "Could not update guide status."));
+    },
+    async getGuideAsset(assetKey) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/guides/assets/${encodeURIComponent(assetKey)}`, { headers: authHeaders({ "x-matriva-guide-preview": "true" }) });
+      if (!response.ok) throw new MatrivaApiError(response.status, "guide_asset_load_failed", "Could not load guide asset.");
+      const contentType = response.headers.get("content-type") ?? "image/png";
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      return `data:${contentType};base64,${btoa(binary)}`;
     }
   };
 }
@@ -1093,6 +1136,39 @@ export function createMatrivaApiClient(
           "Could not load admin recommendation catalog item."
         )
       );
+    },
+    async getAdminGuides(input = {}) {
+      const status = input.status ?? "all";
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/guides?status=${encodeURIComponent(status)}`, { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) });
+      return adminGuidesResponseSchema.parse(await parseApiResponse(response, "Could not load admin guides."));
+    },
+    async getAdminGuide(guideId, input = {}) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/guides/${encodeURIComponent(guideId)}`, { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) });
+      return adminGuideResponseSchema.parse(await parseApiResponse(response, "Could not load admin guide."));
+    },
+    async updateAdminGuideStatus(guideId, input) {
+      guideStatusUpdateRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/guides/${encodeURIComponent(guideId)}`, { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) });
+      return adminGuideResponseSchema.parse(await parseApiResponse(response, "Could not update guide status."));
+    },
+    async listGuides(input = {}) {
+      const preview = input.previewDrafts ? { "x-matriva-guide-preview": "true" } : {};
+      const response = await fetcher(`${normalizedBaseUrl}/v1/guides`, { headers: authHeaders(preview) });
+      return guidesResponseSchema.parse(await parseApiResponse(response, "Could not load guides."));
+    },
+    async getGuide(guideId, input = {}) {
+      const preview = input.previewDraft ? { "x-matriva-guide-preview": "true" } : {};
+      const response = await fetcher(`${normalizedBaseUrl}/v1/guides/${encodeURIComponent(guideId)}`, { headers: authHeaders(preview) });
+      return guideResponseSchema.parse(await parseApiResponse(response, "Could not load guide."));
+    },
+    async getGuideAsset(assetKey) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/guides/assets/${encodeURIComponent(assetKey)}`, { headers: authHeaders({ "x-matriva-guide-preview": "true" }) });
+      if (!response.ok) throw new MatrivaApiError(response.status, "guide_asset_load_failed", "Could not load guide asset.");
+      const contentType = response.headers.get("content-type") ?? "image/png";
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      return `data:${contentType};base64,${btoa(binary)}`;
     },
     async updateProfile(input) {
       const response = await fetcher(`${normalizedBaseUrl}/v1/me/profile`, {

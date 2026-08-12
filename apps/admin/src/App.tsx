@@ -9,6 +9,7 @@ import type { AdminBootstrapResponse, SessionTokens } from "@matriva/shared";
 import { AdminDataPage } from "./pages/AdminDataPage.js";
 import { DashboardPage } from "./pages/DashboardPage.js";
 import { EntitlementsPage } from "./pages/EntitlementsPage.js";
+import { GuidesPage } from "./pages/GuidesPage.js";
 import { Icon, type IconName } from "./components/Icon.js";
 import {
   adminEnvironmentOptions,
@@ -28,12 +29,13 @@ type AuthState =
   | { status: "unauthorized"; message: string }
   | { status: "error"; message: string };
 
-type ViewKey = "dashboard" | "users" | "houses" | "claims" | "recommendations" | "settings";
+type ViewKey = "dashboard" | "users" | "houses" | "claims" | "recommendations" | "guides" | "settings";
 type DetailRoute =
   | { view: "users"; id: string }
   | { view: "houses"; id: string }
   | { view: "claims"; id: string }
-  | { view: "recommendations"; id: string };
+  | { view: "recommendations"; id: string }
+  | { view: "guides"; id: string };
 
 const navigation: Array<{
   key: ViewKey;
@@ -50,6 +52,7 @@ const navigation: Array<{
     label: "Anbefalinger",
     icon: "recommendations"
   },
+  { key: "guides", label: "Vejledninger", icon: "guides" },
   { key: "settings", label: "Planer og adgang", icon: "settings" }
 ];
 
@@ -59,6 +62,7 @@ const routePaths: Record<ViewKey, string> = {
   houses: "/admin/houses",
   claims: "/admin/claims",
   recommendations: "/admin/recommendations",
+  guides: "/admin/guides",
   settings: "/admin/settings"
 };
 
@@ -97,6 +101,15 @@ function routeFromLocation(): { view: ViewKey; detail: DetailRoute | null } {
       view: "recommendations",
       detail: parts[2]
         ? { view: "recommendations", id: decodeURIComponent(parts[2]) }
+        : null
+    };
+  }
+
+  if (parts[1] === "guides") {
+    return {
+      view: "guides",
+      detail: parts[2]
+        ? { view: "guides", id: decodeURIComponent(parts[2]) }
         : null
     };
   }
@@ -465,13 +478,20 @@ function AdminShell({
             <AdminDataPage
               client={client}
               detail={
-                detail
+                detail && detail.view !== "guides"
                   ? { section: detail.view, id: detail.id }
                   : null
               }
               onAuthorizationError={onAuthorizationError}
               onOpenDetail={(section, id) => onNavigate(section, id)}
               section={activeView}
+            />
+          ) : activeView === "guides" ? (
+            <GuidesPage
+              client={client}
+              detail={detail?.view === "guides" ? detail : null}
+              onAuthorizationError={onAuthorizationError}
+              onNavigate={(id) => onNavigate("guides", id)}
             />
           ) : activeView === "settings" ? (
             <EntitlementsPage client={client} onAuthorizationError={onAuthorizationError} />

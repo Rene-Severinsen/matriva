@@ -85,7 +85,8 @@ const seededGuides = [
     expectedSearchTerms: 7,
     expectedTags: 5,
     expectedAssetPlacementCount: 4,
-    expectedHotspotCount: 4
+    expectedHotspotCount: 4,
+    validationStatus: "approved"
   },
   {
     templateId: "guide_tjek_fuger_vaadrum",
@@ -98,7 +99,8 @@ const seededGuides = [
     expectedSearchTerms: 7,
     expectedTags: 6,
     expectedAssetPlacementCount: 0,
-    expectedHotspotCount: 0
+    expectedHotspotCount: 0,
+    validationStatus: "not_requested"
   }
 ];
 
@@ -239,7 +241,7 @@ async function run() {
           version_number: 1,
           title: guide.title,
           publication_status: "draft",
-          validation_status: "not_requested",
+          validation_status: guide.validationStatus,
           section_count: guide.expectedSectionCount,
           search_term_count: guide.expectedSearchTerms,
           tag_count: guide.expectedTags,

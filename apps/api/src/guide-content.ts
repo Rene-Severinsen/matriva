@@ -45,6 +45,7 @@ export type GuideContentSeed = {
     versionNumber: number;
     title: string;
     summary: string;
+    validationStatus?: "not_requested" | "in_review" | "changes_requested" | "approved";
   };
   catalogLink: {
     catalogKey: string;
@@ -88,6 +89,7 @@ export const guideContentSeeds: ReadonlyArray<GuideContentSeed> = [
       id: "gver_rens_tagrender_v1",
       versionNumber: 1,
       title: "Rens tagrender",
+      validationStatus: "approved",
       summary:
         "En sikker gennemgang af tagrender og nedløb, så regnvand kan ledes væk fra huset."
     },

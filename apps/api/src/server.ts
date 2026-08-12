@@ -23,6 +23,13 @@ import {
   adminHouseInvitationStatusFilterSchema,
   adminRecommendationCatalogItemResponseSchema,
   adminRecommendationCatalogResponseSchema,
+  adminGuideResponseSchema,
+  adminGuidesResponseSchema,
+  guideAuditResponseSchema,
+  guideResponseSchema,
+  guidesResponseSchema,
+  guideStatusFilterSchema,
+  guideStatusUpdateRequestSchema,
   adminPasswordLoginRequestSchema,
   adminUserResponseSchema,
   adminUsersResponseSchema,
@@ -110,6 +117,11 @@ import {
   authPublicResponse,
   buildAppBootstrap,
   getAdminUserEntitlements,
+  getAdminGuide,
+  getGuideAsset,
+  getPublishedGuide,
+  listAdminGuides,
+  listRuntimeGuides,
   listAdminEntitlementConfigs,
   updateAdminEntitlementPlanConfig,
   acceptMaintenanceRecommendationForHouse,
@@ -169,6 +181,7 @@ import {
   updateMaintenanceSettings,
   updateDefaultHouse,
   updateAdminUserEntitlement,
+  updateGuideStatus,
   pool,
   validateAuthRuntimeConfig
 } from "./db.ts";
@@ -188,7 +201,7 @@ const dawaTimeoutMs = 2500;
 const localObjectStorageRoot =
   process.env.MATRIVA_ATTACHMENT_STORAGE_DIR ??
   process.env.MATRIVA_OBJECT_STORAGE_DIR ??
-  join(dirname(fileURLToPath(import.meta.url)), "..", "..", "var", "objects");
+  join(dirname(fileURLToPath(import.meta.url)), "..", "var", "objects");
 const documentMaxBytes = Number.parseInt(
   process.env.MATRIVA_DOCUMENT_MAX_BYTES ??
     process.env.MATRIVA_MAINTENANCE_ATTACHMENT_MAX_BYTES ??
@@ -282,7 +295,7 @@ function applyCorsHeaders(request: IncomingMessage, response: ServerResponse) {
   response.setHeader("access-control-allow-origin", origin);
   response.setHeader("vary", "Origin");
   response.setHeader("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-  response.setHeader("access-control-allow-headers", "authorization,content-type");
+  response.setHeader("access-control-allow-headers", "authorization,content-type,x-matriva-guide-preview");
   response.setHeader("access-control-max-age", "600");
 }
 
@@ -299,6 +312,15 @@ function getBearerToken(request: IncomingMessage) {
 
 async function requireUserId(request: IncomingMessage) {
   return authenticateAccessToken(getBearerToken(request));
+}
+
+function guideDraftPreviewEnabled(request: IncomingMessage) {
+  const environment = (process.env.MATRIVA_ENVIRONMENT ?? process.env.NODE_ENV ?? "local").toLowerCase();
+  return (
+    process.env.MATRIVA_GUIDE_PREVIEW_ENABLED === "true" &&
+    ["local", "development", "qa"].includes(environment) &&
+    request.headers["x-matriva-guide-preview"] === "true"
+  );
 }
 
 function requestIpHash(request: IncomingMessage) {
@@ -484,6 +506,13 @@ function isS3Configured() {
 }
 
 function storageMode() {
+  const configuredAdapter = process.env.MATRIVA_STORAGE_ADAPTER?.trim().toLowerCase();
+  if (configuredAdapter === "local") return "local";
+  if (configuredAdapter === "s3") return "s3";
+
+  const environment = (process.env.MATRIVA_ENVIRONMENT ?? process.env.NODE_ENV ?? "local").toLowerCase();
+  if (["local", "development", "test"].includes(environment)) return "local";
+
   return isS3Configured() ? "s3" : "local";
 }
 
@@ -760,6 +789,122 @@ const server = createServer((request, response) => {
             toAdminBootstrapResponse(principal)
           )
         );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    (request.url === "/v1/admin/guides" || request.url?.startsWith("/v1/admin/guides?"))
+  ) {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        const url = new URL(request.url ?? "/", `http://${host}:${port}`);
+        const parsedFilter = guideStatusFilterSchema.safeParse(url.searchParams.get("status") ?? "all");
+        if (!parsedFilter.success) {
+          writeApiError(response, 400, "guide_status_filter_invalid", "Guide-statusfilteret er ugyldigt.");
+          return;
+        }
+        writeJson(response, 200, adminGuidesResponseSchema.parse(await listAdminGuides(parsedFilter.data)));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const adminGuideMatch = /^\/v1\/admin\/guides\/([^/?]+)$/.exec((request.url ?? "").split("?")[0] ?? "");
+  if (request.method === "GET" && adminGuideMatch) {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        writeJson(response, 200, adminGuideResponseSchema.parse(await getAdminGuide(decodeURIComponent(adminGuideMatch[1]!))));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "PATCH" && adminGuideMatch) {
+    void (async () => {
+      try {
+        const admin = await requireAdminUser(getBearerToken(request));
+        const parsed = guideStatusUpdateRequestSchema.safeParse(await readJsonBody(request));
+        if (!parsed.success) {
+          writeApiError(response, 400, "guide_status_update_invalid", "Guide-status er ugyldig.");
+          return;
+        }
+        writeJson(response, 200, adminGuideResponseSchema.parse(await updateGuideStatus(admin.userId, decodeURIComponent(adminGuideMatch[1]!), parsed.data)));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const adminGuideAuditMatch = /^\/v1\/admin\/guides\/([^/?]+)\/audit$/.exec((request.url ?? "").split("?")[0] ?? "");
+  if (request.method === "GET" && adminGuideAuditMatch) {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        const detail = await getAdminGuide(decodeURIComponent(adminGuideAuditMatch[1]!));
+        writeJson(response, 200, guideAuditResponseSchema.parse({ audit: detail.audit, generatedAt: new Date().toISOString() }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "GET" && request.url === "/v1/guides") {
+    void (async () => {
+      try {
+        const userId = await requireUserId(request);
+        const guides = await listRuntimeGuides(guideDraftPreviewEnabled(request) && Boolean(userId));
+        writeJson(response, 200, guidesResponseSchema.parse({ guides, generatedAt: new Date().toISOString() }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const guideMatch = /^\/v1\/guides\/([^/?]+)$/.exec((request.url ?? "").split("?")[0] ?? "");
+  if (request.method === "GET" && guideMatch) {
+    void (async () => {
+      try {
+        const userId = await requireUserId(request);
+        const guide = await getPublishedGuide(decodeURIComponent(guideMatch[1]!), guideDraftPreviewEnabled(request) && Boolean(userId));
+        writeJson(response, 200, guideResponseSchema.parse(guide));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const guideAssetMatch = /^\/v1\/guides\/assets\/([^/?]+)$/.exec((request.url ?? "").split("?")[0] ?? "");
+  if (request.method === "GET" && guideAssetMatch) {
+    void (async () => {
+      try {
+        const asset = await getGuideAsset(decodeURIComponent(guideAssetMatch[1]!));
+        if (!asset.is_published) {
+          try {
+            await requireAdminUser(getBearerToken(request));
+          } catch {
+            const userId = await requireUserId(request);
+            if (!userId || !guideDraftPreviewEnabled(request)) {
+              throw new ApiError(404, "guide_asset_not_found", "Vejledningsbilledet blev ikke fundet.");
+            }
+          }
+        }
+        const content = await readStorageObject(asset.storage_key, asset.mime_type);
+        writeBinary(response, 200, content, asset.mime_type);
       } catch (error) {
         writeUnknownApiError(response, error);
       }

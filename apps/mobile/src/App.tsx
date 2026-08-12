@@ -81,9 +81,10 @@ import {
   type SelectedAddressInput,
   type SessionTokens,
   type TaskId,
-  type UserProfile
+  type UserProfile,
+  type GuideResponse
 } from "@matriva/shared";
-import { houseDocumentCategoryForType } from "@matriva/shared";
+import { guideSectionLabel, guideSectionTitle, houseDocumentCategoryForType, presentGuideSection } from "@matriva/shared";
 
 import { matrivaApiConfig } from "./config/api";
 import { clearStoredSession, readStoredSession, writeStoredSession } from "./auth/sessionStorage";
@@ -98,7 +99,7 @@ type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" |
 type MaintenanceFilter = "current" | "spring" | "summer" | "autumn" | "winter" | "all";
 type MaintenanceView = "main" | "history" | "historyDetail" | "taskDetail" | "recommendations" | "dismissedRecommendations" | "recommendationDetail";
 type AuthStatus = "restoring" | "anonymous" | "authenticated";
-type MoreView = "menu" | "profile" | "settings" | "sharing" | "subscription";
+type MoreView = "menu" | "profile" | "settings" | "sharing" | "subscription" | "guides";
 type HouseView = "overview" | "details" | "improvements" | "improvementDetail" | "addImprovement";
 type UnauthenticatedStep = "welcome" | "create" | "login";
 type HouseOnboardingStep = "search" | "confirm" | "progress" | "publicDataIssue";
@@ -2766,6 +2767,7 @@ function RecommendationCard({
   isSaving,
   onAccept,
   onDismiss,
+  onOpenGuide,
   openRowId,
   onSwipeOpen
 }: {
@@ -2773,6 +2775,7 @@ function RecommendationCard({
   isSaving: boolean;
   onAccept: (recommendation: MaintenanceRecommendation) => void;
   onDismiss: (recommendation: MaintenanceRecommendation) => void;
+  onOpenGuide: (recommendation: MaintenanceRecommendation) => void;
   openRowId: string | null;
   onSwipeOpen: (rowId: string) => void;
 }) {
@@ -2806,6 +2809,7 @@ function RecommendationCard({
           <Text style={styles.taskRowTitle}>{recommendation.title}</Text>
           <Text style={styles.taskTiming}>{timingText}</Text>
           <Text style={styles.compactBodyText}>{recommendation.description}</Text>
+          {recommendation.guideVersionId ? <SecondaryButton disabled={isSaving} label="Læs vejledning" onPress={() => onOpenGuide(recommendation)} /> : null}
         </View>
         <View style={styles.recommendationActions}>
           <SecondaryButton
@@ -2951,6 +2955,8 @@ function MaintenanceScreen({
   onOpenDismissedRecommendations,
   selectedRecommendation,
   onOpenRecommendationDetail,
+  onOpenGuideForRecommendation,
+  onOpenGuideForTask,
   onRestoreRecommendation,
   onBackToMaintenance,
   onOpenTaskDetail,
@@ -3014,6 +3020,8 @@ function MaintenanceScreen({
   onOpenDismissedRecommendations: () => void;
   selectedRecommendation: MaintenanceRecommendation | null;
   onOpenRecommendationDetail: (recommendation: MaintenanceRecommendation) => void;
+  onOpenGuideForRecommendation: (recommendation: MaintenanceRecommendation) => void;
+  onOpenGuideForTask: (task: MaintenanceTask) => void;
   onRestoreRecommendation: (recommendation: MaintenanceRecommendation) => void;
   onBackToMaintenance: () => void;
   onOpenTaskDetail: (task: MaintenanceTask) => void;
@@ -3291,6 +3299,7 @@ function MaintenanceScreen({
             {selectedTask.description ? (
               <Text style={styles.compactBodyText}>{selectedTask.description}</Text>
             ) : null}
+            {selectedTask.guideVersionId ? <SecondaryButton label="Læs vejledning" onPress={() => onOpenGuideForTask(selectedTask)} /> : null}
             {priceText ? <Text style={styles.metaText}>Pris · {priceText}</Text> : null}
             {recurrenceText ? (
               <View style={styles.pillRow}>
@@ -3338,6 +3347,7 @@ function MaintenanceScreen({
         <Card>
           <Text style={styles.taskTiming}>{selectedRecommendation.recommendedTimingLabel}</Text>
           <Text style={styles.compactBodyText}>{selectedRecommendation.description}</Text>
+          {selectedRecommendation.guideVersionId ? <SecondaryButton label="Læs vejledning" onPress={() => onOpenGuideForRecommendation(selectedRecommendation)} /> : null}
           {selectedRecommendation.dismissedAt ? (
             <Text style={styles.metaText}>Afvist {formatDisplayDate(selectedRecommendation.dismissedAt.slice(0, 10))}</Text>
           ) : null}
@@ -3387,6 +3397,7 @@ function MaintenanceScreen({
                 key={recommendation.id}
                 onAccept={onAcceptRecommendation}
                 onDismiss={onDismissRecommendation}
+                onOpenGuide={onOpenGuideForRecommendation}
                 onSwipeOpen={handleSwipeOpened}
                 openRowId={openSwipeRowId}
                 recommendation={recommendation}
@@ -3841,9 +3852,10 @@ function MaintenanceScreen({
                 <RecommendationCard
                   isSaving={isSaving}
                   key={recommendation.id}
-                  onAccept={onAcceptRecommendation}
-                  onDismiss={onDismissRecommendation}
-                  onSwipeOpen={handleSwipeOpened}
+                onAccept={onAcceptRecommendation}
+                onDismiss={onDismissRecommendation}
+                onOpenGuide={onOpenGuideForRecommendation}
+                onSwipeOpen={handleSwipeOpened}
                   openRowId={openSwipeRowId}
                   recommendation={recommendation}
                 />
@@ -4497,12 +4509,23 @@ function DocumentsScreen({
   );
 }
 
+function GuideLibraryScreen({ guides, selectedGuide, apiBaseUrl, accessToken, onOpen, onBack, onExit }: { guides: GuideResponse[]; selectedGuide: GuideResponse | null; apiBaseUrl: string; accessToken: string | null; onOpen: (guide: GuideResponse) => void; onBack: () => void; onExit: () => void }) {
+  if (selectedGuide) {
+    const cover = selectedGuide.version.assets.find((asset) => asset.placement === "cover");
+    const stepAssets = selectedGuide.version.assets.filter((asset) => asset.placement === "step");
+    const stepAssetBySectionId = new Map(selectedGuide.version.sections.filter((section) => section.sectionType === "step").map((section, index) => [section.id, stepAssets[index]]));
+    return <View style={styles.stack}><View style={styles.screenTitleRow}><SectionHeader title={selectedGuide.version.title} {...(selectedGuide.version.summary ? { subtitle: selectedGuide.version.summary } : {})} /><SecondaryButton label="Tilbage" onPress={onBack} /></View>{cover ? <Image accessibilityLabel={cover.altText ?? cover.assetKey} source={{ uri: `${apiBaseUrl}${cover.contentPath}`, headers: accessToken ? { authorization: `Bearer ${accessToken}` } : undefined }} resizeMode="cover" style={styles.guideHeroImage} /> : null}<Card><Text style={styles.cardTitle}>Vejledning</Text>{selectedGuide.version.sections.map((section) => { const stepAsset = stepAssetBySectionId.get(section.id); const blocks = presentGuideSection(section); if (blocks.length === 0) return null; return <View key={section.id} style={styles.guideSectionCard}><Text style={styles.sectionEyebrow}>{guideSectionLabel(section.sectionType, section.sectionKey)}</Text><Text style={styles.sectionTitle}>{guideSectionTitle({ ...section, title: section.title })}</Text>{blocks.map((block, index) => <Text key={index} style={styles.bodyText}>{block.kind === "bullet" ? `• ${block.text}` : block.kind === "label" ? `${block.label}: ${block.text}` : block.text}</Text>)}{stepAsset ? <Image accessibilityLabel={stepAsset.altText ?? stepAsset.assetKey} source={{ uri: `${apiBaseUrl}${stepAsset.contentPath}`, headers: accessToken ? { authorization: `Bearer ${accessToken}` } : undefined }} resizeMode="cover" style={styles.guideInlineImage} /> : null}</View>; })}</Card></View>;
+  }
+  return <View style={styles.stack}><View style={styles.screenTitleRow}><SectionHeader title="Vejledninger" subtitle="Praktiske trin til vedligeholdelse af dit hus." /><SecondaryButton label="Tilbage" onPress={onExit} /></View>{guides.length === 0 ? <EmptyState title="Ingen vejledninger endnu" body="Der er ingen publicerede vejledninger tilgængelige." /> : guides.map((guide) => <Pressable key={guide.id} onPress={() => onOpen(guide)}><Card><Text style={styles.cardTitle}>{guide.version.title}</Text><Text style={styles.bodyText}>{guide.version.summary}</Text><View style={styles.pillRow}><Pill>{guide.tags[0]?.label ?? "Vedligeholdelse"}</Pill><Text style={styles.metaText}>v{guide.version.versionNumber}</Text></View></Card></Pressable>)}</View>;
+}
+
 function MoreScreen({
   isLoggingOut,
   onOpenProfile,
   onOpenSettings,
   onOpenSharing,
   onOpenSubscription,
+  onOpenGuides,
   attentionCount,
   sharingEnabled,
   onLogout
@@ -4512,11 +4535,12 @@ function MoreScreen({
   onOpenSettings: () => void;
   onOpenSharing: () => void;
   onOpenSubscription: () => void;
+  onOpenGuides: () => void;
   attentionCount: number;
   sharingEnabled: boolean;
   onLogout: () => void;
 }) {
-  const rows = ["Profil", "Abonnement", "Indstillinger", "Deling & adgang", "Hjælp", "Om Matriva"];
+  const rows = ["Profil", "Vejledninger", "Abonnement", "Indstillinger", "Deling & adgang", "Hjælp", "Om Matriva"];
 
   return (
     <View style={styles.stack}>
@@ -4525,16 +4549,17 @@ function MoreScreen({
           {rows.map((row, index) => {
           const isProfile = row === "Profil";
           const isSubscription = row === "Abonnement";
+          const isGuides = row === "Vejledninger";
           const isSettings = row === "Indstillinger";
           const isSharing = row === "Deling & adgang";
-          const isEnabled = isProfile || isSubscription || isSettings || (isSharing && sharingEnabled);
+          const isEnabled = isProfile || isGuides || isSubscription || isSettings || (isSharing && sharingEnabled);
 
           return (
             <Pressable
               accessibilityRole="button"
               disabled={!isEnabled}
               key={row}
-              onPress={isProfile ? onOpenProfile : isSubscription ? onOpenSubscription : isSettings ? onOpenSettings : isSharing ? onOpenSharing : undefined}
+              onPress={isProfile ? onOpenProfile : isGuides ? onOpenGuides : isSubscription ? onOpenSubscription : isSettings ? onOpenSettings : isSharing ? onOpenSharing : undefined}
               style={({ pressed }) => [
                 styles.menuRow,
                 index === rows.length - 1 ? styles.menuRowLast : null,
@@ -4769,6 +4794,8 @@ export default function App() {
   const [profileName, setProfileName] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
   const [moreView, setMoreView] = useState<MoreView>("menu");
+  const [guides, setGuides] = useState<GuideResponse[]>([]);
+  const [selectedGuide, setSelectedGuide] = useState<GuideResponse | null>(null);
   const [houseView, setHouseView] = useState<HouseView>("overview");
   const [loadingAction, setLoadingAction] = useState<LoadingAction | null>("app");
   const [houses, setHouses] = useState<SavedHouse[]>([]);
@@ -4890,6 +4917,22 @@ export default function App() {
       (summary) => summary.houseId === selectedHouse?.id
     ) ?? null;
 
+  function openGuideForRecommendation(recommendation: MaintenanceRecommendation) {
+    const guide = guides.find((candidate) =>
+      candidate.id === recommendation.guideTemplateId &&
+      candidate.version.id === recommendation.guideVersionId
+    ) ?? guides.find((candidate) => candidate.id === recommendation.guideTemplateId);
+
+    if (!guide) {
+      setError("Vejledningen er ikke tilgængelig lige nu.");
+      return;
+    }
+
+    setSelectedGuide(guide);
+    setActiveTab("more");
+    setMoreView("guides");
+  }
+
   function resetUnauthenticatedFlowState() {
     accessTokenRef.current = null;
     refreshTokenRef.current = null;
@@ -4905,6 +4948,8 @@ export default function App() {
     setProfileName("");
     setActiveTab("dashboard");
     setMoreView("menu");
+    setGuides([]);
+    setSelectedGuide(null);
     setHouseView("overview");
     setHouses([]);
     setPublicDataSummaries([]);
@@ -5020,6 +5065,8 @@ export default function App() {
 
     try {
       const bootstrapResponse = await apiClient.getAppBootstrap();
+      const guideResponse = await apiClient.listGuides({ previewDrafts: matrivaApiConfig.guidePreviewEnabled });
+      setGuides(guideResponse.guides);
       setBootstrap(bootstrapResponse);
       setProfileName(bootstrapResponse.profile.displayName ?? "");
       setHouses(bootstrapResponse.houses);
@@ -6820,6 +6867,20 @@ export default function App() {
             setSelectedRecommendation(recommendation);
             setMaintenanceView("recommendationDetail");
           }}
+          onOpenGuideForRecommendation={openGuideForRecommendation}
+          onOpenGuideForTask={(task) => {
+            const guide = guides.find((candidate) =>
+              candidate.id === task.guideTemplateId &&
+              candidate.version.id === task.guideVersionId
+            ) ?? guides.find((candidate) => candidate.id === task.guideTemplateId);
+            if (!guide) {
+              setError("Vejledningen er ikke tilgængelig lige nu.");
+              return;
+            }
+            setSelectedGuide(guide);
+            setActiveTab("more");
+            setMoreView("guides");
+          }}
           onRestoreRecommendation={(recommendation) => void restoreRecommendation(recommendation)}
           onBackToMaintenance={() => {
             setMaintenanceView("main");
@@ -6937,6 +6998,10 @@ export default function App() {
       return <SubscriptionScreen entitlements={bootstrap.entitlements} onBack={() => setMoreView("menu")} />;
     }
 
+    if (moreView === "guides") {
+      return <GuideLibraryScreen guides={guides} selectedGuide={selectedGuide} apiBaseUrl={apiClient.baseUrl} accessToken={accessTokenRef.current} onOpen={setSelectedGuide} onBack={() => setSelectedGuide(null)} onExit={() => { setSelectedGuide(null); setMoreView("menu"); }} />;
+    }
+
     if (moreView === "settings") {
       return (
         <SettingsScreen
@@ -6960,6 +7025,7 @@ export default function App() {
         isLoggingOut={loadingAction === "logout"}
         onOpenProfile={() => setMoreView("profile")}
         onOpenSubscription={() => setMoreView("subscription")}
+        onOpenGuides={() => { setSelectedGuide(null); setMoreView("guides"); }}
         onOpenSettings={() => setMoreView("settings")}
         onOpenSharing={() => setMoreView("sharing")}
         attentionCount={moreAttentionCount}
@@ -7528,6 +7594,23 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "800",
     lineHeight: 21
+  },
+  guideHeroImage: {
+    borderRadius: 12,
+    height: 220,
+    width: "100%"
+  },
+  guideInlineImage: {
+    borderRadius: 10,
+    height: 180,
+    marginTop: 8,
+    width: "100%"
+  },
+  guideSectionCard: {
+    borderTopColor: theme.border,
+    borderTopWidth: 1,
+    paddingVertical: 12,
+    rowGap: 5
   },
   bodyText: {
     color: theme.muted,

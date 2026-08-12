@@ -15,6 +15,9 @@ import {
   maintenanceRecommendationOriginSnapshotSchema,
   maintenanceRecommendationSchema,
   currentUserSchema,
+  guideResponseSchema,
+  adminGuidesResponseSchema,
+  adminGuideResponseSchema,
   houseDocumentSchema,
   houseImprovementSchema,
   houseMediaSchema,
@@ -58,6 +61,19 @@ import type {
   UpdateProfileRequest,
   UserProfile,
   UserId
+} from "@matriva/shared";
+import type {
+  AdminGuideResponse,
+  AdminGuidesResponse,
+  GuideAuditEntry,
+  GuideAsset,
+  GuideHotspot,
+  GuideAssetId,
+  GuideTemplateId,
+  GuideVersionId,
+  GuideResponse,
+  GuideStatusFilter,
+  GuideStatusUpdateRequest
 } from "@matriva/shared";
 import type { FeatureKey, EntitlementValue, UpdateAdminEntitlementPlanConfigRequest } from "@matriva/shared";
 import {
@@ -2405,6 +2421,11 @@ async function syncHouseProfileSeeds() {
 
 async function syncGuideContentSeeds() {
   for (const guide of guideContentSeeds) {
+    const existingVersion = await pool.query<{ publication_status: "draft" | "published" | "archived" }>(
+      "select publication_status from guide_versions where id = $1",
+      [guide.version.id]
+    );
+
     await pool.query(
       `
         insert into guide_templates (id, guide_key)
@@ -2413,6 +2434,14 @@ async function syncGuideContentSeeds() {
       `,
       [guide.template.id, guide.template.guideKey]
     );
+
+    // PostgreSQL evaluates the content immutability trigger before resolving
+    // ON CONFLICT DO NOTHING. Once a version is published or archived, leave
+    // its editorial rows untouched and only keep its catalog link healthy.
+    if (existingVersion.rows[0]?.publication_status !== undefined && existingVersion.rows[0].publication_status !== "draft") {
+      await linkGuideContentSeedToCatalog(guide);
+      continue;
+    }
 
     await pool.query(
       `
@@ -2425,7 +2454,7 @@ async function syncGuideContentSeeds() {
           publication_status,
           validation_status
         )
-        values ($1, $2, $3, $4, $5, 'draft', 'not_requested')
+        values ($1, $2, $3, $4, $5, 'draft', $6)
         on conflict (guide_template_id, version_number) do nothing
       `,
       [
@@ -2433,7 +2462,8 @@ async function syncGuideContentSeeds() {
         guide.template.id,
         guide.version.versionNumber,
         guide.version.title,
-        guide.version.summary
+        guide.version.summary,
+        guide.version.validationStatus ?? "not_requested"
       ]
     );
 
@@ -2567,6 +2597,32 @@ async function linkGuideContentSeedToCatalog(guide: GuideContentSeed) {
       where id = $3
     `,
     [guide.template.id, guide.version.id, catalogItem.id]
+  );
+
+  // Existing recommendations/tasks may predate the guide relation on the
+  // catalog item. Keep those historical rows linked as well, so a user can
+  // open the guide after accepting an older recommendation.
+  await pool.query(
+    `
+      update maintenance_recommendations
+      set guide_template_id = $1, guide_version_id = $2, updated_at = now()
+      where catalog_key = $3
+        and catalog_version = $4
+        and (guide_template_id is null or guide_version_id is null)
+    `,
+    [guide.template.id, guide.version.id, guide.catalogLink.catalogKey, guide.catalogLink.catalogVersion]
+  );
+  await pool.query(
+    `
+      update maintenance_tasks mt
+      set guide_template_id = $1, guide_version_id = $2, updated_at = now()
+      from maintenance_recommendations mr
+      where mt.recommendation_id = mr.id
+        and mr.catalog_key = $3
+        and mr.catalog_version = $4
+        and (mt.guide_template_id is null or mt.guide_version_id is null)
+    `,
+    [guide.template.id, guide.version.id, guide.catalogLink.catalogKey, guide.catalogLink.catalogVersion]
   );
 }
 
@@ -4064,4 +4120,470 @@ export async function buildAppBootstrap(userId: string): Promise<AppBootstrapRes
     cards: [],
     generatedAt: now
   });
+}
+
+type GuideVersionDbRow = {
+  template_id: string;
+  guide_key: string;
+  is_active: boolean;
+  version_id: string;
+  version_number: number;
+  locale: "da-DK";
+  title: string;
+  summary: string | null;
+  publication_status: "draft" | "published" | "archived";
+  validation_status: "not_requested" | "in_review" | "changes_requested" | "approved";
+  version_created_at: Date;
+  version_updated_at: Date;
+  template_created_at: Date;
+  published_at: Date | null;
+};
+
+function guideSelector(identifier: string, status: "admin" | "published" | "preview") {
+  const statusClause = status === "published"
+    ? "and gv.publication_status = 'published' and gt.current_published_version_id = gv.id"
+    : status === "preview"
+      ? "and gv.publication_status in ('draft', 'published')"
+      : "and gv.publication_status in ('draft', 'published')";
+
+  return {
+    sql: `
+      select
+        gt.id as template_id,
+        gt.guide_key,
+        gt.is_active,
+        gt.created_at as template_created_at,
+        gv.id as version_id,
+        gv.version_number,
+        gv.locale,
+        gv.title,
+        gv.summary,
+        gv.publication_status,
+        gv.validation_status,
+        gv.created_at as version_created_at,
+        gv.updated_at as version_updated_at,
+        gv.published_at
+      from guide_templates gt
+      join guide_versions gv on gv.guide_template_id = gt.id
+      where (gt.id = $1 or gt.guide_key = $1)
+        and gt.archived_at is null
+        and gt.is_active
+        ${statusClause}
+      order by
+        case gv.publication_status when 'draft' then 0 else 1 end,
+        gv.version_number desc
+      limit 1
+    `,
+    values: [identifier]
+  };
+}
+
+async function selectGuideVersion(
+  identifier: string,
+  status: "admin" | "published" | "preview"
+): Promise<GuideVersionDbRow> {
+  const selector = guideSelector(identifier, status);
+  const result = await pool.query<GuideVersionDbRow>(selector.sql, selector.values);
+  const row = result.rows[0];
+
+  if (!row) {
+    throw new ApiError(404, "guide_not_found", "Vejledningen blev ikke fundet.");
+  }
+
+  return row;
+}
+
+async function toGuideResponse(row: GuideVersionDbRow): Promise<GuideResponse> {
+  const [sectionsResult, assetsResult, tagsResult, termsResult, printResult, catalogResult] = await Promise.all([
+    pool.query<{
+      id: string;
+      section_type: GuideContentSeed["sections"][number]["sectionType"];
+      section_key: string;
+      position: number;
+      title: string | null;
+      content: unknown;
+    }>(
+      `select id, section_type, section_key, position, title, content
+       from guide_sections where guide_version_id = $1 order by position`,
+      [row.version_id]
+    ),
+    pool.query<{
+      asset_id: string;
+      placement_id: string;
+      asset_key: string;
+      mime_type: "image/jpeg" | "image/png" | "image/webp" | "image/avif" | "image/svg+xml";
+      source_type: "ai_generated" | "photograph" | "illustration" | "licensed" | "other";
+      asset_alt_text: string | null;
+      placement: "cover" | "inline" | "step" | "before" | "after" | "print_appendix";
+      position: number;
+      alt_text: string | null;
+      caption: string | null;
+      print_visible: boolean;
+      hotspot_id: string | null;
+      hotspot_type: "tip" | "warning" | "checkpoint" | "correct_result" | null;
+      hotspot_position: number | null;
+      hotspot_x: number | null;
+      hotspot_y: number | null;
+      hotspot_title: string | null;
+      hotspot_body: string | null;
+      detail_guide_asset_id: string | null;
+    }>(
+      `select
+         ga.id as asset_id,
+         gva.id as placement_id,
+         ga.asset_key,
+         ga.mime_type,
+         ga.source_type,
+         ga.alt_text as asset_alt_text,
+         gva.placement,
+         gva.position,
+         gva.alt_text,
+         gva.caption,
+         gva.print_visible,
+         gh.id as hotspot_id,
+         gh.hotspot_type,
+         gh.position as hotspot_position,
+         gh.x::float as hotspot_x,
+         gh.y::float as hotspot_y,
+         gh.title as hotspot_title,
+         gh.body as hotspot_body,
+         gh.detail_guide_asset_id
+       from guide_version_assets gva
+       join guide_assets ga on ga.id = gva.guide_asset_id and ga.archived_at is null
+       left join guide_hotspots gh on gh.guide_version_asset_id = gva.id
+       where gva.guide_version_id = $1
+       order by gva.placement, gva.position, gh.position`,
+      [row.version_id]
+    ),
+    pool.query<{ tag_key: string; label: string; tag_type: "category" | "house_part" | "material" | "problem" | "audience" }>(
+      `select gt.tag_key, gt.label, gt.tag_type
+       from guide_version_tags gvt join guide_tags gt on gt.id = gvt.guide_tag_id
+       where gvt.guide_version_id = $1 order by gt.tag_key`,
+      [row.version_id]
+    ),
+    pool.query<{ term: string }>(
+      `select term from guide_search_terms where guide_version_id = $1 order by weight desc, term`,
+      [row.version_id]
+    ),
+    pool.query<{
+      paper_format: "A4";
+      print_title: string | null;
+      print_subtitle: string | null;
+      footer_text: string | null;
+      show_hotspot_legend: boolean;
+      section_order: unknown;
+      render_options: unknown;
+    }>(
+      `select paper_format, print_title, print_subtitle, footer_text, show_hotspot_legend, section_order, render_options
+       from guide_version_print_metadata where guide_version_id = $1`,
+      [row.version_id]
+    ),
+    pool.query<{ catalog_key: string; catalog_version: string }>(
+      `select catalog_key, catalog_version from maintenance_catalog_items
+       where guide_template_id = $1 and guide_version_id = $2 limit 1`,
+      [row.template_id, row.version_id]
+    )
+  ]);
+
+  type GuideRuntimeAsset = {
+    id: string;
+    assetKey: string;
+    mimeType: GuideAsset["mimeType"];
+    sourceType: GuideAsset["sourceType"];
+    altText: string | null;
+    caption: string | null;
+    placement: GuideAsset["placement"];
+    position: number;
+    printVisible: boolean;
+    hotspots: GuideHotspot[];
+  };
+  const assets = new Map<string, GuideRuntimeAsset>();
+  for (const assetRow of assetsResult.rows) {
+    const existing = assets.get(assetRow.placement_id) ?? {
+      id: assetRow.asset_id,
+      assetKey: assetRow.asset_key,
+      mimeType: assetRow.mime_type,
+      sourceType: assetRow.source_type,
+      altText: assetRow.alt_text ?? assetRow.asset_alt_text,
+      caption: assetRow.caption,
+      placement: assetRow.placement,
+      position: assetRow.position,
+      printVisible: assetRow.print_visible,
+      hotspots: []
+    };
+    if (assetRow.hotspot_id && assetRow.hotspot_type && assetRow.hotspot_position !== null && assetRow.hotspot_x !== null && assetRow.hotspot_y !== null && assetRow.hotspot_title && assetRow.hotspot_body) {
+      existing.hotspots.push({
+        id: assetRow.hotspot_id as GuideHotspot["id"],
+        hotspotType: assetRow.hotspot_type,
+        position: assetRow.hotspot_position,
+        x: assetRow.hotspot_x,
+        y: assetRow.hotspot_y,
+        title: assetRow.hotspot_title,
+        body: assetRow.hotspot_body,
+        detailGuideAssetId: assetRow.detail_guide_asset_id as GuideAssetId | null
+      });
+    }
+    assets.set(assetRow.placement_id, existing);
+  }
+
+  return guideResponseSchema.parse({
+    id: row.template_id,
+    key: row.guide_key,
+    isActive: row.is_active,
+    version: {
+      id: row.version_id,
+      versionNumber: row.version_number,
+      locale: row.locale,
+      title: row.title,
+      summary: row.summary,
+      publicationStatus: row.publication_status,
+      validationStatus: row.validation_status,
+      sections: sectionsResult.rows.map((section) => ({
+        id: section.id,
+        sectionType: section.section_type,
+        sectionKey: section.section_key,
+        position: section.position,
+        title: section.title,
+        content: section.content as Record<string, unknown>
+      })),
+      assets: [...assets.values()].map((asset) => ({
+        ...asset,
+        contentPath: `/v1/guides/assets/${encodeURIComponent(asset.assetKey)}`
+      })),
+      searchTerms: termsResult.rows.map((term) => term.term),
+      printMetadata: printResult.rows[0]
+        ? {
+            paperFormat: printResult.rows[0].paper_format,
+            printTitle: printResult.rows[0].print_title,
+            printSubtitle: printResult.rows[0].print_subtitle,
+            footerText: printResult.rows[0].footer_text,
+            showHotspotLegend: printResult.rows[0].show_hotspot_legend,
+            sectionOrder: printResult.rows[0].section_order as string[],
+            renderOptions: printResult.rows[0].render_options as Record<string, unknown>
+          }
+        : null
+    },
+    tags: tagsResult.rows.map((tag) => ({ key: tag.tag_key, label: tag.label, type: tag.tag_type })),
+    catalog: catalogResult.rows[0]
+      ? { key: catalogResult.rows[0].catalog_key, version: catalogResult.rows[0].catalog_version }
+      : null,
+    updatedAt: row.version_updated_at.toISOString(),
+    createdAt: row.version_created_at.toISOString()
+  });
+}
+
+export async function listRuntimeGuides(includeDraftPreview = false): Promise<GuideResponse[]> {
+  const result = await pool.query<GuideVersionDbRow>(
+    `select distinct on (gt.id)
+       gt.id as template_id, gt.guide_key, gt.is_active, gt.created_at as template_created_at,
+       gv.id as version_id, gv.version_number, gv.locale, gv.title, gv.summary,
+       gv.publication_status, gv.validation_status, gv.created_at as version_created_at,
+       gv.updated_at as version_updated_at, gv.published_at
+     from guide_templates gt
+     join guide_versions gv on gv.guide_template_id = gt.id
+     where gt.is_active and gt.archived_at is null
+       and gv.publication_status in (${includeDraftPreview ? "'draft', 'published'" : "'published'"})
+       and (${includeDraftPreview ? "true" : "gt.current_published_version_id = gv.id"})
+     order by gt.id, case gv.publication_status when 'draft' then 0 else 1 end, gv.version_number desc`,
+    []
+  );
+  return Promise.all(result.rows.map(toGuideResponse));
+}
+
+export async function getPublishedGuide(identifier: string, includeDraftPreview = false): Promise<GuideResponse> {
+  const row = await selectGuideVersion(identifier, includeDraftPreview ? "preview" : "published");
+  return toGuideResponse(row);
+}
+
+export async function listAdminGuides(filter: GuideStatusFilter): Promise<AdminGuidesResponse> {
+  const values: string[] = [];
+  const where = filter === "all" ? "" : "and gv.publication_status = $1";
+  if (filter !== "all") values.push(filter);
+  const result = await pool.query<{
+    id: string;
+    key: string;
+    title: string;
+    version: number;
+    locale: "da-DK";
+    status: "draft" | "published" | "archived";
+    section_count: number;
+    active_asset_count: number;
+    validation_status: "not_requested" | "in_review" | "changes_requested" | "approved";
+    approval_status: "not_requested" | "in_review" | "changes_requested" | "approved";
+    updated_at: Date;
+    published_at: Date | null;
+    unpublished_at: Date | null;
+  }>(
+    `select
+       gt.id, gt.guide_key as key, gv.title, gv.version_number as version, gv.locale,
+       gv.publication_status as status,
+       (select count(*) from guide_sections gs where gs.guide_version_id = gv.id)::int as section_count,
+       (select count(*) from guide_version_assets gva join guide_assets ga on ga.id = gva.guide_asset_id and ga.archived_at is null where gva.guide_version_id = gv.id)::int as active_asset_count,
+       gv.validation_status, gv.validation_status as approval_status,
+       gv.updated_at, gv.published_at,
+       (select max(created_at) from guide_status_audit_log gl where gl.guide_template_id = gt.id and gl.action = 'guide_unpublished') as unpublished_at
+     from guide_templates gt
+     join guide_versions gv on gv.guide_template_id = gt.id
+     where gt.is_active and gt.archived_at is null ${where}
+     order by gv.title, gv.version_number desc`,
+    values
+  );
+  return adminGuidesResponseSchema.parse({
+    guides: result.rows.map((guide) => ({
+      id: guide.id,
+      key: guide.key,
+      title: guide.title,
+      version: guide.version,
+      locale: guide.locale,
+      status: guide.status,
+      sectionCount: Number(guide.section_count),
+      activeAssetCount: Number(guide.active_asset_count),
+      validationStatus: guide.validation_status,
+      approvalStatus: guide.approval_status,
+      updatedAt: new Date(guide.updated_at).toISOString(),
+      publishedAt: guide.published_at ? new Date(guide.published_at).toISOString() : null,
+      unpublishedAt: guide.unpublished_at ? new Date(guide.unpublished_at).toISOString() : null
+    })),
+    filter,
+    generatedAt: new Date().toISOString()
+  });
+}
+
+export async function getAdminGuide(identifier: string): Promise<AdminGuideResponse> {
+  const guide = await toGuideResponse(await selectGuideVersion(identifier, "admin"));
+  const auditResult = await pool.query<{
+    id: string;
+    guide_template_id: string;
+    guide_version_id: string;
+    from_status: "draft" | "published" | "archived";
+    to_status: "draft" | "published" | "archived";
+    action: "guide_published" | "guide_unpublished" | "guide_status_changed";
+    actor_user_id: string | null;
+    actor_label: string | null;
+    created_at: Date;
+  }>(
+    `select l.id::text, l.guide_template_id, l.guide_version_id, l.from_status, l.to_status, l.action,
+            l.actor_user_id, coalesce(up.display_name, u.email) as actor_label, l.created_at
+     from guide_status_audit_log l
+     left join users u on u.id = l.actor_user_id
+     left join user_profiles up on up.user_id = l.actor_user_id
+     where l.guide_template_id = $1
+     order by l.created_at desc, l.id desc`,
+    [guide.id]
+  );
+  return adminGuideResponseSchema.parse({
+    guide,
+    audit: auditResult.rows.map((entry): GuideAuditEntry => ({
+      id: entry.id,
+      guideId: entry.guide_template_id as GuideTemplateId,
+      guideVersionId: entry.guide_version_id as GuideVersionId,
+      fromStatus: entry.from_status,
+      toStatus: entry.to_status,
+      action: entry.action,
+      actorUserId: entry.actor_user_id as UserId | null,
+      actorLabel: entry.actor_label,
+      createdAt: entry.created_at.toISOString()
+    }))
+  });
+}
+
+export async function updateGuideStatus(
+  actorUserId: string,
+  identifier: string,
+  input: GuideStatusUpdateRequest
+): Promise<AdminGuideResponse> {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const result = await client.query<GuideVersionDbRow>(
+      `select gt.id as template_id, gt.guide_key, gt.is_active, gt.created_at as template_created_at,
+              gv.id as version_id, gv.version_number, gv.locale, gv.title, gv.summary,
+              gv.publication_status, gv.validation_status, gv.created_at as version_created_at,
+              gv.updated_at as version_updated_at, gv.published_at
+       from guide_templates gt join guide_versions gv on gv.guide_template_id = gt.id
+       where (gt.id = $1 or gt.guide_key = $1) and gt.archived_at is null
+       order by gv.version_number desc limit 1 for update of gv`,
+      [identifier]
+    );
+    const row = result.rows[0];
+    if (!row) throw new ApiError(404, "guide_not_found", "Vejledningen blev ikke fundet.");
+    if (row.publication_status === input.status) {
+      throw new ApiError(409, "guide_status_unchanged", "Vejledningens status er allerede sat sådan.");
+    }
+    if (row.publication_status === "archived") {
+      throw new ApiError(409, "guide_archived", "Arkiverede vejledninger kan ikke publiceres her.");
+    }
+    if (input.status === "published" && row.validation_status !== "approved") {
+      throw new ApiError(409, "guide_publication_validation_required", "Vejledningen skal være godkendt, før den kan publiceres.");
+    }
+
+    if (input.status === "draft" && row.publication_status === "published") {
+      await client.query(
+        `update guide_templates set current_published_version_id = null, updated_at = now()
+         where id = $1 and current_published_version_id = $2`,
+        [row.template_id, row.version_id]
+      );
+    }
+    const updated = await client.query<GuideVersionDbRow>(
+      `update guide_versions
+       set publication_status = $2,
+           published_by_user_id = case when $2 = 'published' then $3 else null end,
+           published_at = case when $2 = 'published' then now() else null end,
+           updated_at = now()
+       where id = $1
+       returning ${[
+         "(select gt.id from guide_templates gt where gt.id = guide_versions.guide_template_id) as template_id",
+         "(select gt.guide_key from guide_templates gt where gt.id = guide_versions.guide_template_id) as guide_key",
+         "(select gt.is_active from guide_templates gt where gt.id = guide_versions.guide_template_id) as is_active",
+         "(select gt.created_at from guide_templates gt where gt.id = guide_versions.guide_template_id) as template_created_at",
+         "id as version_id", "version_number", "locale", "title", "summary", "publication_status", "validation_status",
+         "created_at as version_created_at", "updated_at as version_updated_at", "published_at"
+       ].join(", ")}`,
+      [row.version_id, input.status, actorUserId]
+    );
+    if (input.status === "published") {
+      await client.query(
+        `update guide_templates set current_published_version_id = $2, updated_at = now() where id = $1`,
+        [row.template_id, row.version_id]
+      );
+    }
+    const action = input.status === "published" ? "guide_published" : "guide_unpublished";
+    await client.query(
+      `insert into guide_status_audit_log
+        (guide_template_id, guide_version_id, from_status, to_status, action, actor_user_id)
+       values ($1, $2, $3, $4, $5, $6)`,
+      [row.template_id, row.version_id, row.publication_status, input.status, action, actorUserId]
+    );
+    await client.query("commit");
+    void updated;
+    return getAdminGuide(row.template_id);
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getGuideAsset(assetKey: string) {
+  const result = await pool.query<{
+    storage_key: string;
+    mime_type: string;
+    is_published: boolean;
+  }>(
+    `select ga.storage_key, ga.mime_type,
+       exists (
+         select 1 from guide_version_assets gva
+         join guide_versions gv on gv.id = gva.guide_version_id
+         join guide_templates gt on gt.id = gv.guide_template_id
+         where gva.guide_asset_id = ga.id
+           and gv.publication_status = 'published'
+           and gt.current_published_version_id = gv.id
+       ) as is_published
+     from guide_assets ga where ga.asset_key = $1 and ga.archived_at is null`,
+    [assetKey]
+  );
+  const asset = result.rows[0];
+  if (!asset) throw new ApiError(404, "guide_asset_not_found", "Vejledningsbilledet blev ikke fundet.");
+  return asset;
 }

@@ -5,6 +5,7 @@ export type IconName =
   | "users"
   | "houses"
   | "recommendations"
+  | "guides"
   | "settings"
   | "logout"
   | "activity"
@@ -40,6 +41,13 @@ export function Icon({ name }: { name: IconName }) {
         <path d="M9 18h6" />
         <path d="M10 22h4" />
         <path d="M8.5 14.5A7 7 0 1 1 15.5 14.5c-.9.7-1.5 1.6-1.5 2.5h-4c0-.9-.6-1.8-1.5-2.5Z" />
+      </>
+    ),
+    guides: (
+      <>
+        <path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4Z" />
+        <path d="M8 20V7a3 3 0 0 1 3-3" />
+        <path d="M9 9h7M9 13h7" />
       </>
     ),
     settings: (

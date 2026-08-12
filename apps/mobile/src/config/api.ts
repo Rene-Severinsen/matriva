@@ -4,5 +4,6 @@ const configuredApiBaseUrl =
 
 export const matrivaApiConfig = {
   baseUrl: configuredApiBaseUrl || localApiBaseUrl,
-  usesLocalFallback: !configuredApiBaseUrl
+  usesLocalFallback: !configuredApiBaseUrl,
+  guidePreviewEnabled: process.env.EXPO_PUBLIC_MATRIVA_GUIDE_PREVIEW === "true"
 } as const;

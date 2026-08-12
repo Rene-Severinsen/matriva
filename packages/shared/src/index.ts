@@ -1141,6 +1141,7 @@ export type GuideHotspot = z.infer<typeof guideHotspotSchema>;
 export const guideAssetSchema = z.object({
   id: guideAssetIdSchema,
   assetKey: z.string().min(1),
+  contentPath: z.string().min(1),
   mimeType: z.enum([
     "image/jpeg",
     "image/png",
@@ -1195,6 +1196,100 @@ export const guideTemplateSchema = z.object({
 });
 
 export type GuideTemplate = z.infer<typeof guideTemplateSchema>;
+
+export const guideTagSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  type: z.enum(["category", "house_part", "material", "problem", "audience"])
+});
+
+export type GuideTag = z.infer<typeof guideTagSchema>;
+
+export const guideResponseSchema = z.object({
+  id: guideTemplateIdSchema,
+  key: z.string().min(1),
+  isActive: z.boolean(),
+  version: guideVersionSchema,
+  tags: z.array(guideTagSchema),
+  catalog: z.object({
+    key: z.string().min(1),
+    version: z.string().min(1)
+  }).nullable(),
+  updatedAt: z.string().datetime(),
+  createdAt: z.string().datetime()
+});
+
+export type GuideResponse = z.infer<typeof guideResponseSchema>;
+
+export const guidesResponseSchema = z.object({
+  guides: z.array(guideResponseSchema),
+  generatedAt: z.string().datetime()
+});
+export type GuidesResponse = z.infer<typeof guidesResponseSchema>;
+
+export const guideStatusFilterSchema = z.enum(["all", "draft", "published"]);
+export type GuideStatusFilter = z.infer<typeof guideStatusFilterSchema>;
+
+export const guideStatusUpdateRequestSchema = z.object({
+  status: z.enum(["draft", "published"])
+});
+export type GuideStatusUpdateRequest = z.infer<typeof guideStatusUpdateRequestSchema>;
+
+export const guideAuditActionSchema = z.enum([
+  "guide_published",
+  "guide_unpublished",
+  "guide_status_changed"
+]);
+export type GuideAuditAction = z.infer<typeof guideAuditActionSchema>;
+
+export const guideAuditEntrySchema = z.object({
+  id: z.string().min(1),
+  guideId: guideTemplateIdSchema,
+  guideVersionId: guideVersionIdSchema,
+  fromStatus: guidePublicationStatusSchema,
+  toStatus: guidePublicationStatusSchema,
+  action: guideAuditActionSchema,
+  actorUserId: userIdSchema.nullable(),
+  actorLabel: z.string().min(1).nullable(),
+  createdAt: z.string().datetime()
+});
+export type GuideAuditEntry = z.infer<typeof guideAuditEntrySchema>;
+
+export const adminGuideListItemSchema = z.object({
+  id: guideTemplateIdSchema,
+  key: z.string().min(1),
+  title: z.string().min(1),
+  version: z.number().int().positive(),
+  locale: z.literal("da-DK"),
+  status: guidePublicationStatusSchema,
+  sectionCount: z.number().int().nonnegative(),
+  activeAssetCount: z.number().int().nonnegative(),
+  validationStatus: guideValidationStatusSchema,
+  approvalStatus: guideValidationStatusSchema,
+  updatedAt: z.string().datetime(),
+  publishedAt: z.string().datetime().nullable(),
+  unpublishedAt: z.string().datetime().nullable()
+});
+export type AdminGuideListItem = z.infer<typeof adminGuideListItemSchema>;
+
+export const adminGuidesResponseSchema = z.object({
+  guides: z.array(adminGuideListItemSchema),
+  filter: guideStatusFilterSchema,
+  generatedAt: z.string().datetime()
+});
+export type AdminGuidesResponse = z.infer<typeof adminGuidesResponseSchema>;
+
+export const adminGuideResponseSchema = z.object({
+  guide: guideResponseSchema,
+  audit: z.array(guideAuditEntrySchema)
+});
+export type AdminGuideResponse = z.infer<typeof adminGuideResponseSchema>;
+
+export const guideAuditResponseSchema = z.object({
+  audit: z.array(guideAuditEntrySchema),
+  generatedAt: z.string().datetime()
+});
+export type GuideAuditResponse = z.infer<typeof guideAuditResponseSchema>;
 
 export const houseRecommendationGenerationTypeSchema = z.enum([
   "generic",
@@ -4009,3 +4104,5 @@ export const healthResponseSchema = z.object({
 });
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
+
+export * from "./guide-presentation.js";

@@ -40,6 +40,11 @@ async function request(path, options = {}) {
   return { response, body };
 }
 
+async function requestBinary(path, options = {}) {
+  const response = await fetch(`${baseUrl}${path}`, options);
+  return { response, body: Buffer.from(await response.arrayBuffer()) };
+}
+
 function bearer(accessToken) {
   return { authorization: `Bearer ${accessToken}` };
 }
@@ -401,6 +406,8 @@ function startApi() {
       HOST: host,
       PORT: port,
       MATRIVA_AUTH_DISABLE_LIMITS: "false",
+      MATRIVA_ENVIRONMENT: "qa",
+      MATRIVA_GUIDE_PREVIEW_ENABLED: "true",
       MATRIVA_ADMIN_EMAIL: temporarySuperAdminEmail,
       MATRIVA_ADMIN_PASSWORD_HASH: adminPasswordHash
     },
@@ -509,13 +516,27 @@ async function removeTemporarySuperAdmin(userId) {
   }
 }
 
+async function restoreGuideSmokeState() {
+  const pool = new pg.Pool({ connectionString: databaseUrl });
+  try {
+    const actor = await pool.query("select id from users where email = $1", [temporarySuperAdminEmail]);
+    const actorId = actor.rows[0]?.id;
+    await pool.query("update guide_templates set current_published_version_id = null where id = 'guide_rens_tagrender'");
+    await pool.query("update guide_versions set publication_status = 'draft', published_at = null, published_by_user_id = null where id = 'gver_rens_tagrender_v1'");
+    if (actorId) await pool.query("delete from guide_status_audit_log where actor_user_id = $1", [actorId]);
+  } finally {
+    await pool.end();
+  }
+}
+
 async function runSmoke() {
   const adminRoutes = [
     "/v1/admin/bootstrap",
     "/v1/admin/dashboard",
     "/v1/admin/users",
     "/v1/admin/houses",
-    "/v1/admin/recommendations/catalog"
+    "/v1/admin/recommendations/catalog",
+    "/v1/admin/guides"
   ];
 
   for (const route of adminRoutes) {
@@ -610,6 +631,63 @@ async function runSmoke() {
     headers: bearer(adminSession.tokens.accessToken)
   });
   assert.equal(secondBootstrap.response.status, 200);
+
+  const regularGuides = await request("/v1/guides", {
+    headers: bearer(regularSession.tokens.accessToken)
+  });
+  assert.equal(regularGuides.response.status, 200);
+  assert.equal(regularGuides.body.guides.length, 0, "draft guides must stay hidden from normal app runtime");
+  const directDraft = await request("/v1/guides/guide_rens_tagrender", {
+    headers: bearer(regularSession.tokens.accessToken)
+  });
+  assert.equal(directDraft.response.status, 404, "draft guide IDs must not be enumerable in normal runtime");
+  const previewGuides = await request("/v1/guides", {
+    headers: { ...bearer(regularSession.tokens.accessToken), "x-matriva-guide-preview": "true" }
+  });
+  assert.equal(previewGuides.response.status, 200, JSON.stringify(previewGuides.body));
+  assert.ok(previewGuides.body.guides.some((guide) => guide.key === "rens_tagrender"), "QA preview must expose the draft guide");
+
+  const adminGuides = await request("/v1/admin/guides?status=all", {
+    headers: bearer(adminSession.tokens.accessToken)
+  });
+  assert.equal(adminGuides.response.status, 200);
+  assert.ok(adminGuides.body.guides.some((guide) => guide.key === "rens_tagrender" && guide.status === "draft"));
+  assert.ok(adminGuides.body.guides.some((guide) => guide.key === "tjek_fuger_vaadrum" && guide.status === "draft"));
+  const adminGuideDetail = await request("/v1/admin/guides/guide_rens_tagrender", {
+    headers: bearer(adminSession.tokens.accessToken)
+  });
+  assert.equal(adminGuideDetail.response.status, 200);
+  assert.equal(adminGuideDetail.body.guide.version.assets.length, 4);
+  assert.equal(adminGuideDetail.body.audit.length, 0);
+  const firstGuideAsset = adminGuideDetail.body.guide.version.assets[0];
+  const guideAsset = await requestBinary(`/v1/guides/assets/${encodeURIComponent(firstGuideAsset.assetKey)}`, {
+    headers: bearer(adminSession.tokens.accessToken)
+  });
+  assert.equal(guideAsset.response.status, 200);
+  assert.match(guideAsset.response.headers.get("content-type") ?? "", /^image\/png/);
+  assert.ok(guideAsset.body.length > 1000, "Guide asset endpoint must return the stored image bytes.");
+
+  const published = await request("/v1/admin/guides/guide_rens_tagrender", {
+    method: "PATCH",
+    headers: bearer(adminSession.tokens.accessToken),
+    body: JSON.stringify({ status: "published" })
+  });
+  assert.equal(published.response.status, 200);
+  assert.equal(published.body.guide.version.publicationStatus, "published");
+  const publishedRuntime = await request("/v1/guides", { headers: bearer(regularSession.tokens.accessToken) });
+  assert.ok(publishedRuntime.body.guides.some((guide) => guide.key === "rens_tagrender"));
+  assert.equal(published.body.audit[0].action, "guide_published");
+
+  const unpublished = await request("/v1/admin/guides/guide_rens_tagrender", {
+    method: "PATCH",
+    headers: bearer(adminSession.tokens.accessToken),
+    body: JSON.stringify({ status: "draft" })
+  });
+  assert.equal(unpublished.response.status, 200);
+  assert.equal(unpublished.body.guide.version.publicationStatus, "draft");
+  const unpublishedRuntime = await request("/v1/guides", { headers: bearer(regularSession.tokens.accessToken) });
+  assert.equal(unpublishedRuntime.body.guides.length, 0);
+  assert.deepEqual(unpublished.body.audit.slice(0, 2).map((entry) => entry.action), ["guide_unpublished", "guide_published"]);
 
   const pool = new pg.Pool({ connectionString: databaseUrl });
   let adminReadFixture;
@@ -856,6 +934,7 @@ try {
   await runSmoke();
 } finally {
   stopApi(child);
+  await restoreGuideSmokeState();
   await cleanupSmokeUsers(databaseUrl, [
     regularEmail,
     temporarySuperAdminEmail

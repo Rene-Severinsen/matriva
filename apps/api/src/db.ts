@@ -2562,6 +2562,7 @@ async function syncGuideContentSeeds() {
 async function linkGuideContentSeedToCatalog(guide: GuideContentSeed) {
   const result = await pool.query<{
     id: string;
+    version_id: string;
     guide_template_id: string | null;
     guide_version_id: string | null;
   }>(
@@ -4401,6 +4402,7 @@ export async function listAdminGuides(filter: GuideStatusFilter): Promise<AdminG
   if (filter !== "all") values.push(filter);
   const result = await pool.query<{
     id: string;
+    version_id: string;
     key: string;
     title: string;
     version: number;
@@ -4415,7 +4417,7 @@ export async function listAdminGuides(filter: GuideStatusFilter): Promise<AdminG
     unpublished_at: Date | null;
   }>(
     `select
-       gt.id, gt.guide_key as key, gv.title, gv.version_number as version, gv.locale,
+       gt.id, gv.id as version_id, gt.guide_key as key, gv.title, gv.version_number as version, gv.locale,
        gv.publication_status as status,
        (select count(*) from guide_sections gs where gs.guide_version_id = gv.id)::int as section_count,
        (select count(*) from guide_version_assets gva join guide_assets ga on ga.id = gva.guide_asset_id and ga.archived_at is null where gva.guide_version_id = gv.id)::int as active_asset_count,
@@ -4431,6 +4433,7 @@ export async function listAdminGuides(filter: GuideStatusFilter): Promise<AdminG
   return adminGuidesResponseSchema.parse({
     guides: result.rows.map((guide) => ({
       id: guide.id,
+      versionId: guide.version_id as GuideVersionId,
       key: guide.key,
       title: guide.title,
       version: guide.version,
@@ -4515,6 +4518,18 @@ export async function updateGuideStatus(
     }
     if (input.status === "published" && row.validation_status !== "approved") {
       throw new ApiError(409, "guide_publication_validation_required", "Vejledningen skal være godkendt, før den kan publiceres.");
+    }
+    if (input.status === "published") {
+      const recommendationLink = await client.query(
+        `select 1
+         from maintenance_catalog_items
+         where guide_template_id = $1 and guide_version_id = $2
+         limit 1`,
+        [row.template_id, row.version_id]
+      );
+      if (recommendationLink.rowCount !== 1) {
+        throw new ApiError(409, "guide_recommendation_link_required", "Kobl vejledningen til en anbefaling, før den publiceres.");
+      }
     }
 
     if (input.status === "draft" && row.publication_status === "published") {

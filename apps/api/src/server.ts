@@ -23,6 +23,7 @@ import {
   adminHouseInvitationStatusFilterSchema,
   adminRecommendationCatalogItemResponseSchema,
   adminRecommendationCatalogResponseSchema,
+  updateAdminRecommendationGuideRequestSchema,
   adminGuideResponseSchema,
   adminGuidesResponseSchema,
   guideAuditResponseSchema,
@@ -104,7 +105,8 @@ import { getAdminDashboard } from "./admin-dashboard.ts";
 import { getAdminHouse, listAdminHouses } from "./admin-houses.ts";
 import {
   getAdminRecommendationCatalogItem,
-  listAdminRecommendationCatalog
+  listAdminRecommendationCatalog,
+  updateAdminRecommendationGuide
 } from "./admin-recommendations.ts";
 import { getAdminUser, listAdminUsers } from "./admin-users.ts";
 import { loginAdminWithPassword } from "./auth/admin-password.ts";
@@ -1198,6 +1200,24 @@ const server = createServer((request, response) => {
           200,
           adminRecommendationCatalogItemResponseSchema.parse(item)
         );
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "PATCH" && adminRecommendationCatalogMatch) {
+    void (async () => {
+      try {
+        const admin = await requireAdminUser(getBearerToken(request));
+        const parsed = updateAdminRecommendationGuideRequestSchema.safeParse(await readJsonBody(request));
+        if (!parsed.success) {
+          writeApiError(response, 400, "admin_recommendation_guide_invalid", "Vejledningskoblingen er ugyldig.");
+          return;
+        }
+        const item = await updateAdminRecommendationGuide(decodeURIComponent(adminRecommendationCatalogMatch[1]!), parsed.data, admin.userId);
+        writeJson(response, 200, adminRecommendationCatalogItemResponseSchema.parse(item));
       } catch (error) {
         writeUnknownApiError(response, error);
       }

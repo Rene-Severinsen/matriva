@@ -116,6 +116,16 @@ function mapCatalogItem(row: Record<string, any>) {
   return {
     catalogKey: row.catalog_key,
     catalogVersion: row.catalog_version,
+    guideTemplateId: row.guide_template_id,
+    guideVersionId: row.guide_version_id,
+    guideLinkAudit: row.guide_link_saved_at
+      ? {
+          action: row.guide_link_action,
+          savedAt: row.guide_link_saved_at.toISOString(),
+          savedByUserId: row.guide_link_saved_by_user_id,
+          savedByLabel: row.guide_link_saved_by_label
+        }
+      : null,
     title: row.title,
     active: row.active,
     priority: row.priority,
@@ -139,6 +149,30 @@ const catalogStatsSql = `
     select
       mci.catalog_key,
       mci.catalog_version,
+      mci.guide_template_id,
+      mci.guide_version_id,
+      (select l.action
+       from maintenance_guide_link_audit_log l
+       where l.catalog_item_id = mci.id
+       order by l.created_at desc, l.id desc
+       limit 1) as guide_link_action,
+      (select l.created_at
+       from maintenance_guide_link_audit_log l
+       where l.catalog_item_id = mci.id
+       order by l.created_at desc, l.id desc
+       limit 1) as guide_link_saved_at,
+      (select l.actor_user_id
+       from maintenance_guide_link_audit_log l
+       where l.catalog_item_id = mci.id
+       order by l.created_at desc, l.id desc
+       limit 1) as guide_link_saved_by_user_id,
+      (select coalesce(up.display_name, u.email)
+       from maintenance_guide_link_audit_log l
+       left join users u on u.id = l.actor_user_id
+       left join user_profiles up on up.user_id = l.actor_user_id
+       where l.catalog_item_id = mci.id
+       order by l.created_at desc, l.id desc
+       limit 1) as guide_link_saved_by_label,
       mci.title,
       mci.short_description,
       mci.season,
@@ -292,4 +326,81 @@ export async function getAdminRecommendationCatalogItem(
     },
     generatedAt: new Date().toISOString()
   });
+}
+
+export async function updateAdminRecommendationGuide(
+  catalogKey: string,
+  input: { guideTemplateId: string | null; guideVersionId: string | null },
+  actorUserId: string
+): Promise<AdminRecommendationCatalogItemResponse> {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const catalog = await client.query<{
+      id: string;
+      catalog_version: string;
+    }>(
+      `select id, catalog_version from maintenance_catalog_items
+       where catalog_key = $1
+       order by is_active desc, updated_at desc, catalog_version desc
+       limit 1 for update`,
+      [catalogKey]
+    );
+    const item = catalog.rows[0];
+    if (!item) throw new ApiError(404, "admin_recommendation_catalog_not_found", "Recommendation catalog item was not found.");
+
+    if (input.guideTemplateId && input.guideVersionId) {
+      const guide = await client.query(
+        `select 1 from guide_versions
+         where id = $1 and guide_template_id = $2 and publication_status in ('draft', 'published')`,
+        [input.guideVersionId, input.guideTemplateId]
+      );
+      if (guide.rowCount !== 1) {
+        throw new ApiError(400, "admin_recommendation_guide_invalid", "Vælg en aktiv kladde eller en udgivet vejledning.");
+      }
+    }
+
+    await client.query(
+      `update maintenance_catalog_items
+       set guide_template_id = $1, guide_version_id = $2, updated_at = now()
+       where id = $3`,
+      [input.guideTemplateId, input.guideVersionId, item.id]
+    );
+    await client.query(
+      `update maintenance_recommendations
+       set guide_template_id = $1, guide_version_id = $2, updated_at = now()
+       where catalog_key = $3 and catalog_version = $4`,
+      [input.guideTemplateId, input.guideVersionId, catalogKey, item.catalog_version]
+    );
+    await client.query(
+      `update maintenance_tasks mt
+       set guide_template_id = $1, guide_version_id = $2, updated_at = now()
+       where mt.recommendation_id in (
+         select id from maintenance_recommendations
+         where catalog_key = $3 and catalog_version = $4
+       )`,
+      [input.guideTemplateId, input.guideVersionId, catalogKey, item.catalog_version]
+    );
+    await client.query(
+      `insert into maintenance_guide_link_audit_log
+        (catalog_item_id, catalog_key, catalog_version, guide_template_id, guide_version_id, action, actor_user_id)
+       values ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        item.id,
+        catalogKey,
+        item.catalog_version,
+        input.guideTemplateId,
+        input.guideVersionId,
+        input.guideTemplateId ? "linked" : "unlinked",
+        actorUserId
+      ]
+    );
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+  return getAdminRecommendationCatalogItem(catalogKey);
 }

@@ -758,6 +758,14 @@ export type AdminRecommendationActiveFilter = z.infer<
 export const adminRecommendationCatalogItemSchema = z.object({
   catalogKey: z.string().min(1),
   catalogVersion: z.string().min(1),
+  guideTemplateId: guideTemplateIdSchema.nullable(),
+  guideVersionId: guideVersionIdSchema.nullable(),
+  guideLinkAudit: z.object({
+    action: z.enum(["linked", "unlinked"]),
+    savedAt: z.string().datetime(),
+    savedByUserId: userIdSchema.nullable(),
+    savedByLabel: z.string().min(1).nullable()
+  }).nullable(),
   title: z.string().min(1),
   active: z.boolean(),
   priority: adminRecommendationPrioritySchema,
@@ -820,6 +828,23 @@ export const adminRecommendationCatalogItemResponseSchema = z.object({
 
 export type AdminRecommendationCatalogItemResponse = z.infer<
   typeof adminRecommendationCatalogItemResponseSchema
+>;
+
+export const updateAdminRecommendationGuideRequestSchema = z.object({
+  guideTemplateId: guideTemplateIdSchema.nullable(),
+  guideVersionId: guideVersionIdSchema.nullable()
+}).superRefine((input, context) => {
+  if (Boolean(input.guideTemplateId) !== Boolean(input.guideVersionId)) {
+    context.addIssue({
+      code: "custom",
+      path: ["guideVersionId"],
+      message: "Guide template and version must be supplied together."
+    });
+  }
+});
+
+export type UpdateAdminRecommendationGuideRequest = z.infer<
+  typeof updateAdminRecommendationGuideRequestSchema
 >;
 
 export const updateProfileRequestSchema = z.object({
@@ -1257,6 +1282,7 @@ export type GuideAuditEntry = z.infer<typeof guideAuditEntrySchema>;
 
 export const adminGuideListItemSchema = z.object({
   id: guideTemplateIdSchema,
+  versionId: guideVersionIdSchema,
   key: z.string().min(1),
   title: z.string().min(1),
   version: z.number().int().positive(),

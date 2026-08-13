@@ -140,6 +140,13 @@ button:disabled {
 .guide-status-control p { color: #627068; margin: 0; }
 .audit-list { display: grid; gap: 10px; }
 .audit-row { align-items: center; background: #f4f7f3; border-radius: 6px; display: grid; gap: 10px; grid-template-columns: 1.2fr 1.2fr 1fr 1.5fr; padding: 12px; }
+.recommendation-guide-panel { margin-top: 16px; }
+.recommendation-guide-form { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; }
+.recommendation-guide-form select { flex: 1; max-width: 560px; }
+.recommendation-guide-saved { background: #eaf4ee; border: 1px solid #c5dfcf; border-radius: 6px; display: grid; gap: 2px; min-width: 240px; padding: 9px 12px; }
+.recommendation-guide-saved span { color: #527061; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+.recommendation-guide-saved strong { color: #17613a; font-size: 14px; }
+.recommendation-guide-saved small { color: #527061; font-size: 12px; }
 .status-badge.status-draft { background: #fff3d7; color: #8b5c00; }
 .status-badge.status-published { background: #e3f2e9; color: #17613a; }
 

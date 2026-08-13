@@ -8,6 +8,7 @@ import type {
   AdminHousesResponse,
   AdminRecommendationCatalogItemResponse,
   AdminRecommendationCatalogResponse,
+  AdminGuidesResponse,
   AdminUserResponse,
   AdminUserEntitlementResponse,
   AdminUsersResponse,
@@ -439,9 +440,53 @@ function DetailContent({ data, client, onAuthorizationError, onOpenDetail }: { d
     ]} extra={[...house.members.map((member) => <button type="button" key={member.userId} onClick={() => onOpenDetail("users", member.userId)}>{member.displayName ?? member.email} · {member.role} · {member.status}</button>), ...house.invitations.map((invitation) => `Invitation: ${invitation.email} · ${invitation.status}`), ...house.claims.map((claim) => <button type="button" key={claim.id} onClick={() => onOpenDetail("claims", claim.id)}>Adgangskrav: {claim.claimType} · {claim.status}</button>), ...house.bbr.warnings.map((warning) => `${warning.code}: ${warning.message}`)]} />;
   }
   const item = data.item;
-  return <DetailGrid title={item.title} subtitle={item.catalogKey} rows={[
-    ["Version", item.catalogVersion], ["Aktiv", item.active ? "Ja" : "Nej"], ["Priority", item.priority], ["Recurrence", item.recurrenceInterval], ["Season", item.season], ["Instances", numberFormatter.format(item.instanceCount)], ["Pending", numberFormatter.format(item.statusDistribution.pending)], ["Accepted", numberFormatter.format(item.statusDistribution.accepted)], ["Dismissed", numberFormatter.format(item.statusDistribution.dismissed)], ["Accepted tasks", numberFormatter.format(item.acceptedTaskCount)], ["Permanent hides", numberFormatter.format(item.permanentHideCount)], ["Acceptance rate", percentFormatter.format(item.acceptanceRate)], ["Accepted over time", "Estimeret via updated_at"], ["not_now", "Ikke tilgængelig som præcis metric"]
-  ]} extra={[item.shortDescription]} />;
+  return <><DetailGrid title={item.title} subtitle={item.catalogKey} rows={[
+    ["Version", item.catalogVersion], ["Aktiv", item.active ? "Ja" : "Nej"], ["Prioritet", item.priority], ["Gentagelse", item.recurrenceInterval], ["Sæson", item.season], ["Forekomster", numberFormatter.format(item.instanceCount)], ["Afventer", numberFormatter.format(item.statusDistribution.pending)], ["Accepteret", numberFormatter.format(item.acceptedCount)], ["Afvist", numberFormatter.format(item.statusDistribution.dismissed)], ["Accepterede opgaver", numberFormatter.format(item.acceptedTaskCount)], ["Permanent skjult", numberFormatter.format(item.permanentHideCount)], ["Accept-rate", percentFormatter.format(item.acceptanceRate)]
+  ]} extra={[item.shortDescription]} /><RecommendationGuidePanel client={client} item={item} onAuthorizationError={onAuthorizationError} /></>;
+}
+
+function RecommendationGuidePanel({ client, item, onAuthorizationError }: { client: MatrivaAdminApiClient; item: AdminRecommendationCatalogItemResponse["item"]; onAuthorizationError: (error: unknown) => Promise<boolean> }) {
+  const [guides, setGuides] = useState<AdminGuidesResponse | null>(null);
+  const [selectedGuideVersionId, setSelectedGuideVersionId] = useState(item.guideVersionId ?? "");
+  const [savedGuideVersionId, setSavedGuideVersionId] = useState(item.guideVersionId ?? "");
+  const [savedGuideLinkAudit, setSavedGuideLinkAudit] = useState(item.guideLinkAudit);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    void client.getAdminGuides({ status: "all" }).then(setGuides).catch(async (error) => {
+      if (!(await onAuthorizationError(error))) setMessage(errorMessage(error, "Vejledninger kunne ikke indlæses."));
+    });
+  }, [client, onAuthorizationError]);
+
+  async function save() {
+    const guide = guides?.guides.find((candidate) => candidate.versionId === selectedGuideVersionId) ?? null;
+    setSaving(true);
+    setMessage(null);
+    try {
+      const updated = await client.updateAdminRecommendationGuide(item.catalogKey, {
+        guideTemplateId: guide?.id ?? null,
+        guideVersionId: guide?.versionId ?? null
+      });
+      setSavedGuideVersionId(updated.item.guideVersionId ?? "");
+      setSavedGuideLinkAudit(updated.item.guideLinkAudit);
+      if (selectedGuideVersionId && !updated.item.guideVersionId) {
+        setMessage("Vejledningen kunne ikke kobles. Vælg en aktiv kladde eller udgivet version.");
+      } else {
+        setMessage("Vejledningen er koblet til anbefalingen.");
+      }
+    } catch (error) {
+      if (!(await onAuthorizationError(error))) setMessage(errorMessage(error, "Koblingen kunne ikke gemmes."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const savedGuide = guides?.guides.find((guide) => guide.versionId === savedGuideVersionId) ?? null;
+  const guideLabel = savedGuide ? `${savedGuide.title} · v${savedGuide.version} · ${savedGuide.status === "published" ? "Udgivet" : savedGuide.status === "draft" ? "Kladde" : "Arkiveret"}` : "Ingen vejledning";
+  const guideAuditLabel = savedGuideLinkAudit ? `${formatDate(savedGuideLinkAudit.savedAt)} · ${savedGuideLinkAudit.savedByLabel ?? "Bruger ikke registreret"}` : "Ikke registreret";
+
+  return <section className="detail-panel recommendation-guide-panel"><header><div><h3>Vejledning til anbefaling</h3><p>Kobl vejledningen til anbefalingen, mens den er en kladde. Koblingen skal være på plads, før vejledningen kan udgives.</p></div></header><div className="recommendation-guide-form"><select aria-label="Vælg vejledning" disabled={saving || !guides} value={selectedGuideVersionId} onChange={(event) => setSelectedGuideVersionId(event.target.value)}><option value="">Vælg vejledning...</option>{guides?.guides.map((guide) => <option key={guide.versionId} value={guide.versionId}>{guide.title} · v{guide.version} · {guide.status === "published" ? "Udgivet" : guide.status === "draft" ? "Kladde" : "Arkiveret"}</option>)}</select><button className="primary-action" disabled={saving || !guides} onClick={() => void save()} type="button">{saving ? "Gemmer..." : "Gem kobling"}</button><div className="recommendation-guide-saved"><span>Senest gemt</span><strong>{guideLabel}</strong><small>{guideAuditLabel}</small></div></div>{message ? <p className="state-message">{message}</p> : null}</section>;
 }
 
 function UserEntitlementPanel({ client, userId, onAuthorizationError }: { client: MatrivaAdminApiClient; userId: string; onAuthorizationError: (error: unknown) => Promise<boolean> }) {

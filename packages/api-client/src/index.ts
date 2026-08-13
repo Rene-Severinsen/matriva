@@ -12,6 +12,7 @@ import {
   adminHouseInvitationsResponseSchema,
   adminRecommendationCatalogItemResponseSchema,
   adminRecommendationCatalogResponseSchema,
+  updateAdminRecommendationGuideRequestSchema,
   adminGuideResponseSchema,
   adminGuidesResponseSchema,
   guideResponseSchema,
@@ -70,6 +71,7 @@ import {
   type AdminRecommendationActiveFilter,
   type AdminRecommendationCatalogItemResponse,
   type AdminRecommendationCatalogResponse,
+  type UpdateAdminRecommendationGuideRequest,
   type AdminGuideResponse,
   type AdminGuidesResponse,
   type AdminRecommendationCatalogSort,
@@ -290,6 +292,10 @@ export type MatrivaApiClient = {
     catalogKey: string,
     input?: { signal?: AbortSignal }
   ) => Promise<AdminRecommendationCatalogItemResponse>;
+  updateAdminRecommendationGuide: (
+    catalogKey: string,
+    input: UpdateAdminRecommendationGuideRequest
+  ) => Promise<AdminRecommendationCatalogItemResponse>;
   getAdminGuides: (input?: { status?: "all" | "draft" | "published"; signal?: AbortSignal }) => Promise<AdminGuidesResponse>;
   getAdminGuide: (guideId: string, input?: { signal?: AbortSignal }) => Promise<AdminGuideResponse>;
   updateAdminGuideStatus: (guideId: string, input: GuideStatusUpdateRequest) => Promise<AdminGuideResponse>;
@@ -453,6 +459,7 @@ export type MatrivaAdminApiClient = Pick<
   | "resolveAdminHouseClaim"
   | "getAdminRecommendationCatalog"
   | "getAdminRecommendationCatalogItem"
+  | "updateAdminRecommendationGuide"
   | "getAdminGuides"
   | "getAdminGuide"
   | "updateAdminGuideStatus"
@@ -675,6 +682,15 @@ export function createMatrivaAdminApiClient(
           "Could not load admin recommendation catalog item."
         )
       );
+    },
+    async updateAdminRecommendationGuide(catalogKey, input) {
+      updateAdminRecommendationGuideRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/recommendations/catalog/${encodeURIComponent(catalogKey)}`, {
+        method: "PATCH",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify(input)
+      });
+      return adminRecommendationCatalogItemResponseSchema.parse(await parseApiResponse(response, "Could not update recommendation guide."));
     },
     async getAdminGuides(input = {}) {
       const status = input.status ?? "all";
@@ -1150,6 +1166,15 @@ export function createMatrivaApiClient(
       guideStatusUpdateRequestSchema.parse(input);
       const response = await fetcher(`${normalizedBaseUrl}/v1/admin/guides/${encodeURIComponent(guideId)}`, { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) });
       return adminGuideResponseSchema.parse(await parseApiResponse(response, "Could not update guide status."));
+    },
+    async updateAdminRecommendationGuide(catalogKey, input) {
+      updateAdminRecommendationGuideRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/recommendations/catalog/${encodeURIComponent(catalogKey)}`, {
+        method: "PATCH",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify(input)
+      });
+      return adminRecommendationCatalogItemResponseSchema.parse(await parseApiResponse(response, "Could not update recommendation guide."));
     },
     async listGuides(input = {}) {
       const preview = input.previewDrafts ? { "x-matriva-guide-preview": "true" } : {};

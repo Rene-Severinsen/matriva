@@ -207,8 +207,10 @@ The preview script is dry-run by default. Write mode requires the explicit
 `MATRIVA_CONFIRM_DEV_FIXTURE_CLEANUP=true` environment variable and must only
 be used after reviewing the displayed counts.
 
-Admin writes, role management, audit logging, period-over-period comparisons,
-exports, and deployment are not implemented yet.
+Admin writes, role management, period-over-period comparisons, and exports are
+not implemented yet. The canonical QA deployment procedure is documented in
+[infra/hetzner/README.md](./infra/hetzner/README.md) and exposed as
+`npm run deploy:qa`.
 
 `apps/mobile/.env.example` documents the local default:
 

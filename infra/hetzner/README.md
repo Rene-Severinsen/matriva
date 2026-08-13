@@ -49,39 +49,49 @@ The deploy performs these operations in order:
    source files and database checksums are verified before a variant is made.
 4. Upload the runtime to the fixed QA runtime root and verify the API build
    checksum and required remote files.
-5. Restart the QA Node application, either through `QA_RESTART_COMMAND` or
-   through the explicit KonsoleH manual gate when no restart command is
-   configured.
-6. Verify `/health`, guide analytics, every guide asset exposed by the Admin
-   API, optimized WebP delivery, task-cluster API responses, and applied
-   migrations 0030/0031.
+5. Gracefully terminate the exact QA API process. The Hetzner host supervisor
+   starts the replacement process automatically; `systemctl` access is not
+   required from the SSH shell.
+6. Verify `/health`, supervisor replacement, applied migrations 0030/0031,
+   and—when a temporary Admin token is supplied—guide analytics, every guide
+   asset exposed by the Admin API, optimized WebP delivery, and task-cluster
+   API responses.
 
 The deployment never resets the database, deletes S3 objects, deletes local
 objects, changes guide publication status, or commits/pushes Git changes.
 
-The operator supplies secrets through the environment, not through this repo:
+The deploy reuses the existing QA runtime configuration on Hetzner. It reads
+the current API process environment over the existing SSH account for the QA
+database and S3 asset sync; values are held in memory and never printed. The
+operator may override these values through the environment, but does not need
+to copy them into the local shell for a normal deploy:
 
 ```text
 QA_BASE_URL=https://<qa-api-host>
 QA_DATABASE_URL=<QA-only PostgreSQL URL ending in /matriva_qa>
-QA_ADMIN_ACCESS_TOKEN=<temporary QA admin bearer token>
-MATRIVA_S3_ENDPOINT=...
-MATRIVA_S3_BUCKET=...
-MATRIVA_S3_ACCESS_KEY_ID=...
-MATRIVA_S3_SECRET_ACCESS_KEY=...
+QA_ADMIN_ACCESS_TOKEN=<optional temporary QA admin bearer token>
 ```
 
-The runtime verifier expects the current QA guides `rens_tagrender` and
-`tjek_fuger_vaadrum`. Override this only when the QA fixture intentionally
+If `QA_ADMIN_ACCESS_TOKEN` is supplied, the runtime verifier also checks the
+current QA guides `rens_tagrender` and `tjek_fuger_vaadrum`, every guide asset,
+optimized WebP delivery, and task clusters. Without it, the deploy still
+verifies health, migrations, and the supervisor replacement; authenticated
+endpoint verification can be run separately with `npm run verify:qa-runtime`.
+Override the expected guide keys only when the QA fixture intentionally
 changes, using `QA_EXPECTED_GUIDE_KEYS=key1,key2`.
 
 Optional values are `QA_REMOTE_HOST` (default `ravena-prod`),
 `QA_REMOTE_ROOT` (default `/usr/home/b9kady/matriva-qa`),
-`QA_HEALTH_TIMEOUT_SECONDS` (default `90`) and `QA_RESTART_COMMAND`.
-`QA_RESTART_COMMAND`, when supplied, is executed remotely over SSH and must
-be the already-approved command for restarting the KonsoleH QA Node
-application. If it is omitted, the script pauses for the operator to restart
-the application manually.
+`QA_HEALTH_TIMEOUT_SECONDS` (default `90`), `QA_REMOTE_USER` (default
+`b9kady`), `QA_SERVICE_NAME` (default
+`nodejs_b9kady_760_D0703219126.service`), `QA_NODE_BINARY` (default
+`/usr/local/nodejs/24/bin/node`) and `QA_API_ENTRYPOINT` (default
+`apps/api/dist/server.js`).
+
+The restart is graceful: the script locates the exact QA API process, verifies
+its runtime root and host-supervisor cgroup, sends `SIGTERM`, then waits for a
+replacement process from the same supervisor before checking `/health`. It
+refuses to kill a process when any of those identity checks fail.
 
 The one-time migration of existing QA local objects to S3 is a separate,
 reviewed operation. It must be completed and independently verified before

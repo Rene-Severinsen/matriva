@@ -24,6 +24,12 @@ import {
   adminRecommendationCatalogItemResponseSchema,
   adminRecommendationCatalogResponseSchema,
   updateAdminRecommendationGuideRequestSchema,
+  adminTaskClusterResponseSchema,
+  adminTaskClustersResponseSchema,
+  correctAdminTaskClusterTaskRequestSchema,
+  mergeAdminTaskClustersRequestSchema,
+  splitAdminTaskClusterRequestSchema,
+  updateAdminTaskClusterRequestSchema,
   adminGuideResponseSchema,
   adminGuidesResponseSchema,
   guideAuditResponseSchema,
@@ -104,6 +110,14 @@ import {
 import { requireAdminUser, toAdminBootstrapResponse } from "./admin.ts";
 import { getAdminDashboard } from "./admin-dashboard.ts";
 import { getAdminHouse, listAdminHouses } from "./admin-houses.ts";
+import {
+  correctAdminTaskClusterTask,
+  getAdminTaskCluster,
+  listAdminTaskClusters,
+  mergeAdminTaskClusters,
+  splitAdminTaskCluster,
+  updateAdminTaskCluster
+} from "./admin-task-clusters.ts";
 import {
   getAdminRecommendationCatalogItem,
   listAdminRecommendationCatalog,
@@ -978,6 +992,115 @@ const server = createServer((request, response) => {
         const url = new URL(request.url ?? "/", `http://${host}:${port}`);
         const users = await listAdminUsers(url.searchParams);
         writeJson(response, 200, adminUsersResponseSchema.parse(users));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    (request.url === "/v1/admin/task-clusters" ||
+      request.url?.startsWith("/v1/admin/task-clusters?"))
+  ) {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        const url = new URL(request.url ?? "/", `http://${host}:${port}`);
+        const clusters = await listAdminTaskClusters(url.searchParams);
+        writeJson(response, 200, adminTaskClustersResponseSchema.parse(clusters));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const adminTaskClusterTaskMatch = /^\/v1\/admin\/task-clusters\/tasks\/([^/?]+)$/.exec(
+    (request.url ?? "").split("?")[0] ?? ""
+  );
+  if (request.method === "PATCH" && adminTaskClusterTaskMatch) {
+    void (async () => {
+      try {
+        const admin = await requireAdminUser(getBearerToken(request));
+        const parsed = correctAdminTaskClusterTaskRequestSchema.safeParse(await readJsonBody(request));
+        if (!parsed.success) {
+          writeApiError(response, 400, "admin_task_cluster_correction_invalid", "Klassifikationskorrektionen er ugyldig.");
+          return;
+        }
+        const result = await correctAdminTaskClusterTask(decodeURIComponent(adminTaskClusterTaskMatch[1]!), parsed.data.clusterId, admin.userId);
+        writeJson(response, 200, result);
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/v1/admin/task-clusters/merge") {
+    void (async () => {
+      try {
+        const admin = await requireAdminUser(getBearerToken(request));
+        const parsed = mergeAdminTaskClustersRequestSchema.safeParse(await readJsonBody(request));
+        if (!parsed.success) {
+          writeApiError(response, 400, "admin_task_cluster_merge_invalid", "Merge-inputtet er ugyldigt.");
+          return;
+        }
+        const result = await mergeAdminTaskClusters(parsed.data.sourceClusterIds, parsed.data.targetClusterId, admin.userId);
+        writeJson(response, 200, adminTaskClusterResponseSchema.parse(result));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/v1/admin/task-clusters/split") {
+    void (async () => {
+      try {
+        const admin = await requireAdminUser(getBearerToken(request));
+        const parsed = splitAdminTaskClusterRequestSchema.safeParse(await readJsonBody(request));
+        if (!parsed.success) {
+          writeApiError(response, 400, "admin_task_cluster_split_invalid", "Split-inputtet er ugyldigt.");
+          return;
+        }
+        const result = await splitAdminTaskCluster(parsed.data.clusterId, parsed.data.taskIds, parsed.data.taskType, admin.userId);
+        writeJson(response, 200, adminTaskClusterResponseSchema.parse(result));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const adminTaskClusterMatch = /^\/v1\/admin\/task-clusters\/([^/?]+)$/.exec(
+    (request.url ?? "").split("?")[0] ?? ""
+  );
+  if (request.method === "GET" && adminTaskClusterMatch) {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        const result = await getAdminTaskCluster(decodeURIComponent(adminTaskClusterMatch[1]!));
+        writeJson(response, 200, adminTaskClusterResponseSchema.parse(result));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "PATCH" && adminTaskClusterMatch) {
+    void (async () => {
+      try {
+        const admin = await requireAdminUser(getBearerToken(request));
+        const parsed = updateAdminTaskClusterRequestSchema.safeParse(await readJsonBody(request));
+        if (!parsed.success) {
+          writeApiError(response, 400, "admin_task_cluster_update_invalid", "Clusterændringen er ugyldig.");
+          return;
+        }
+        const result = await updateAdminTaskCluster(decodeURIComponent(adminTaskClusterMatch[1]!), parsed.data, admin.userId);
+        writeJson(response, 200, adminTaskClusterResponseSchema.parse(result));
       } catch (error) {
         writeUnknownApiError(response, error);
       }

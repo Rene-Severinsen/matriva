@@ -10,6 +10,7 @@ import { AdminDataPage } from "./pages/AdminDataPage.js";
 import { DashboardPage } from "./pages/DashboardPage.js";
 import { EntitlementsPage } from "./pages/EntitlementsPage.js";
 import { GuidesPage } from "./pages/GuidesPage.js";
+import { TaskClustersPage } from "./pages/TaskClustersPage.js";
 import { Icon, type IconName } from "./components/Icon.js";
 import {
   adminEnvironmentOptions,
@@ -29,7 +30,7 @@ type AuthState =
   | { status: "unauthorized"; message: string }
   | { status: "error"; message: string };
 
-type ViewKey = "dashboard" | "users" | "houses" | "claims" | "recommendations" | "guides" | "settings";
+type ViewKey = "dashboard" | "users" | "houses" | "claims" | "recommendations" | "task-clusters" | "guides" | "settings";
 type DetailRoute =
   | { view: "users"; id: string }
   | { view: "houses"; id: string }
@@ -52,6 +53,7 @@ const navigation: Array<{
     label: "Anbefalinger",
     icon: "recommendations"
   },
+  { key: "task-clusters", label: "Brugernes opgavetyper", icon: "activity" },
   { key: "guides", label: "Vejledninger", icon: "guides" },
   { key: "settings", label: "Planer og adgang", icon: "settings" }
 ];
@@ -62,6 +64,7 @@ const routePaths: Record<ViewKey, string> = {
   houses: "/admin/houses",
   claims: "/admin/claims",
   recommendations: "/admin/recommendations",
+  "task-clusters": "/admin/task-clusters",
   guides: "/admin/guides",
   settings: "/admin/settings"
 };
@@ -103,6 +106,10 @@ function routeFromLocation(): { view: ViewKey; detail: DetailRoute | null } {
         ? { view: "recommendations", id: decodeURIComponent(parts[2]) }
         : null
     };
+  }
+
+  if (parts[1] === "task-clusters") {
+    return { view: "task-clusters", detail: null };
   }
 
   if (parts[1] === "guides") {
@@ -495,6 +502,8 @@ function AdminShell({
             />
           ) : activeView === "settings" ? (
             <EntitlementsPage client={client} onAuthorizationError={onAuthorizationError} />
+          ) : activeView === "task-clusters" ? (
+            <TaskClustersPage client={client} onAuthorizationError={onAuthorizationError} />
           ) : (
             <FullPageState
               title="Kommer senere"

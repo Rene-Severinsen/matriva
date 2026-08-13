@@ -352,6 +352,102 @@ export type AdminDashboardResponse = z.infer<
 export const adminListCountSchema = z.number().int().nonnegative();
 export const adminRatioSchema = z.number().min(0).max(1);
 
+export const taskClusterIdSchema = z
+  .string()
+  .regex(/^tcluster_[a-z0-9][a-z0-9_-]{7,63}$/);
+export const taskClusterStatusSchema = z.enum([
+  "covered",
+  "candidate",
+  "under_review",
+  "ignored",
+  "adopted"
+]);
+export type TaskClusterStatus = z.infer<typeof taskClusterStatusSchema>;
+
+export const adminTaskClusterTaskSchema = z.object({
+  id: taskIdSchema,
+  title: z.string().min(1),
+  description: z.string().nullable(),
+  userId: userIdSchema,
+  houseId: houseIdSchema,
+  createdAt: z.string().datetime(),
+  season: z.enum(["spring", "summer", "autumn", "winter", "all_year"]).nullable(),
+  classificationMethod: z.enum(["normalization", "known_match", "semantic", "manual"]),
+  confidence: z.number().min(0).max(1)
+});
+
+export const adminTaskClusterItemSchema = z.object({
+  id: taskClusterIdSchema,
+  clusterKey: z.string().min(1),
+  taskType: z.string().min(1),
+  status: taskClusterStatusSchema,
+  uniqueUserCount: adminListCountSchema,
+  taskCount: adminListCountSchema,
+  trend: z.array(adminDashboardSeriesPointSchema),
+  representativeFormulations: z.array(z.string().min(1)),
+  coverage: z.object({
+    covered: z.boolean(),
+    catalogKey: z.string().min(1).nullable(),
+    catalogVersion: z.string().min(1).nullable(),
+    guideTemplateId: guideTemplateIdSchema.nullable(),
+    guideVersionId: guideVersionIdSchema.nullable()
+  }),
+  seasonDistribution: z.object({
+    spring: adminListCountSchema,
+    summer: adminListCountSchema,
+    autumn: adminListCountSchema,
+    winter: adminListCountSchema,
+    all_year: adminListCountSchema,
+    unknown: adminListCountSchema
+  }),
+  housingAttributes: z.object({
+    houseCount: adminListCountSchema,
+    bfeCoverage: adminListCountSchema,
+    constructionYearMin: z.number().int().nullable(),
+    constructionYearMax: z.number().int().nullable(),
+    averageResidentialAreaM2: z.number().int().nonnegative().nullable()
+  }),
+  tasks: z.array(adminTaskClusterTaskSchema),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+export type AdminTaskClusterItem = z.infer<typeof adminTaskClusterItemSchema>;
+
+export const adminTaskClustersResponseSchema = z.object({
+  items: z.array(adminTaskClusterItemSchema),
+  unclassifiedTasks: z.array(adminTaskClusterTaskSchema),
+  totalUnclassified: adminListCountSchema,
+  generatedAt: z.string().datetime()
+});
+export type AdminTaskClustersResponse = z.infer<typeof adminTaskClustersResponseSchema>;
+export const adminTaskClusterResponseSchema = z.object({
+  item: adminTaskClusterItemSchema,
+  generatedAt: z.string().datetime()
+});
+export type AdminTaskClusterResponse = z.infer<typeof adminTaskClusterResponseSchema>;
+
+export const updateAdminTaskClusterRequestSchema = z.object({
+  taskType: z.string().trim().min(1).max(160).optional(),
+  status: taskClusterStatusSchema.optional(),
+  catalogKey: z.string().trim().min(1).max(120).nullable().optional()
+});
+export type UpdateAdminTaskClusterRequest = z.infer<typeof updateAdminTaskClusterRequestSchema>;
+export const correctAdminTaskClusterTaskRequestSchema = z.object({
+  clusterId: taskClusterIdSchema.nullable()
+});
+export type CorrectAdminTaskClusterTaskRequest = z.infer<typeof correctAdminTaskClusterTaskRequestSchema>;
+export const mergeAdminTaskClustersRequestSchema = z.object({
+  sourceClusterIds: z.array(taskClusterIdSchema).min(1),
+  targetClusterId: taskClusterIdSchema
+});
+export type MergeAdminTaskClustersRequest = z.infer<typeof mergeAdminTaskClustersRequestSchema>;
+export const splitAdminTaskClusterRequestSchema = z.object({
+  clusterId: taskClusterIdSchema,
+  taskIds: z.array(taskIdSchema).min(1),
+  taskType: z.string().trim().min(1).max(160).optional()
+});
+export type SplitAdminTaskClusterRequest = z.infer<typeof splitAdminTaskClusterRequestSchema>;
+
 export const adminPaginationSchema = z.object({
   page: z.number().int().positive(),
   pageSize: z.number().int().positive().max(100),

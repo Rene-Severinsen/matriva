@@ -13,6 +13,12 @@ import {
   adminRecommendationCatalogItemResponseSchema,
   adminRecommendationCatalogResponseSchema,
   updateAdminRecommendationGuideRequestSchema,
+  adminTaskClusterResponseSchema,
+  adminTaskClustersResponseSchema,
+  correctAdminTaskClusterTaskRequestSchema,
+  mergeAdminTaskClustersRequestSchema,
+  splitAdminTaskClusterRequestSchema,
+  updateAdminTaskClusterRequestSchema,
   adminGuideResponseSchema,
   adminGuidesResponseSchema,
   guideResponseSchema,
@@ -76,6 +82,13 @@ import {
   type AdminGuideResponse,
   type AdminGuidesResponse,
   type AdminRecommendationCatalogSort,
+  type AdminTaskClusterResponse,
+  type AdminTaskClustersResponse,
+  type CorrectAdminTaskClusterTaskRequest,
+  type MergeAdminTaskClustersRequest,
+  type SplitAdminTaskClusterRequest,
+  type TaskClusterStatus,
+  type UpdateAdminTaskClusterRequest,
   type AdminPasswordLoginRequest,
   type AdminSortOrder,
   type AdminUserResponse,
@@ -294,6 +307,12 @@ export type MatrivaApiClient = {
     catalogKey: string,
     input?: { signal?: AbortSignal }
   ) => Promise<AdminRecommendationCatalogItemResponse>;
+  getAdminTaskClusters: (input?: { status?: TaskClusterStatus | "all"; query?: string; signal?: AbortSignal }) => Promise<AdminTaskClustersResponse>;
+  getAdminTaskCluster: (clusterId: string, input?: { signal?: AbortSignal }) => Promise<AdminTaskClusterResponse>;
+  updateAdminTaskCluster: (clusterId: string, input: UpdateAdminTaskClusterRequest) => Promise<AdminTaskClusterResponse>;
+  correctAdminTaskClusterTask: (taskId: string, input: CorrectAdminTaskClusterTaskRequest) => Promise<AdminTaskClustersResponse | AdminTaskClusterResponse>;
+  mergeAdminTaskClusters: (input: MergeAdminTaskClustersRequest) => Promise<AdminTaskClusterResponse>;
+  splitAdminTaskCluster: (input: SplitAdminTaskClusterRequest) => Promise<AdminTaskClusterResponse>;
   updateAdminRecommendationGuide: (
     catalogKey: string,
     input: UpdateAdminRecommendationGuideRequest
@@ -462,6 +481,12 @@ export type MatrivaAdminApiClient = Pick<
   | "resolveAdminHouseClaim"
   | "getAdminRecommendationCatalog"
   | "getAdminRecommendationCatalogItem"
+  | "getAdminTaskClusters"
+  | "getAdminTaskCluster"
+  | "updateAdminTaskCluster"
+  | "correctAdminTaskClusterTask"
+  | "mergeAdminTaskClusters"
+  | "splitAdminTaskCluster"
   | "updateAdminRecommendationGuide"
   | "getAdminGuides"
   | "getAdminGuide"
@@ -703,6 +728,35 @@ export function createMatrivaAdminApiClient(
     async getAdminGuide(guideId, input = {}) {
       const response = await fetcher(`${normalizedBaseUrl}/v1/admin/guides/${encodeURIComponent(guideId)}`, { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) });
       return adminGuideResponseSchema.parse(await parseApiResponse(response, "Could not load admin guide."));
+    },
+    async getAdminTaskClusters(input = {}) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/task-clusters${adminListSearchParams(input)}`, { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) });
+      return adminTaskClustersResponseSchema.parse(await parseApiResponse(response, "Could not load admin task clusters."));
+    },
+    async getAdminTaskCluster(clusterId, input = {}) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/task-clusters/${encodeURIComponent(clusterId)}`, { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) });
+      return adminTaskClusterResponseSchema.parse(await parseApiResponse(response, "Could not load admin task cluster."));
+    },
+    async updateAdminTaskCluster(clusterId, input) {
+      updateAdminTaskClusterRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/task-clusters/${encodeURIComponent(clusterId)}`, { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) });
+      return adminTaskClusterResponseSchema.parse(await parseApiResponse(response, "Could not update admin task cluster."));
+    },
+    async correctAdminTaskClusterTask(taskId, input) {
+      correctAdminTaskClusterTaskRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/task-clusters/tasks/${encodeURIComponent(taskId)}`, { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) });
+      const payload = await parseApiResponse(response, "Could not correct admin task classification.");
+      return "item" in payload ? adminTaskClusterResponseSchema.parse(payload) : adminTaskClustersResponseSchema.parse(payload);
+    },
+    async mergeAdminTaskClusters(input) {
+      mergeAdminTaskClustersRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/task-clusters/merge`, { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) });
+      return adminTaskClusterResponseSchema.parse(await parseApiResponse(response, "Could not merge admin task clusters."));
+    },
+    async splitAdminTaskCluster(input) {
+      splitAdminTaskClusterRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/task-clusters/split`, { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) });
+      return adminTaskClusterResponseSchema.parse(await parseApiResponse(response, "Could not split admin task cluster."));
     },
     async updateAdminGuideStatus(guideId, input) {
       guideStatusUpdateRequestSchema.parse(input);
@@ -1178,6 +1232,35 @@ export function createMatrivaApiClient(
         body: JSON.stringify(input)
       });
       return adminRecommendationCatalogItemResponseSchema.parse(await parseApiResponse(response, "Could not update recommendation guide."));
+    },
+    async getAdminTaskClusters(input = {}) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/task-clusters${adminListSearchParams(input)}`, { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) });
+      return adminTaskClustersResponseSchema.parse(await parseApiResponse(response, "Could not load admin task clusters."));
+    },
+    async getAdminTaskCluster(clusterId, input = {}) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/task-clusters/${encodeURIComponent(clusterId)}`, { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) });
+      return adminTaskClusterResponseSchema.parse(await parseApiResponse(response, "Could not load admin task cluster."));
+    },
+    async updateAdminTaskCluster(clusterId, input) {
+      updateAdminTaskClusterRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/task-clusters/${encodeURIComponent(clusterId)}`, { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) });
+      return adminTaskClusterResponseSchema.parse(await parseApiResponse(response, "Could not update admin task cluster."));
+    },
+    async correctAdminTaskClusterTask(taskId, input) {
+      correctAdminTaskClusterTaskRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/task-clusters/tasks/${encodeURIComponent(taskId)}`, { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) });
+      const payload = await parseApiResponse(response, "Could not correct admin task classification.");
+      return "item" in payload ? adminTaskClusterResponseSchema.parse(payload) : adminTaskClustersResponseSchema.parse(payload);
+    },
+    async mergeAdminTaskClusters(input) {
+      mergeAdminTaskClustersRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/task-clusters/merge`, { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) });
+      return adminTaskClusterResponseSchema.parse(await parseApiResponse(response, "Could not merge admin task clusters."));
+    },
+    async splitAdminTaskCluster(input) {
+      splitAdminTaskClusterRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/task-clusters/split`, { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) });
+      return adminTaskClusterResponseSchema.parse(await parseApiResponse(response, "Could not split admin task cluster."));
     },
     async listGuides(input = {}) {
       const preview = input.previewDrafts ? { "x-matriva-guide-preview": "true" } : {};

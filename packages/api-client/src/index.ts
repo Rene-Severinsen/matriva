@@ -17,6 +17,7 @@ import {
   adminGuidesResponseSchema,
   guideResponseSchema,
   guidesResponseSchema,
+  guideOpenRequestSchema,
   guideStatusUpdateRequestSchema,
   adminPasswordLoginRequestSchema,
   adminUserResponseSchema,
@@ -109,6 +110,7 @@ import {
   type HomeBootstrapResponse,
   type GuideResponse,
   type GuidesResponse,
+  type GuideOpenRequest,
   type GuideStatusUpdateRequest,
   type LogoutResponse,
   type MaintenanceTaskResponse,
@@ -301,6 +303,7 @@ export type MatrivaApiClient = {
   updateAdminGuideStatus: (guideId: string, input: GuideStatusUpdateRequest) => Promise<AdminGuideResponse>;
   listGuides: (input?: { previewDrafts?: boolean }) => Promise<GuidesResponse>;
   getGuide: (guideId: string, input?: { previewDraft?: boolean }) => Promise<GuideResponse>;
+  recordGuideOpen: (guideId: string, input: GuideOpenRequest) => Promise<void>;
   getGuideAsset: (assetKey: string) => Promise<string>;
   updateProfile: (input: UpdateProfileRequest) => Promise<UpdateProfileResponse>;
   updateMaintenanceSettings: (
@@ -1185,6 +1188,11 @@ export function createMatrivaApiClient(
       const preview = input.previewDraft ? { "x-matriva-guide-preview": "true" } : {};
       const response = await fetcher(`${normalizedBaseUrl}/v1/guides/${encodeURIComponent(guideId)}`, { headers: authHeaders(preview) });
       return guideResponseSchema.parse(await parseApiResponse(response, "Could not load guide."));
+    },
+    async recordGuideOpen(guideId, input) {
+      guideOpenRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/guides/${encodeURIComponent(guideId)}/open`, { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) });
+      await parseApiResponse(response, "Could not record guide open.");
     },
     async getGuideAsset(assetKey) {
       const response = await fetcher(`${normalizedBaseUrl}/v1/guides/assets/${encodeURIComponent(assetKey)}`, { headers: authHeaders({ "x-matriva-guide-preview": "true" }) });

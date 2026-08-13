@@ -518,7 +518,10 @@ export type AdminHousePublicDataStatusFilter = z.infer<
 export const adminHouseSortSchema = z.enum([
   "created_at",
   "address",
+  "bfe_number",
   "owner",
+  "active_user_count",
+  "open_claim_count",
   "public_data_status",
   "warning_count",
   "task_count",
@@ -734,6 +737,7 @@ export type AdminHouseInvitationsResponse = z.infer<typeof adminHouseInvitations
 
 export const adminRecommendationCatalogSortSchema = z.enum([
   "catalog_key",
+  "catalog_version",
   "title",
   "active",
   "priority",
@@ -1260,6 +1264,11 @@ export const guideStatusUpdateRequestSchema = z.object({
 });
 export type GuideStatusUpdateRequest = z.infer<typeof guideStatusUpdateRequestSchema>;
 
+export const guideOpenRequestSchema = z.object({
+  versionId: guideVersionIdSchema
+});
+export type GuideOpenRequest = z.infer<typeof guideOpenRequestSchema>;
+
 export const guideAuditActionSchema = z.enum([
   "guide_published",
   "guide_unpublished",
@@ -1285,6 +1294,8 @@ export const adminGuideListItemSchema = z.object({
   versionId: guideVersionIdSchema,
   key: z.string().min(1),
   title: z.string().min(1),
+  group: z.string().min(1).nullable(),
+  openCount: z.number().int().nonnegative(),
   version: z.number().int().positive(),
   locale: z.literal("da-DK"),
   status: guidePublicationStatusSchema,
@@ -1300,6 +1311,11 @@ export type AdminGuideListItem = z.infer<typeof adminGuideListItemSchema>;
 
 export const adminGuidesResponseSchema = z.object({
   guides: z.array(adminGuideListItemSchema),
+  groups: z.array(z.string().min(1)),
+  openHeatmap: z.array(z.object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    count: z.number().int().nonnegative()
+  })),
   filter: guideStatusFilterSchema,
   generatedAt: z.string().datetime()
 });

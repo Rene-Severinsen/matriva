@@ -9,6 +9,7 @@ import { ApiError, pool } from "./db.ts";
 
 const sortColumns = {
   catalog_key: "catalog_key",
+  catalog_version: "catalog_version",
   title: "title",
   active: "active",
   priority: "priority",

@@ -4405,15 +4405,49 @@ export async function getPublishedGuide(identifier: string, includeDraftPreview 
   return toGuideResponse(row);
 }
 
+export async function recordGuideOpen(
+  identifier: string,
+  versionId: string,
+  includeDraftPreview = false
+): Promise<void> {
+  const statusClause = includeDraftPreview
+    ? "and gv.publication_status in ('draft', 'published')"
+    : "and gv.publication_status = 'published' and gt.current_published_version_id = gv.id";
+  const result = await pool.query<{ template_id: string; version_id: string }>(
+    `select gt.id as template_id, gv.id as version_id
+     from guide_templates gt
+     join guide_versions gv on gv.guide_template_id = gt.id
+     where (gt.id = $1 or gt.guide_key = $1)
+       and gv.id = $2
+       and gt.archived_at is null
+       and gt.is_active
+       ${statusClause}
+     limit 1`,
+    [identifier, versionId]
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw new ApiError(404, "guide_not_found", "Vejledningen blev ikke fundet.");
+  }
+
+  await pool.query(
+    `insert into guide_open_events (guide_template_id, guide_version_id)
+     values ($1, $2)`,
+    [row.template_id, row.version_id]
+  );
+}
+
 export async function listAdminGuides(filter: GuideStatusFilter): Promise<AdminGuidesResponse> {
   const values: string[] = [];
   const where = filter === "all" ? "" : "and gv.publication_status = $1";
   if (filter !== "all") values.push(filter);
-  const result = await pool.query<{
+  const [result, heatmapResult] = await Promise.all([pool.query<{
     id: string;
     version_id: string;
     key: string;
     title: string;
+    guide_group: string | null;
+    open_count: number;
     version: number;
     locale: "da-DK";
     status: "draft" | "published" | "archived";
@@ -4427,6 +4461,13 @@ export async function listAdminGuides(filter: GuideStatusFilter): Promise<AdminG
   }>(
     `select
        gt.id, gv.id as version_id, gt.guide_key as key, gv.title, gv.version_number as version, gv.locale,
+       (select gtg.label
+        from guide_version_tags gvtg
+        join guide_tags gtg on gtg.id = gvtg.guide_tag_id
+        where gvtg.guide_version_id = gv.id and gtg.tag_type = 'house_part'
+        order by gtg.tag_key
+        limit 1) as guide_group,
+       (select count(*) from guide_open_events goe where goe.guide_version_id = gv.id)::int as open_count,
        gv.publication_status as status,
        (select count(*) from guide_sections gs where gs.guide_version_id = gv.id)::int as section_count,
        (select count(*) from guide_version_assets gva join guide_assets ga on ga.id = gva.guide_asset_id and ga.archived_at is null where gva.guide_version_id = gv.id)::int as active_asset_count,
@@ -4438,13 +4479,26 @@ export async function listAdminGuides(filter: GuideStatusFilter): Promise<AdminG
      where gt.is_active and gt.archived_at is null ${where}
      order by gv.title, gv.version_number desc`,
     values
-  );
+  ), pool.query<{ date: string; count: number }>(
+    `select to_char(days.day::date, 'YYYY-MM-DD') as date,
+            coalesce(opens.open_count, 0)::int as count
+     from generate_series(current_date - interval '83 days', current_date, interval '1 day') as days(day)
+     left join (
+       select opened_at::date as day, count(*)::int as open_count
+       from guide_open_events
+       group by opened_at::date
+     ) opens on opens.day = days.day::date
+     order by days.day`,
+    []
+  )]);
   return adminGuidesResponseSchema.parse({
     guides: result.rows.map((guide) => ({
       id: guide.id,
       versionId: guide.version_id as GuideVersionId,
       key: guide.key,
       title: guide.title,
+      group: guide.guide_group,
+      openCount: Number(guide.open_count),
       version: guide.version,
       locale: guide.locale,
       status: guide.status,
@@ -4456,6 +4510,9 @@ export async function listAdminGuides(filter: GuideStatusFilter): Promise<AdminG
       publishedAt: guide.published_at ? new Date(guide.published_at).toISOString() : null,
       unpublishedAt: guide.unpublished_at ? new Date(guide.unpublished_at).toISOString() : null
     })),
+    groups: [...new Set(result.rows.flatMap((guide) => guide.guide_group ? [guide.guide_group] : []))]
+      .sort((left, right) => left.localeCompare(right, "da-DK")),
+    openHeatmap: heatmapResult.rows.map((entry) => ({ date: entry.date, count: Number(entry.count) })),
     filter,
     generatedAt: new Date().toISOString()
   });

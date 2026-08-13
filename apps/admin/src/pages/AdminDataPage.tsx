@@ -5,9 +5,11 @@ import type {
   AdminHouseResponse,
   AdminHouseClaimsResponse,
   AdminHouseInvitationsResponse,
+  AdminHouseSort,
   AdminHousesResponse,
   AdminRecommendationCatalogItemResponse,
   AdminRecommendationCatalogResponse,
+  AdminRecommendationCatalogSort,
   AdminGuidesResponse,
   AdminUserResponse,
   AdminUserEntitlementResponse,
@@ -39,6 +41,57 @@ function formatDate(value: string | null) {
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
+}
+
+type SortOrder = "asc" | "desc";
+type ClaimSortKey = "user" | "house" | "bfe" | "type" | "status" | "requestedAt";
+type InvitationSortKey = "house" | "email" | "invitedBy" | "role" | "status" | "createdAt" | "expiresAt" | "acceptedBy";
+
+function compareSortValues(left: string | number | null, right: string | number | null) {
+  if (typeof left === "number" && typeof right === "number") return left - right;
+  return String(left ?? "").localeCompare(String(right ?? ""), "da-DK", { numeric: true, sensitivity: "base" });
+}
+
+function sortRows<T>(rows: T[], order: SortOrder, value: (row: T) => string | number | null) {
+  return [...rows].sort((left, right) => {
+    const comparison = compareSortValues(value(left), value(right));
+    return order === "asc" ? comparison : -comparison;
+  });
+}
+
+function changeLocalSort<T extends string>(currentSort: T, currentOrder: SortOrder, setSort: (sort: T) => void, setOrder: (order: SortOrder) => void) {
+  return (nextSort: T) => {
+    if (currentSort === nextSort) {
+      setOrder(currentOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSort(nextSort);
+      setOrder("asc");
+    }
+  };
+}
+
+function claimSortValue(claim: AdminHouseClaimsResponse["claims"][number], sortKey: ClaimSortKey) {
+  switch (sortKey) {
+    case "user": return claim.userDisplayName ?? claim.userEmail;
+    case "house": return claim.addressLabel;
+    case "bfe": return claim.bfeNumber;
+    case "type": return claim.claimType;
+    case "status": return claim.status;
+    case "requestedAt": return new Date(claim.requestedAt).getTime();
+  }
+}
+
+function invitationSortValue(invitation: AdminHouseInvitationsResponse["invitations"][number], sortKey: InvitationSortKey) {
+  switch (sortKey) {
+    case "house": return invitation.addressLabel;
+    case "email": return invitation.email;
+    case "invitedBy": return invitation.invitedByDisplayName ?? invitation.invitedByEmail;
+    case "role": return invitation.role;
+    case "status": return invitation.status;
+    case "createdAt": return new Date(invitation.createdAt).getTime();
+    case "expiresAt": return new Date(invitation.expiresAt).getTime();
+    case "acceptedBy": return invitation.acceptedByDisplayName ?? invitation.acceptedByEmail;
+  }
 }
 
 export function AdminDataPage({
@@ -115,9 +168,11 @@ function AccessRequirementsPage({ client, onAuthorizationError, onOpenClaim }: {
 
 function ClaimsList({ client, onAuthorizationError, onOpen }: { client: MatrivaAdminApiClient; onAuthorizationError: (error: unknown) => Promise<boolean>; onOpen: (id: string) => void }) {
   const [status, setStatus] = useState<"all" | "pending" | "approved" | "rejected">("pending");
+  const [sortKey, setSortKey] = useState<ClaimSortKey>("requestedAt");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const { state, retry } = useListState<AdminHouseClaimsResponse>((signal) => client.getAdminHouseClaims({ status, signal }), onAuthorizationError, "Adgangskrav kunne ikke indlæses.", [client, status]);
   return <DataSection title="Adgangskrav" description="Adgangskrav mellem brugere og fysiske ejendomme." filters={<FilterSelect label="Status" value={status} onChange={(value) => setStatus(value as typeof status)} options={[["pending", "Afventer"], ["approved", "Godkendt"], ["rejected", "Afvist"], ["all", "Alle"]]} />}>
-    <ListState state={state} retry={retry} empty="Ingen adgangskrav matcher filteret.">{(data) => <div className="table-scroll"><table className="data-table"><thead><tr><th>Bruger</th><th>Bolig</th><th>BFE</th><th>Type</th><th>Status</th><th>Anmodet</th></tr></thead><tbody>{data.claims.map((claim) => <tr key={claim.id} onClick={() => onOpen(claim.id)}><td><strong>{claim.userDisplayName ?? "Navn mangler"}</strong><span>{claim.userEmail}</span></td><td>{claim.addressLabel}</td><td>{claim.bfeNumber ?? "Ikke registreret"}</td><td>{claim.claimType}</td><td><StatusBadge label={claim.status} /></td><td>{formatDate(claim.requestedAt)}</td></tr>)}</tbody></table></div>}</ListState>
+    <ListState state={state} retry={retry} empty="Ingen adgangskrav matcher filteret.">{(data) => <div className="table-scroll"><table className="data-table"><thead><tr><SortableHeader label="Bruger" sortKey="user" currentSort={sortKey} order={sortOrder} onSort={changeLocalSort(sortKey, sortOrder, setSortKey, setSortOrder)} onPageReset={() => undefined} /><SortableHeader label="Bolig" sortKey="house" currentSort={sortKey} order={sortOrder} onSort={changeLocalSort(sortKey, sortOrder, setSortKey, setSortOrder)} onPageReset={() => undefined} /><SortableHeader label="BFE" sortKey="bfe" currentSort={sortKey} order={sortOrder} onSort={changeLocalSort(sortKey, sortOrder, setSortKey, setSortOrder)} onPageReset={() => undefined} /><SortableHeader label="Type" sortKey="type" currentSort={sortKey} order={sortOrder} onSort={changeLocalSort(sortKey, sortOrder, setSortKey, setSortOrder)} onPageReset={() => undefined} /><SortableHeader label="Status" sortKey="status" currentSort={sortKey} order={sortOrder} onSort={changeLocalSort(sortKey, sortOrder, setSortKey, setSortOrder)} onPageReset={() => undefined} /><SortableHeader label="Anmodet" sortKey="requestedAt" currentSort={sortKey} order={sortOrder} onSort={changeLocalSort(sortKey, sortOrder, setSortKey, setSortOrder)} onPageReset={() => undefined} /></tr></thead><tbody>{sortRows(data.claims, sortOrder, (claim) => claimSortValue(claim, sortKey)).map((claim) => <tr key={claim.id} onClick={() => onOpen(claim.id)}><td><strong>{claim.userDisplayName ?? "Navn mangler"}</strong><span>{claim.userEmail}</span></td><td>{claim.addressLabel}</td><td>{claim.bfeNumber ?? "Ikke registreret"}</td><td>{claim.claimType}</td><td><StatusBadge label={claim.status} /></td><td>{formatDate(claim.requestedAt)}</td></tr>)}</tbody></table></div>}</ListState>
   </DataSection>;
 }
 
@@ -125,9 +180,11 @@ const invitationStatusLabels = { pending: "Afventer", accepted: "Accepteret", ex
 
 function InvitationsList({ client, onAuthorizationError }: { client: MatrivaAdminApiClient; onAuthorizationError: (error: unknown) => Promise<boolean> }) {
   const [status, setStatus] = useState<"all" | "pending" | "accepted" | "expired" | "revoked">("all");
+  const [sortKey, setSortKey] = useState<InvitationSortKey>("createdAt");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const { state, retry } = useListState<AdminHouseInvitationsResponse>((signal) => client.getAdminHouseInvitations({ status, signal }), onAuthorizationError, "Invitationer kunne ikke indlæses.", [client, status]);
   return <DataSection title="Invitationer" description="Invitationer til boliger, adskilt fra adgangsanmodninger." filters={<FilterSelect label="Status" value={status} onChange={(value) => setStatus(value as typeof status)} options={[["all", "Alle"], ["pending", "Afventer"], ["accepted", "Accepteret"], ["expired", "Udløbet"], ["revoked", "Tilbagekaldt"]]} />}>
-    <ListState state={state} retry={retry} empty="Ingen invitationer matcher filteret.">{(data) => <div className="table-scroll"><table className="data-table"><thead><tr><th>Bolig</th><th>Inviteret e-mail</th><th>Inviteret af</th><th>Rolle</th><th>Status</th><th>Oprettet</th><th>Udløber</th><th>Accepteret af</th></tr></thead><tbody>{data.invitations.map((invitation) => <tr key={invitation.id}><td><strong>{invitation.addressLabel}</strong><span>{invitation.bfeNumber ?? "BFE ikke registreret"}</span></td><td>{invitation.email}</td><td><strong>{invitation.invitedByDisplayName ?? "Navn mangler"}</strong><span>{invitation.invitedByEmail}</span></td><td>{invitation.role === "owner" ? "Ejer" : "Medlem"}</td><td><StatusBadge label={invitationStatusLabels[invitation.status]} /></td><td>{formatDate(invitation.createdAt)}</td><td>{formatDate(invitation.expiresAt)}</td><td>{invitation.acceptedByDisplayName ?? invitation.acceptedByEmail ?? "Ikke accepteret"}</td></tr>)}</tbody></table></div>}</ListState>
+    <ListState state={state} retry={retry} empty="Ingen invitationer matcher filteret.">{(data) => <div className="table-scroll"><table className="data-table"><thead><tr><SortableHeader label="Bolig" sortKey="house" currentSort={sortKey} order={sortOrder} onSort={changeLocalSort(sortKey, sortOrder, setSortKey, setSortOrder)} onPageReset={() => undefined} /><SortableHeader label="Inviteret e-mail" sortKey="email" currentSort={sortKey} order={sortOrder} onSort={changeLocalSort(sortKey, sortOrder, setSortKey, setSortOrder)} onPageReset={() => undefined} /><SortableHeader label="Inviteret af" sortKey="invitedBy" currentSort={sortKey} order={sortOrder} onSort={changeLocalSort(sortKey, sortOrder, setSortKey, setSortOrder)} onPageReset={() => undefined} /><SortableHeader label="Rolle" sortKey="role" currentSort={sortKey} order={sortOrder} onSort={changeLocalSort(sortKey, sortOrder, setSortKey, setSortOrder)} onPageReset={() => undefined} /><SortableHeader label="Status" sortKey="status" currentSort={sortKey} order={sortOrder} onSort={changeLocalSort(sortKey, sortOrder, setSortKey, setSortOrder)} onPageReset={() => undefined} /><SortableHeader label="Oprettet" sortKey="createdAt" currentSort={sortKey} order={sortOrder} onSort={changeLocalSort(sortKey, sortOrder, setSortKey, setSortOrder)} onPageReset={() => undefined} /><SortableHeader label="Udløber" sortKey="expiresAt" currentSort={sortKey} order={sortOrder} onSort={changeLocalSort(sortKey, sortOrder, setSortKey, setSortOrder)} onPageReset={() => undefined} /><SortableHeader label="Accepteret af" sortKey="acceptedBy" currentSort={sortKey} order={sortOrder} onSort={changeLocalSort(sortKey, sortOrder, setSortKey, setSortOrder)} onPageReset={() => undefined} /></tr></thead><tbody>{sortRows(data.invitations, sortOrder, (invitation) => invitationSortValue(invitation, sortKey)).map((invitation) => <tr key={invitation.id}><td><strong>{invitation.addressLabel}</strong><span>{invitation.bfeNumber ?? "BFE ikke registreret"}</span></td><td>{invitation.email}</td><td><strong>{invitation.invitedByDisplayName ?? "Navn mangler"}</strong><span>{invitation.invitedByEmail}</span></td><td>{invitation.role === "owner" ? "Ejer" : "Medlem"}</td><td><StatusBadge label={invitationStatusLabels[invitation.status]} /></td><td>{formatDate(invitation.createdAt)}</td><td>{formatDate(invitation.expiresAt)}</td><td>{invitation.acceptedByDisplayName ?? invitation.acceptedByEmail ?? "Ikke accepteret"}</td></tr>)}</tbody></table></div>}</ListState>
   </DataSection>;
 }
 
@@ -266,8 +323,8 @@ function HousesList({
 }) {
   const [query, setQuery] = useState("");
   const [publicDataStatus, setPublicDataStatus] = useState("all");
-  const [sort, setSort] = useState("created_at");
-  const [order, setOrder] = useState<"asc" | "desc">("desc");
+  const [sort, setSort] = useState<AdminHouseSort>("created_at");
+  const [order, setOrder] = useState<SortOrder>("desc");
   const [page, setPage] = useState(1);
   const { state, retry } = useListState<AdminHousesResponse>(
     (signal) => client.getAdminHouses({ query, publicDataStatus: publicDataStatus as any, sort: sort as any, order, page, pageSize: 25, signal }),
@@ -283,8 +340,6 @@ function HousesList({
         <>
           <SearchField value={query} onChange={(value) => { setQuery(value); setPage(1); }} />
           <FilterSelect label="BBR" value={publicDataStatus} onChange={(value) => { setPublicDataStatus(value); setPage(1); }} options={[["all", "Alle"], ["success", "Success"], ["partial", "Partial"], ["with_warnings", "Warnings"], ["not_started", "Ikke startet"], ["failed", "Fejlet"]]} />
-          <SortSelect value={sort} onChange={setSort} options={[["created_at", "Oprettet"], ["address", "Adresse"], ["owner", "Ejer"], ["public_data_status", "BBR"], ["warning_count", "Warnings"], ["task_count", "Opgaver"]]} />
-          <OrderButton order={order} setOrder={setOrder} />
         </>
       }
       title="Boliger"
@@ -296,7 +351,7 @@ function HousesList({
             <div className="table-scroll">
               <table className="data-table houses-table">
                 <thead>
-                  <tr><th>Adresse</th><th>BFE</th><th>Brugere</th><th>Åbne krav</th><th>BBR-status</th><th>Warnings</th><th>Opgaver</th><th>Completions</th><th>Oprettet</th></tr>
+                  <tr><SortableHeader label="Adresse" sortKey="address" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} /><SortableHeader label="BFE" sortKey="bfe_number" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} /><SortableHeader label="Brugere" sortKey="active_user_count" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} /><SortableHeader label="Åbne krav" sortKey="open_claim_count" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} /><SortableHeader label="BBR-status" sortKey="public_data_status" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} /><SortableHeader label="Warnings" sortKey="warning_count" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} /><SortableHeader label="Opgaver" sortKey="task_count" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} /><SortableHeader label="Completions" sortKey="completion_count" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} /><SortableHeader label="Oprettet" sortKey="created_at" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} /></tr>
                 </thead>
                 <tbody>
                   {data.houses.map((house) => (
@@ -334,8 +389,8 @@ function RecommendationsList({
 }) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState("all");
-  const [sort, setSort] = useState("catalog_key");
-  const [order, setOrder] = useState<"asc" | "desc">("asc");
+  const [sort, setSort] = useState<AdminRecommendationCatalogSort>("catalog_key");
+  const [order, setOrder] = useState<SortOrder>("asc");
   const [page, setPage] = useState(1);
   const { state, retry } = useListState<AdminRecommendationCatalogResponse>(
     (signal) => client.getAdminRecommendationCatalog({ query, active: active as any, sort: sort as any, order, page, pageSize: 25, signal }),
@@ -351,8 +406,6 @@ function RecommendationsList({
         <>
           <SearchField value={query} onChange={(value) => { setQuery(value); setPage(1); }} />
           <FilterSelect label="Aktiv" value={active} onChange={(value) => { setActive(value); setPage(1); }} options={[["all", "Alle"], ["active", "Aktive"], ["inactive", "Inaktive"]]} />
-          <SortSelect value={sort} onChange={setSort} options={[["catalog_key", "Key"], ["title", "Titel"], ["instance_count", "Instances"], ["accepted_count", "Accepteret"], ["acceptance_rate", "Rate"]]} />
-          <OrderButton order={order} setOrder={setOrder} />
         </>
       }
       title="Anbefalinger"
@@ -364,7 +417,7 @@ function RecommendationsList({
             <div className="table-scroll">
               <table className="data-table recommendations-table">
                 <thead>
-                  <tr><th>Anbefaling</th><th>Version</th><th>Aktiv</th><th>Priority</th><th>Instances</th><th>Accepteret</th><th>Skjult permanent</th><th>Acceptance rate</th></tr>
+                  <tr><SortableHeader label="Anbefaling" sortKey="title" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} /><SortableHeader label="Version" sortKey="catalog_version" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} /><SortableHeader label="Aktiv" sortKey="active" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} /><SortableHeader label="Priority" sortKey="priority" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} /><SortableHeader label="Instances" sortKey="instance_count" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} /><SortableHeader label="Accepteret" sortKey="accepted_count" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} /><SortableHeader label="Skjult permanent" sortKey="permanent_hide_count" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} /><SortableHeader label="Acceptance rate" sortKey="acceptance_rate" currentSort={sort} order={order} onSort={setSort} onOrder={setOrder} onPageReset={() => setPage(1)} /></tr>
                 </thead>
                 <tbody>
                   {data.items.map((item) => (
@@ -607,22 +660,18 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
   return <label>{label}<select value={value} onChange={(event) => onChange(event.target.value)}>{options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label>;
 }
 
-function SortSelect({ value, onChange, options }: { value: string; onChange: (value: string) => void; options: Array<[string, string]> }) {
-  return <FilterSelect label="Sortering" value={value} onChange={onChange} options={options} />;
-}
-
-function OrderButton({ order, setOrder }: { order: "asc" | "desc"; setOrder: (order: "asc" | "desc") => void }) {
-  return <button className="secondary-action" type="button" onClick={() => setOrder(order === "asc" ? "desc" : "asc")}>{order === "asc" ? "Stigende" : "Faldende"}</button>;
-}
-
-function SortableHeader({ label, sortKey, currentSort, order, onSort, onOrder, onPageReset }: { label: string; sortKey: AdminUserSort; currentSort: AdminUserSort; order: "asc" | "desc"; onSort: (sort: AdminUserSort) => void; onOrder: (order: "asc" | "desc") => void; onPageReset: () => void }) {
+function SortableHeader<T extends string>({ label, sortKey, currentSort, order, onSort, onOrder, onPageReset }: { label: string; sortKey: T; currentSort: T; order: SortOrder; onSort: (sort: T) => void; onOrder?: (order: SortOrder) => void; onPageReset: () => void }) {
   const active = currentSort === sortKey;
   function handleSort() {
     if (active) {
-      onOrder(order === "asc" ? "desc" : "asc");
+      if (onOrder) {
+        onOrder(order === "asc" ? "desc" : "asc");
+      } else {
+        onSort(sortKey);
+      }
     } else {
       onSort(sortKey);
-      onOrder("asc");
+      onOrder?.("asc");
     }
     onPageReset();
   }

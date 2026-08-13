@@ -29,6 +29,7 @@ import {
   guideAuditResponseSchema,
   guideResponseSchema,
   guidesResponseSchema,
+  guideOpenRequestSchema,
   guideStatusFilterSchema,
   guideStatusUpdateRequestSchema,
   adminPasswordLoginRequestSchema,
@@ -122,6 +123,7 @@ import {
   getAdminGuide,
   getGuideAsset,
   getPublishedGuide,
+  recordGuideOpen,
   listAdminGuides,
   listRuntimeGuides,
   listAdminEntitlementConfigs,
@@ -877,6 +879,25 @@ const server = createServer((request, response) => {
   }
 
   const guideMatch = /^\/v1\/guides\/([^/?]+)$/.exec((request.url ?? "").split("?")[0] ?? "");
+  const guideOpenMatch = /^\/v1\/guides\/([^/?]+)\/open$/.exec((request.url ?? "").split("?")[0] ?? "");
+  if (request.method === "POST" && guideOpenMatch) {
+    void (async () => {
+      try {
+        const userId = await requireUserId(request);
+        const parsed = guideOpenRequestSchema.safeParse(await readJsonBody(request));
+        if (!parsed.success) {
+          writeApiError(response, 400, "guide_open_invalid", "Vejledningsåbningen er ugyldig.");
+          return;
+        }
+        await recordGuideOpen(decodeURIComponent(guideOpenMatch[1]!), parsed.data.versionId, guideDraftPreviewEnabled(request) && Boolean(userId));
+        writeJson(response, 200, { ok: true });
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
   if (request.method === "GET" && guideMatch) {
     void (async () => {
       try {

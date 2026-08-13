@@ -101,6 +101,7 @@ type MaintenanceView = "main" | "history" | "historyDetail" | "taskDetail" | "re
 type AuthStatus = "restoring" | "anonymous" | "authenticated";
 type MoreView = "menu" | "profile" | "settings" | "sharing" | "subscription" | "guides";
 type HouseView = "overview" | "details" | "improvements" | "improvementDetail" | "addImprovement";
+type GuideReturnLocation = "maintenance" | "more";
 type UnauthenticatedStep = "welcome" | "create" | "login";
 type HouseOnboardingStep = "search" | "confirm" | "progress" | "publicDataIssue";
 type PublicDataRefreshMessage = {
@@ -3342,7 +3343,7 @@ function MaintenanceScreen({
   if (view === "recommendationDetail" && selectedRecommendation) {
     return (
       <View style={styles.stack}>
-        <SecondaryButton label="Tilbage" onPress={() => onOpenDismissedRecommendations()} />
+        <SecondaryButton label="Tilbage" onPress={onBackToMaintenance} />
         <SectionHeader title={selectedRecommendation.title} subtitle="Afvist anbefaling" />
         <Card>
           <Text style={styles.taskTiming}>{selectedRecommendation.recommendedTimingLabel}</Text>
@@ -4796,7 +4797,9 @@ export default function App() {
   const [moreView, setMoreView] = useState<MoreView>("menu");
   const [guides, setGuides] = useState<GuideResponse[]>([]);
   const [selectedGuide, setSelectedGuide] = useState<GuideResponse | null>(null);
+  const [guideReturnLocation, setGuideReturnLocation] = useState<GuideReturnLocation>("more");
   const [houseView, setHouseView] = useState<HouseView>("overview");
+  const [houseBackView, setHouseBackView] = useState<HouseView>("overview");
   const [loadingAction, setLoadingAction] = useState<LoadingAction | null>("app");
   const [houses, setHouses] = useState<SavedHouse[]>([]);
   const [publicDataSummaries, setPublicDataSummaries] = useState<
@@ -4823,6 +4826,7 @@ export default function App() {
   const [pendingImprovementDocuments, setPendingImprovementDocuments] = useState<Array<Pick<UploadHouseDocumentRequest, "fileName" | "mimeType" | "sizeBytes" | "contentBase64">>>([]);
   const [isPickingDocument, setIsPickingDocument] = useState(false);
   const [maintenanceView, setMaintenanceView] = useState<MaintenanceView>("main");
+  const [maintenanceBackView, setMaintenanceBackView] = useState<MaintenanceView>("main");
   const [selectedHistoryDetail, setSelectedHistoryDetail] =
     useState<MaintenanceHistoryDetail | null>(null);
   const [historyReversalInProgress, setHistoryReversalInProgress] = useState(false);
@@ -4917,6 +4921,35 @@ export default function App() {
       (summary) => summary.houseId === selectedHouse?.id
     ) ?? null;
 
+  function openGuide(guide: GuideResponse, returnLocation: GuideReturnLocation) {
+    setGuideReturnLocation(returnLocation);
+    setSelectedGuide(guide);
+    void apiClient.recordGuideOpen(guide.id, { versionId: guide.version.id }).catch(() => undefined);
+  }
+
+  function closeGuide() {
+    setSelectedGuide(null);
+    if (guideReturnLocation === "maintenance") {
+      setActiveTab("maintenance");
+      setMoreView("menu");
+      return;
+    }
+    setMoreView("guides");
+  }
+
+  function openMaintenanceView(nextView: MaintenanceView, returnView: MaintenanceView = maintenanceView) {
+    setMaintenanceBackView(returnView);
+    setMaintenanceView(nextView);
+  }
+
+  function goBackToMaintenance() {
+    setSelectedTaskId(null);
+    setSelectedHistoryDetail(null);
+    setSelectedRecommendation(null);
+    setMaintenanceView(maintenanceBackView);
+    setMaintenanceBackView("main");
+  }
+
   function openGuideForRecommendation(recommendation: MaintenanceRecommendation) {
     const guide = guides.find((candidate) =>
       candidate.id === recommendation.guideTemplateId &&
@@ -4928,7 +4961,7 @@ export default function App() {
       return;
     }
 
-    setSelectedGuide(guide);
+    openGuide(guide, "maintenance");
     setActiveTab("more");
     setMoreView("guides");
   }
@@ -4950,7 +4983,9 @@ export default function App() {
     setMoreView("menu");
     setGuides([]);
     setSelectedGuide(null);
+    setGuideReturnLocation("more");
     setHouseView("overview");
+    setHouseBackView("overview");
     setHouses([]);
     setPublicDataSummaries([]);
     setPublicDataProfile(null);
@@ -4959,6 +4994,8 @@ export default function App() {
     setTasks([]);
     setMaintenanceRecommendations([]);
     setDismissedRecommendations([]);
+    setMaintenanceView("main");
+    setMaintenanceBackView("main");
     setHouseDocuments([]);
     setImprovements([]);
     setHousePhoto(null);
@@ -5697,7 +5734,9 @@ export default function App() {
     setSelectedHouseId(nextHouse.id);
     setPublicDataProfile(null);
     setHouseView("overview");
+    setHouseBackView("overview");
     setMaintenanceView("main");
+    setMaintenanceBackView("main");
     setSelectedTaskId(null);
     setSelectedHistoryDetail(null);
     setLoadingAction("house");
@@ -6332,7 +6371,7 @@ export default function App() {
         entry.id
       );
       setSelectedHistoryDetail(response.historyEntry);
-      setMaintenanceView("historyDetail");
+      openMaintenanceView("historyDetail");
     } catch (caughtError) {
       setError(userFacingError(caughtError));
     } finally {
@@ -6703,12 +6742,14 @@ export default function App() {
           onOpenTasks={() => {
             setActiveTab("maintenance");
             setShowTaskForm(false);
+            setMaintenanceBackView("main");
+            setMaintenanceView("main");
           }}
           onOpenTask={(task) => {
             setActiveTab("maintenance");
             setShowTaskForm(false);
             setSelectedTaskId(task.id);
-            setMaintenanceView("taskDetail");
+            openMaintenanceView("taskDetail", "main");
             requestAnimationFrame(() => mainScrollRef.current?.scrollTo({ y: 0, animated: false }));
           }}
         />
@@ -6749,21 +6790,25 @@ export default function App() {
           isUploadingPhoto={loadingAction === "photo"}
           publicDataRefreshMessage={publicDataRefreshMessage}
           onOpenDetails={() => {
+            setHouseBackView(houseView);
             setHouseView("details");
             requestAnimationFrame(() => mainScrollRef.current?.scrollTo({ y: 0, animated: false }));
           }}
           onOpenImprovements={() => {
+            setHouseBackView(houseView);
             setHouseView("improvements");
             requestAnimationFrame(() => mainScrollRef.current?.scrollTo({ y: 0, animated: false }));
           }}
           onOpenAddImprovement={() => {
             resetImprovementForm();
+            setHouseBackView(houseView);
             setHouseView("addImprovement");
             requestAnimationFrame(() => mainScrollRef.current?.scrollTo({ y: 0, animated: false }));
           }}
           selectedImprovement={selectedImprovement}
           onOpenImprovement={(improvement) => {
             if (!selectedHouse) return;
+            setHouseBackView(houseView);
             setLoadingAction("improvement");
             void apiClient.getHouseImprovement(selectedHouse.id, improvement.id).then((response) => {
               setSelectedImprovement(response.improvement);
@@ -6801,7 +6846,9 @@ export default function App() {
           improvementActionError={improvementActionError}
           onBackToHouse={() => {
             resetImprovementForm();
-            setHouseView("overview");
+            setSelectedImprovement(null);
+            setHouseView(houseBackView);
+            setHouseBackView("overview");
           }}
           onRefreshPublicData={() => void refreshPublicData()}
           onOpenDocuments={() => setActiveTab("documents")}
@@ -6859,13 +6906,13 @@ export default function App() {
           view={maintenanceView}
           onFilterChange={setMaintenanceFilter}
           onHistoryYearFilterChange={setHistoryYearFilter}
-          onOpenFullHistory={() => setMaintenanceView("history")}
-          onOpenAllRecommendations={() => setMaintenanceView("recommendations")}
-          onOpenDismissedRecommendations={() => setMaintenanceView("dismissedRecommendations")}
+          onOpenFullHistory={() => openMaintenanceView("history")}
+          onOpenAllRecommendations={() => openMaintenanceView("recommendations")}
+          onOpenDismissedRecommendations={() => openMaintenanceView("dismissedRecommendations")}
           selectedRecommendation={selectedRecommendation}
           onOpenRecommendationDetail={(recommendation) => {
             setSelectedRecommendation(recommendation);
-            setMaintenanceView("recommendationDetail");
+            openMaintenanceView("recommendationDetail");
           }}
           onOpenGuideForRecommendation={openGuideForRecommendation}
           onOpenGuideForTask={(task) => {
@@ -6877,20 +6924,15 @@ export default function App() {
               setError("Vejledningen er ikke tilgængelig lige nu.");
               return;
             }
-            setSelectedGuide(guide);
+            openGuide(guide, "maintenance");
             setActiveTab("more");
             setMoreView("guides");
           }}
           onRestoreRecommendation={(recommendation) => void restoreRecommendation(recommendation)}
-          onBackToMaintenance={() => {
-            setMaintenanceView("main");
-            setSelectedHistoryDetail(null);
-            setSelectedTaskId(null);
-            setSelectedRecommendation(null);
-          }}
+          onBackToMaintenance={goBackToMaintenance}
           onOpenTaskDetail={(task) => {
             setSelectedTaskId(task.id);
-            setMaintenanceView("taskDetail");
+            openMaintenanceView("taskDetail");
           }}
           onOpenHistoryDetail={(entry) => void openHistoryDetail(entry)}
           onReverseHistory={(noteHandling) => void reverseSelectedHistory(noteHandling)}
@@ -6999,7 +7041,7 @@ export default function App() {
     }
 
     if (moreView === "guides") {
-      return <GuideLibraryScreen guides={guides} selectedGuide={selectedGuide} apiBaseUrl={apiClient.baseUrl} accessToken={accessTokenRef.current} onOpen={setSelectedGuide} onBack={() => setSelectedGuide(null)} onExit={() => { setSelectedGuide(null); setMoreView("menu"); }} />;
+      return <GuideLibraryScreen guides={guides} selectedGuide={selectedGuide} apiBaseUrl={apiClient.baseUrl} accessToken={accessTokenRef.current} onOpen={(guide) => openGuide(guide, "more")} onBack={closeGuide} onExit={() => { setSelectedGuide(null); setMoreView("menu"); }} />;
     }
 
     if (moreView === "settings") {

@@ -10,7 +10,10 @@ import { ApiError, pool } from "./db.ts";
 const sortColumns = {
   created_at: "created_at",
   address: "address_label",
+  bfe_number: "bfe_number",
   owner: "email",
+  active_user_count: "active_user_count",
+  open_claim_count: "open_claim_count",
   public_data_status: "public_data_status",
   warning_count: "warning_count",
   task_count: "task_count",

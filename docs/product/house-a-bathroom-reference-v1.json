@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "id": "house_a_bathroom_reference_v1",
+  "title": "House A bathroom reference v1",
+  "status": "derived_reference_human_approved",
+  "houseProfileId": "hprof_matriva_modern_2023",
+  "guideKey": "tjek_fuger_vaadrum",
+  "guideVersionId": "gver_tjek_fuger_vaadrum_v1",
+  "path": "apps/api/assets/guides/matriva-modern-2023/derived-references/house-a-bathroom-reference-v1.png",
+  "derivedFrom": {
+    "pilotVisualReferences": [
+      "apps/api/assets/guides/matriva-modern-2023/masters/a11-bathroom-overview-v1.png",
+      "apps/api/assets/guides/matriva-modern-2023/masters/a12-bathroom-shower-v1.png",
+      "apps/api/assets/guides/matriva-modern-2023/masters/a14-bathroom-soft-corner-joint-v2.png",
+      "apps/api/assets/guides/matriva-modern-2023/masters/a15-bathroom-floor-wall-transition-v1.png"
+    ],
+    "canonicalGeometry": "docs/product/house-a-canonical-geometry.json",
+    "canonicalMaterialSpecification": "docs/product/house-a-canonical-material-specification.json"
+  },
+  "canonicalBoundaries": {
+    "bathroomRoom": {
+      "id": "bathroom",
+      "xMm": 5800,
+      "yMm": 3500,
+      "widthMm": 2200,
+      "depthMm": 2500
+    },
+    "openings": "none are assigned to the bathroom in the canonical opening schedule",
+    "interiorGeometry": "not defined by House A source-of-truth",
+    "interiorMaterials": "not defined by House A source-of-truth",
+    "visibleInterior": "derived only for guide-image consistency; not a claim about hidden construction"
+  },
+  "visualContract": {
+    "roomType": "compact modern Danish residential bathroom",
+    "tiles": "warm beige/taupe matte ceramic wall and floor tiles with regular joints",
+    "hardJointColor": "light warm-grey",
+    "cornerAndFloorWallJoint": "dark neutral continuous visible joint",
+    "fixtures": "clear frameless shower screen, matte-black shower fittings, restrained dark vanity",
+    "lighting": "soft neutral daylight and ordinary ceiling downlights",
+    "prohibited": [
+      "luxury spa or hotel styling",
+      "unexplained openings or room extensions",
+      "hidden construction claims",
+      "repair activity or tools",
+      "mold or catastrophic water damage"
+    ]
+  },
+  "validation": {
+    "interiorConsistency": "PASS",
+    "roomGeometry": "PASS_WITHIN_DEFINED_BOUNDARY",
+    "openings": "NOT_DEFINED_IN_CANONICAL_INTERIOR",
+    "materialConsistency": "PASS",
+    "tileGeometry": "PASS",
+    "jointGeometry": "PASS",
+    "wetRoomPlausibility": "PASS",
+    "perspective": "PASS",
+    "lighting": "PASS",
+    "aiArtefacts": "PASS",
+    "technicalValidation": "PASS",
+    "humanApproval": "APPROVED"
+  },
+  "sha256": "0acea4ce768f783c318bd02f7b5f0f13f00ec8c194060407aee2f3c2ed519fbb"
+}

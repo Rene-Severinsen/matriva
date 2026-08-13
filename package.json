@@ -54,6 +54,8 @@
     "test:house-a-masonry-history": "node tools/test-house-a-masonry-test.mjs",
     "test:house-a-material-specification": "node tools/test-house-a-material-specification.mjs",
     "test:house-a-landscape-specification": "node tools/test-house-a-landscape-specification.mjs",
+    "test:house-a-bathroom-reference": "node tools/test-house-a-bathroom-reference.mjs",
+    "test:guide02-runtime": "node tools/test-guide02-runtime.mjs",
     "generate:house-a-a01-facade-board": "node tools/generate-house-a-a01-rendered-facade-validation-board.mjs",
     "test:house-a-a01-facade-board": "node tools/test-house-a-a01-rendered-facade-validation-board.mjs",
     "generate:house-a-a01-garden-board": "node tools/generate-house-a-a01-natural-garden-test-board.mjs",

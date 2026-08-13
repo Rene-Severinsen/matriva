@@ -383,6 +383,7 @@ export const guideContentSeeds: ReadonlyArray<GuideContentSeed> = [
     version: {
       id: "gver_tjek_fuger_vaadrum_v1",
       versionNumber: 1,
+      validationStatus: "approved",
       title: "Tjek fuger i vådrum",
       summary:
         "En visuel egenkontrol af synlige fuger i badeværelse og andre vådrum – ikke en vejledning til at reparere vådrumskonstruktionen."

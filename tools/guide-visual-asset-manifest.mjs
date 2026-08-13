@@ -61,6 +61,70 @@ const guide = (id, assetKey, sourcePath, viewOrComponent, altText, referenceAsse
   statusNote
 });
 
+const wetroomGuide = (id, assetKey, sourcePath, viewOrComponent, altText, referenceAssetKeys, caption, derivedProvenance) => ({
+  id,
+  assetKey,
+  sourcePath,
+  storagePath: `guides/matriva-modern-2023/tjek-fuger-vaadrum/${sourcePath.split("/").at(-1)}`,
+  category: "wetroom",
+  viewOrComponent,
+  purpose: "guide_visual",
+  sourceType: "ai_generated",
+  altText,
+  caption,
+  referenceAssetKeys,
+  houseProfileId: houseProfile.id,
+  guideId: "guide_tjek_fuger_vaadrum",
+  guideKey: "tjek_fuger_vaadrum",
+  guideVersion: "gver_tjek_fuger_vaadrum_v1",
+  validationStatus: "passed",
+  approvalStatus: "approved",
+  canonicalUse: "derived_guide_asset_only",
+  derivedProvenance,
+  statusNote: "Guide 02 visual asset human-approved after technical validation."
+});
+
+const bathroomReferenceProvenance = {
+  type: "derived_reference",
+  referenceAssets: [
+    "matriva_modern_2023_bathroom_overview_master",
+    "matriva_modern_2023_bathroom_shower_master",
+    "matriva_modern_2023_bathroom_soft_corner_joint_master",
+    "matriva_modern_2023_bathroom_floor_wall_transition_master"
+  ],
+  sourceOfTruth: [
+    "docs/product/house-a-canonical-geometry.json",
+    "docs/product/house-a-canonical-material-specification.json"
+  ],
+  sourceChecksums: {
+    canonicalGeometry: "5a1c2a6c5e5373b9a67c26e86ca9d2ba70bfc536b6209a9f65adfd13723e98cb"
+  },
+  constraint: "Derived bathroom interior expression; does not modify House A canonical geometry, openings, room map or material authority."
+};
+
+const bathroomReference = {
+  id: "gasset_house_a_bathroom_reference_v1",
+  assetKey: "house_a_bathroom_reference_v1",
+  sourcePath: "derived-references/house-a-bathroom-reference-v1.png",
+  storagePath: "guides/matriva-modern-2023/derived-references/house-a-bathroom-reference-v1.png",
+  category: "wetroom",
+  viewOrComponent: "bathroom_reference",
+  purpose: "derived_reference_and_guide_visual",
+  sourceType: "ai_generated",
+  altText: "Derived House A bathroom reference with shower corner, tiled floor and visible joints.",
+  caption: "Overblik over synlige fuger i vådrummet.",
+  referenceAssetKeys: bathroomReferenceProvenance.referenceAssets,
+  houseProfileId: houseProfile.id,
+  guideId: "guide_tjek_fuger_vaadrum",
+  guideKey: "tjek_fuger_vaadrum",
+  guideVersion: "gver_tjek_fuger_vaadrum_v1",
+  validationStatus: "passed",
+  approvalStatus: "approved",
+  canonicalUse: "derived_reference_only",
+  derivedProvenance: bathroomReferenceProvenance,
+  statusNote: "House A bathroom reference v1 human-approved after technical validation."
+};
+
 export const visualAssets = [
   master(
     "gasset_ma23_a01_entry",
@@ -99,7 +163,12 @@ export const visualAssets = [
   guide("gasset_gutter_g02_remove_debris_v1", "rens_tagrender_remove_debris_v1", "guides/rens-tagrender/g02-remove-debris-v1.png", "remove_debris", "En behandsket hånd fjerner løse blade fra den sorte tagrende på House A.", ["house_a_roof_edge_gutter_corner_reference_v1", "matriva_modern_2023_house_a05_canonical_render"], "Rens tagrender guide candidate generated from current House A references; human approval pending.", guide01DerivedProvenance),
   guide("gasset_gutter_g02_remove_debris_v2", "rens_tagrender_remove_debris_v2", "guides/rens-tagrender/g02-remove-debris-v2.png", "remove_debris", "En behandsket hånd fjerner løse blade og almindeligt tørt snavs fra den sorte tagrende på House A.", ["house_a_roof_edge_gutter_corner_reference_v1", "matriva_modern_2023_house_a05_canonical_render"], "Rens tagrender guide candidate generated from current House A references; human approval pending.", guide01DerivedProvenance),
   guide("gasset_gutter_g03_flow_downpipe_v1", "rens_tagrender_flow_downpipe_v1", "guides/rens-tagrender/g03-flow-downpipe-v1.png", "flow_downpipe", "Vand bevæger sig gennem House A's sorte tagrende mod det korrekte nedløb.", ["house_a_roof_edge_gutter_corner_reference_v1", "matriva_modern_2023_house_a05_canonical_render"], "Rens tagrender guide candidate generated from current House A references; human approval pending.", guide01DerivedProvenance),
-  guide("gasset_gutter_g04_correct_result_v1", "rens_tagrender_correct_result_v1", "guides/rens-tagrender/g04-correct-result-v1.png", "correct_result", "Ren sort tagrende med fri vandvej og korrekt nedløb ved House A.", ["house_a_roof_edge_gutter_corner_reference_v1", "matriva_modern_2023_house_a05_canonical_render"], "Rens tagrender guide candidate generated from current House A references; human approval pending.", guide01DerivedProvenance)
+  guide("gasset_gutter_g04_correct_result_v1", "rens_tagrender_correct_result_v1", "guides/rens-tagrender/g04-correct-result-v1.png", "correct_result", "Ren sort tagrende med fri vandvej og korrekt nedløb ved House A.", ["house_a_roof_edge_gutter_corner_reference_v1", "matriva_modern_2023_house_a05_canonical_render"], "Rens tagrender guide candidate generated from current House A references; human approval pending.", guide01DerivedProvenance),
+  bathroomReference,
+  wetroomGuide("gasset_wetroom_shower_v1", "tjek_fuger_vaadrum_shower_v1", "guides/tjek-fuger-vaadrum/wetroom-shower-v1.png", "shower_transitions", "Bruseniche med synlig hjørnefuge og overgang mellem gulv og væg.", ["house_a_bathroom_reference_v1"], "Se særligt på hjørner og overgange i brusenichen.", bathroomReferenceProvenance),
+  wetroomGuide("gasset_wetroom_cracked_joint_v1", "tjek_fuger_vaadrum_cracked_joint_v1", "guides/tjek-fuger-vaadrum/wetroom-cracked-joint-v1.png", "cracked_joint", "Nærbillede af en mindre synlig revne og lokal åbning i en flisefuge.", ["house_a_bathroom_reference_v1"], "En synlig revne eller åbning bør følges op fagligt.", bathroomReferenceProvenance),
+  wetroomGuide("gasset_wetroom_discoloration_v1", "tjek_fuger_vaadrum_discoloration_v1", "guides/tjek-fuger-vaadrum/wetroom-discoloration-v1.png", "discoloration", "Nærbillede af en lokal synlig farveændring i en flisefuge.", ["house_a_bathroom_reference_v1"], "Misfarvning er en observation, der kan kræve vurdering.", bathroomReferenceProvenance),
+  wetroomGuide("gasset_wetroom_intact_joint_v1", "tjek_fuger_vaadrum_intact_joint_v1", "guides/tjek-fuger-vaadrum/wetroom-intact-joint-v1.png", "intact_joint", "Nærbillede af en sammenhængende intakt synlig flisefuge.", ["house_a_bathroom_reference_v1"], "En intakt synlig fuge fremstår sammenhængende uden synlige åbninger.", bathroomReferenceProvenance)
 ];
 
 export const gutterGuidePlacements = [
@@ -114,4 +183,19 @@ export const gutterGuideHotspots = [
   { id: "ghot_rens_g03_flow_v1", guideVersionAssetId: "gva_rens_g03_flow_downpipe_v1", hotspotType: "checkpoint", position: 0, x: 0.45, y: 0.42, title: "Kontrollér vandets vej", body: "Vandet skal bevæge sig mod nedløbet uden at stå stille eller løbe over kanten." },
   { id: "ghot_rens_g03_joint_v1", guideVersionAssetId: "gva_rens_g03_flow_downpipe_v1", hotspotType: "checkpoint", position: 1, x: 0.58, y: 0.46, title: "Kontrollér samlingen", body: "Se efter synlige dryp eller vand, der presser ud ved samlingen efter skylning." },
   { id: "ghot_rens_g03_downpipe_v1", guideVersionAssetId: "gva_rens_g03_flow_downpipe_v1", hotspotType: "checkpoint", position: 2, x: 0.72, y: 0.62, title: "Tjek nedløbet", body: "Vandet skal fortsætte frit i nedløbet uden tydelige blokeringer." }
+];
+
+export const wetroomGuidePlacements = [
+  { id: "gva_wetroom_overview_v1", assetId: "gasset_house_a_bathroom_reference_v1", placement: "cover", position: 0, caption: "Start med et overblik over de synlige fuger." },
+  { id: "gva_wetroom_shower_v1", assetId: "gasset_wetroom_shower_v1", placement: "inline", position: 0, caption: "Se særligt på hjørner og overgange i brusenichen." },
+  { id: "gva_wetroom_cracked_joint_v1", assetId: "gasset_wetroom_cracked_joint_v1", placement: "step", position: 0, caption: "En synlig revne eller åbning bør følges op fagligt." },
+  { id: "gva_wetroom_discoloration_v1", assetId: "gasset_wetroom_discoloration_v1", placement: "step", position: 1, caption: "Misfarvning er en observation, der kan kræve vurdering." },
+  { id: "gva_wetroom_intact_joint_v1", assetId: "gasset_wetroom_intact_joint_v1", placement: "after", position: 0, caption: "En intakt synlig fuge fremstår sammenhængende uden synlige åbninger." }
+];
+
+export const wetroomGuideHotspots = [
+  { id: "ghot_wetroom_corner_v1", guideVersionAssetId: "gva_wetroom_shower_v1", hotspotType: "checkpoint", position: 0, x: 0.45, y: 0.42, title: "Tjek hjørnefugen", body: "Se efter sammenhængende fugelinjer i hjørner og overgange." },
+  { id: "ghot_wetroom_floor_wall_v1", guideVersionAssetId: "gva_wetroom_shower_v1", hotspotType: "checkpoint", position: 1, x: 0.56, y: 0.79, title: "Kontrollér gulv/væg-overgangen", body: "Vær ekstra opmærksom på synlige overgange i vandudsatte områder." },
+  { id: "ghot_wetroom_crack_v1", guideVersionAssetId: "gva_wetroom_cracked_joint_v1", hotspotType: "warning", position: 0, x: 0.56, y: 0.48, title: "Se efter revner", body: "Synlige revner eller åbninger bør vurderes nærmere." },
+  { id: "ghot_wetroom_discoloration_v1", guideVersionAssetId: "gva_wetroom_discoloration_v1", hotspotType: "tip", position: 0, x: 0.50, y: 0.46, title: "Se efter misfarvning", body: "Notér nye eller udviklende misfarvninger uden at konkludere årsag." }
 ];

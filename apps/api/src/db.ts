@@ -2467,6 +2467,15 @@ async function syncGuideContentSeeds() {
       ]
     );
 
+    await pool.query(
+      `update guide_versions
+       set validation_status = $1, updated_at = now()
+       where id = $2
+         and publication_status = 'draft'
+         and validation_status is distinct from $1`,
+      [guide.version.validationStatus ?? "not_requested", guide.version.id]
+    );
+
     for (const section of guide.sections) {
       await pool.query(
         `

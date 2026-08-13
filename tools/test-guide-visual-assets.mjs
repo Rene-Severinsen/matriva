@@ -11,7 +11,9 @@ import {
   gutterGuideHotspots,
   gutterGuidePlacements,
   houseProfile,
-  visualAssets
+  visualAssets,
+  wetroomGuideHotspots,
+  wetroomGuidePlacements
 } from "./guide-visual-asset-manifest.mjs";
 
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -57,6 +59,8 @@ async function run() {
       assert.equal(asset.production_metadata.canonicalUse, expected.canonicalUse);
       assert.equal(asset.production_metadata.statusNote, expected.statusNote);
       assert.deepEqual(asset.production_metadata.derivedProvenance ?? null, expected.derivedProvenance ?? null);
+      assert.equal(asset.production_metadata.technicalValidation?.status, expected.validationStatus === "passed" ? "pass" : "not_requested");
+      assert.equal(asset.production_metadata.humanApproval?.status, expected.approvalStatus === "pending_human" ? "pending" : expected.approvalStatus);
       const storagePath = join(localObjectStorageRoot, asset.storage_key);
       const stored = await readFile(storagePath);
       assert.equal(sha256(stored), asset.checksum_sha256, `${expected.assetKey} storage checksum must match metadata.`);
@@ -96,7 +100,32 @@ async function run() {
       );
     }
 
-    console.log("Guide visual assets, storage objects, placements and hotspots validated.");
+    const wetroomPlacements = await client.query(
+      `select id, guide_asset_id, placement, position, print_visible
+       from guide_version_assets where guide_version_id = 'gver_tjek_fuger_vaadrum_v1' order by placement, position`
+    );
+    assert.equal(wetroomPlacements.rowCount, wetroomGuidePlacements.length);
+    for (const expected of wetroomGuidePlacements) {
+      assert.deepEqual(
+        wetroomPlacements.rows.find((row) => row.id === expected.id),
+        { id: expected.id, guide_asset_id: expected.assetId, placement: expected.placement, position: expected.position, print_visible: true }
+      );
+    }
+
+    const wetroomHotspots = await client.query(
+      `select id, guide_version_asset_id, hotspot_type, position, x::float8 as x, y::float8 as y, title
+       from guide_hotspots where id = any($1::text[]) order by id`,
+      [wetroomGuideHotspots.map((hotspot) => hotspot.id)]
+    );
+    assert.equal(wetroomHotspots.rowCount, wetroomGuideHotspots.length);
+    for (const expected of wetroomGuideHotspots) {
+      assert.deepEqual(
+        wetroomHotspots.rows.find((row) => row.id === expected.id),
+        { id: expected.id, guide_version_asset_id: expected.guideVersionAssetId, hotspot_type: expected.hotspotType, position: expected.position, x: expected.x, y: expected.y, title: expected.title }
+      );
+    }
+
+    console.log("Guide 01 and Guide 02 visual assets, storage objects, placements and hotspots validated.");
   } finally {
     client.release();
     await pool.end();

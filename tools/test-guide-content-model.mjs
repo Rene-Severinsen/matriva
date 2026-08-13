@@ -98,9 +98,9 @@ const seededGuides = [
     expectedSectionCount: 15,
     expectedSearchTerms: 7,
     expectedTags: 6,
-    expectedAssetPlacementCount: 0,
-    expectedHotspotCount: 0,
-    validationStatus: "not_requested"
+    expectedAssetPlacementCount: 5,
+    expectedHotspotCount: 4,
+    validationStatus: "approved"
   }
 ];
 

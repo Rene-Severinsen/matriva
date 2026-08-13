@@ -11,7 +11,9 @@ import {
   gutterGuideHotspots,
   gutterGuidePlacements,
   houseProfile,
-  visualAssets
+  visualAssets,
+  wetroomGuideHotspots,
+  wetroomGuidePlacements
 } from "./guide-visual-asset-manifest.mjs";
 
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -26,6 +28,7 @@ const storageEnvironment = (process.env.MATRIVA_ENVIRONMENT ?? process.env.NODE_
 const databaseUrl =
   process.env.DATABASE_URL ??
   "postgresql://matriva:matriva_dev_password@127.0.0.1:56432/matriva_dev";
+const guide02Only = process.argv.includes("--guide-02-only");
 
 assertSafeSmokeDatabase(databaseUrl);
 
@@ -77,11 +80,67 @@ function productionMetadata(asset) {
     referenceAssetKeys: asset.referenceAssetKeys,
     derivedProvenance: asset.derivedProvenance,
     validationStatus: asset.validationStatus ?? "not_requested",
+    technicalValidation: { status: asset.validationStatus === "passed" ? "pass" : "not_requested" },
+    humanApproval: { status: asset.approvalStatus },
     provenance: asset.sourceType === "other"
       ? { type: "repository_original", sourcePath: "apps/website/public/images/HeroImage.png", provenanceStatus: "pending_external_source_confirmation" }
       : { type: "ai_generated", tool: "built_in_image_gen", model: null },
     qa: { status: asset.approvalStatus, scope: "house_identity_and_visual_quality", reviewedInPilot: true }
   };
+}
+
+async function ingestGuidePlacements(client, guideVersionId, placements, hotspots) {
+  const activePlacementIds = placements.map((placement) => placement.id);
+  await client.query(
+    `delete from guide_hotspots
+     where guide_version_asset_id in (
+       select id from guide_version_assets
+       where guide_version_id = $1
+         and not (id = any($2::text[]))
+     )`,
+    [guideVersionId, activePlacementIds]
+  );
+  await client.query(
+    `delete from guide_version_assets
+     where guide_version_id = $1
+       and not (id = any($2::text[]))`,
+    [guideVersionId, activePlacementIds]
+  );
+
+  for (const placement of placements) {
+    const asset = visualAssets.find((candidate) => candidate.id === placement.assetId);
+    assert.ok(asset, `Guide placement ${placement.id} refers to an unknown asset.`);
+    await client.query(
+      `insert into guide_version_assets (
+        id, guide_version_id, guide_asset_id, placement, position, alt_text, caption, print_visible
+      ) values ($1, $2, $3, $4, $5, $6, $7, true)
+      on conflict (guide_version_id, placement, position) do update
+        set id = excluded.id,
+            guide_asset_id = excluded.guide_asset_id,
+            alt_text = excluded.alt_text,
+            caption = excluded.caption,
+            print_visible = excluded.print_visible,
+            updated_at = now()`,
+      [placement.id, guideVersionId, placement.assetId, placement.placement, placement.position, asset.altText, placement.caption]
+    );
+  }
+
+  for (const hotspot of hotspots) {
+    await client.query(
+      `insert into guide_hotspots (
+        id, guide_version_asset_id, hotspot_type, position, x, y, title, body
+      ) values ($1, $2, $3, $4, $5, $6, $7, $8)
+      on conflict (guide_version_asset_id, position) do update
+        set id = excluded.id,
+            hotspot_type = excluded.hotspot_type,
+            x = excluded.x,
+            y = excluded.y,
+            title = excluded.title,
+            body = excluded.body,
+            updated_at = now()`,
+      [hotspot.id, hotspot.guideVersionAssetId, hotspot.hotspotType, hotspot.position, hotspot.x, hotspot.y, hotspot.title, hotspot.body]
+    );
+  }
 }
 
 async function run() {
@@ -92,7 +151,10 @@ async function run() {
     const profile = await client.query("select id from house_profiles where id = $1 and profile_key = $2", [houseProfile.id, houseProfile.key]);
     assert.equal(profile.rowCount, 1, "House A must be seeded before visual assets are ingested.");
 
-    for (const asset of visualAssets) {
+    const assetsToIngest = guide02Only
+      ? visualAssets.filter((asset) => asset.guideVersion === "gver_tjek_fuger_vaadrum_v1")
+      : visualAssets;
+    for (const asset of assetsToIngest) {
       const sourcePath = join(sourceRoot, asset.sourcePath);
       const source = await readFile(sourcePath);
       const { size } = await stat(sourcePath);
@@ -122,52 +184,22 @@ async function run() {
       );
     }
 
-    const activePlacementIds = gutterGuidePlacements.map((placement) => placement.id);
-    await client.query(
-      `delete from guide_hotspots
-       where guide_version_asset_id in (
-         select id from guide_version_assets
-         where guide_version_id = 'gver_rens_tagrender_v1'
-           and not (id = any($1::text[]))
-       )`,
-      [activePlacementIds]
-    );
-    await client.query(
-      `delete from guide_version_assets
-       where guide_version_id = 'gver_rens_tagrender_v1'
-         and not (id = any($1::text[]))`,
-      [activePlacementIds]
-    );
-
-    for (const placement of gutterGuidePlacements) {
-      const asset = visualAssets.find((candidate) => candidate.id === placement.assetId);
-      assert.ok(asset, `Guide placement ${placement.id} refers to an unknown asset.`);
+    if (guide02Only) {
       await client.query(
-        `insert into guide_version_assets (
-          id, guide_version_id, guide_asset_id, placement, position, alt_text, caption, print_visible
-        ) values ($1, 'gver_rens_tagrender_v1', $2, $3, $4, $5, $6, true)
-        on conflict (guide_version_id, placement, position) do update
-          set id = excluded.id,
-              guide_asset_id = excluded.guide_asset_id,
-              alt_text = excluded.alt_text,
-              caption = excluded.caption,
-              print_visible = excluded.print_visible,
-              updated_at = now()`,
-        [placement.id, placement.assetId, placement.placement, placement.position, asset.altText, placement.caption]
+        `update guide_assets
+         set archived_at = now(), updated_at = now()
+         where production_metadata ->> 'guideVersion' = 'gver_tjek_fuger_vaadrum_v1'
+           and not (id = any($1::text[]))`,
+        [assetsToIngest.map((asset) => asset.id)]
       );
     }
 
-    for (const hotspot of gutterGuideHotspots) {
-      await client.query(
-        `insert into guide_hotspots (
-          id, guide_version_asset_id, hotspot_type, position, x, y, title, body
-        ) values ($1, $2, $3, $4, $5, $6, $7, $8)
-        on conflict (guide_version_asset_id, position) do nothing`,
-        [hotspot.id, hotspot.guideVersionAssetId, hotspot.hotspotType, hotspot.position, hotspot.x, hotspot.y, hotspot.title, hotspot.body]
-      );
+    if (!guide02Only) {
+      await ingestGuidePlacements(client, "gver_rens_tagrender_v1", gutterGuidePlacements, gutterGuideHotspots);
     }
+    await ingestGuidePlacements(client, "gver_tjek_fuger_vaadrum_v1", wetroomGuidePlacements, wetroomGuideHotspots);
 
-    console.log(`Ingested ${visualAssets.length} House A and guide pilot visual assets with explicit review status into ${storageEnvironment} storage.`);
+    console.log(`Ingested ${assetsToIngest.length} Guide 02 visual assets with explicit review status into ${storageEnvironment} storage.`);
   } finally {
     client.release();
     await pool.end();

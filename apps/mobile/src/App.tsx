@@ -4528,6 +4528,7 @@ function MoreScreen({
   onOpenSubscription,
   onOpenGuides,
   attentionCount,
+  hasPendingHouseInvitations,
   sharingEnabled,
   onLogout
 }: {
@@ -4538,6 +4539,7 @@ function MoreScreen({
   onOpenSubscription: () => void;
   onOpenGuides: () => void;
   attentionCount: number;
+  hasPendingHouseInvitations: boolean;
   sharingEnabled: boolean;
   onLogout: () => void;
 }) {
@@ -4553,7 +4555,8 @@ function MoreScreen({
           const isGuides = row === "Vejledninger";
           const isSettings = row === "Indstillinger";
           const isSharing = row === "Deling & adgang";
-          const isEnabled = isProfile || isGuides || isSubscription || isSettings || (isSharing && sharingEnabled);
+          const canOpenSharing = sharingEnabled || hasPendingHouseInvitations;
+          const isEnabled = isProfile || isGuides || isSubscription || isSettings || (isSharing && canOpenSharing);
 
           return (
             <Pressable
@@ -4568,7 +4571,7 @@ function MoreScreen({
               ]}
             >
               <View style={styles.menuRowContent}><Text style={styles.menuText}>{row}</Text>{isSharing && attentionCount > 0 ? <View style={styles.attentionBadge}><Text style={styles.attentionBadgeText}>{attentionCount > 99 ? "99+" : attentionCount}</Text></View> : null}</View>
-              <Text style={styles.menuMeta}>{isSharing && !sharingEnabled ? "Ikke inkluderet" : isEnabled ? "Åbn" : "Kommer senere"}</Text>
+              <Text style={styles.menuMeta}>{isSharing && !canOpenSharing ? "Ikke inkluderet" : isEnabled ? "Åbn" : "Kommer senere"}</Text>
             </Pressable>
           );
         })}
@@ -7071,6 +7074,7 @@ export default function App() {
         onOpenSettings={() => setMoreView("settings")}
         onOpenSharing={() => setMoreView("sharing")}
         attentionCount={moreAttentionCount}
+        hasPendingHouseInvitations={pendingHouseInvitations.length > 0}
         sharingEnabled={bootstrap?.entitlements.features["sharing.enabled"]?.kind === "boolean" && bootstrap.entitlements.features["sharing.enabled"].value === true}
         onLogout={() => void logout()}
       />

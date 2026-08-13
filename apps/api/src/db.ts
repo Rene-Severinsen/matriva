@@ -1935,7 +1935,6 @@ export async function acceptHouseInvitation(userId: string, token: string) {
   const client = await pool.connect();
   try {
     await client.query("begin");
-    await assertEntitlementFeatureForExecutor(client, userId, "sharing.enabled");
     const result = await client.query(`select i.*, u.email as accepting_email from house_invitations i cross join users u
       where u.id = $1 and i.token_hash = $2 and i.status = 'pending' and i.expires_at > now() for update`, [userId, hashSecret(token)]);
     const invitation = result.rows[0];
@@ -1959,7 +1958,6 @@ export async function acceptHouseInvitationById(userId: string, invitationId: st
   const client = await pool.connect();
   try {
     await client.query("begin");
-    await assertEntitlementFeatureForExecutor(client, userId, "sharing.enabled");
     const result = await client.query(
       `select i.*, u.email as accepting_email from house_invitations i cross join users u
        where u.id = $1 and i.id = $2 and i.status = 'pending' and i.expires_at > now() for update`,

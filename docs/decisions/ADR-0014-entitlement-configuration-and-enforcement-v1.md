@@ -19,3 +19,5 @@ Free defaults are one active house, two active documents, 10 MB total active doc
 ## Consequences
 
 The mobile app can display backend-provided access and usage, but it cannot grant access. Feature flags and limits can be changed from Admin without a mobile release. Billing integration may later populate `user_entitlements` with `source = billing` without changing API enforcement.
+
+`sharing.enabled` is an outgoing capability: it controls whether the current user may invite another person to a house. Accepting a valid invitation is an inbound access grant and must not require the recipient to have `sharing.enabled`; therefore a Free user may receive shared house access without being able to create invitations.

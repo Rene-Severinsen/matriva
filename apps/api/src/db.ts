@@ -80,6 +80,7 @@ import {
   guideContentSeeds,
   type GuideContentSeed
 } from "./guide-content.ts";
+import { storageMode } from "./storage-config.ts";
 import {
   houseProfileSeeds,
   type HouseProfileSeed
@@ -3705,7 +3706,7 @@ export async function createHouseDocumentForHouse(
       input.mimeType,
       input.sizeBytes,
       input.checksumSha256,
-      process.env.MATRIVA_STORAGE_ADAPTER === "local" ? "local" : "s3",
+      storageMode(),
       input.title ?? null, input.category ?? null, input.documentType ?? null,
       input.documentDate ?? null, input.relatedParty ?? null, input.amountMinor ?? null,
       input.expiresAt ?? null, input.isImportant ?? false, input.note ?? null
@@ -4650,9 +4651,13 @@ export async function getGuideAsset(assetKey: string) {
   const result = await pool.query<{
     storage_key: string;
     mime_type: string;
+    checksum_sha256: string | null;
+    delivery_width: number;
     is_published: boolean;
   }>(
-    `select ga.storage_key, ga.mime_type,
+    `select ga.storage_key, ga.mime_type, ga.checksum_sha256,
+       case when bool_or(gva.placement in ('cover', 'inline', 'before', 'after', 'print_appendix'))
+         then 1440 else 1024 end as delivery_width,
        exists (
          select 1 from guide_version_assets gva
          join guide_versions gv on gv.id = gva.guide_version_id
@@ -4661,7 +4666,10 @@ export async function getGuideAsset(assetKey: string) {
            and gv.publication_status = 'published'
            and gt.current_published_version_id = gv.id
        ) as is_published
-     from guide_assets ga where ga.asset_key = $1 and ga.archived_at is null`,
+     from guide_assets ga
+     left join guide_version_assets gva on gva.guide_asset_id = ga.id
+     where ga.asset_key = $1 and ga.archived_at is null
+     group by ga.id, ga.storage_key, ga.mime_type, ga.checksum_sha256`,
     [assetKey]
   );
   const asset = result.rows[0];

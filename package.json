@@ -56,6 +56,9 @@
     "test:house-a-landscape-specification": "node tools/test-house-a-landscape-specification.mjs",
     "test:house-a-bathroom-reference": "node tools/test-house-a-bathroom-reference.mjs",
     "test:guide02-runtime": "node tools/test-guide02-runtime.mjs",
+    "test:guide-asset-delivery": "npm run build -w @matriva/api && node tools/test-guide-asset-delivery.mjs",
+    "backfill:guide-asset-variants": "node tools/backfill-guide-asset-variants.mjs",
+    "test:storage-policy": "npm run build -w @matriva/api && node tools/test-storage-policy.mjs",
     "generate:house-a-a01-facade-board": "node tools/generate-house-a-a01-rendered-facade-validation-board.mjs",
     "test:house-a-a01-facade-board": "node tools/test-house-a-a01-rendered-facade-validation-board.mjs",
     "generate:house-a-a01-garden-board": "node tools/generate-house-a-a01-natural-garden-test-board.mjs",
@@ -71,6 +74,7 @@
     "node": ">=22"
   },
   "devDependencies": {
+    "sharp": "^0.34.5",
     "typescript": "6.0.3"
   },
   "overrides": {

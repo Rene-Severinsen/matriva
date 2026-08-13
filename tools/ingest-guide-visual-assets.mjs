@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import pg from "pg";
 
+import { putObjectIfAbsent } from "./s3-object-storage.mjs";
 import { assertSafeSmokeDatabase } from "./smoke-database.mjs";
 import {
   gutterGuideHotspots,
@@ -29,8 +30,21 @@ const databaseUrl =
   process.env.DATABASE_URL ??
   "postgresql://matriva:matriva_dev_password@127.0.0.1:56432/matriva_dev";
 const guide02Only = process.argv.includes("--guide-02-only");
+const sharedStorageEnvironment = ["qa", "production", "prod"].includes(storageEnvironment.toLowerCase());
+const configuredAdapter = (process.env.MATRIVA_STORAGE_ADAPTER ?? "").trim().toLowerCase();
 
-assertSafeSmokeDatabase(databaseUrl);
+if (sharedStorageEnvironment && configuredAdapter !== "s3") {
+  throw new Error("Guide asset ingest requires MATRIVA_STORAGE_ADAPTER=s3 in QA/production.");
+}
+
+if (storageEnvironment === "qa") {
+  const parsedDatabaseUrl = new URL(databaseUrl);
+  if (parsedDatabaseUrl.protocol !== "postgresql:" || parsedDatabaseUrl.pathname !== "/matriva_qa") {
+    throw new Error("QA guide asset ingest requires the matriva_qa PostgreSQL database.");
+  }
+} else {
+  assertSafeSmokeDatabase(databaseUrl);
+}
 
 function sha256(buffer) {
   return createHash("sha256").update(buffer).digest("hex");
@@ -43,6 +57,14 @@ function pngDimensions(buffer) {
 
 async function ensureStorageObject(asset, source, checksum) {
   const storageKey = `${storageEnvironment}/${asset.storagePath}`;
+
+  if (sharedStorageEnvironment) {
+    await putObjectIfAbsent(storageKey, source, "image/png", process.env, {
+      cacheControl: "private, max-age=31536000, immutable"
+    });
+    return storageKey;
+  }
+
   const destination = join(localObjectStorageRoot, storageKey);
   await mkdir(dirname(destination), { recursive: true });
 

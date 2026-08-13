@@ -127,6 +127,11 @@ import { getAdminUser, listAdminUsers } from "./admin-users.ts";
 import { loginAdminWithPassword } from "./auth/admin-password.ts";
 import { sendMagicLinkEmail, createMagicLinkUrl, createHouseInvitationUrl, sendHouseInvitationEmail, createHouseClaimApprovalUrl, sendHouseClaimOwnerEmail } from "./auth/mailer.ts";
 import { getDatafordelerConfigStatus } from "./config/datafordeler.ts";
+import { storageMode, validateStorageConfiguration } from "./storage-config.ts";
+import {
+  guideAssetDeliveryPlan,
+  readGuideAssetWithFallback
+} from "./guide-asset-delivery.ts";
 import { DatafordelerClient, DatafordelerProviderError } from "./public-data/datafordeler-client.ts";
 import {
   ApiError,
@@ -270,11 +275,18 @@ function writeBinary(
   response: ServerResponse,
   status: number,
   body: Buffer,
-  contentType: string
+  contentType: string,
+  options: { cacheControl: string; variant: boolean } = {
+    cacheControl: "private, no-store",
+    variant: false
+  }
 ) {
   response.writeHead(status, {
     "content-type": contentType,
-    "cache-control": "private, no-store"
+    "content-length": body.byteLength,
+    "cache-control": options.cacheControl,
+    "etag": `\"${sha256Hex(body)}\"`,
+    ...(options.variant ? { "x-matriva-asset-variant": "webp" } : {})
   });
   response.end(body);
 }
@@ -512,26 +524,6 @@ function objectStoragePath(objectKey: string) {
   }
 
   return join(localObjectStorageRoot, normalized);
-}
-
-function isS3Configured() {
-  return Boolean(
-    process.env.MATRIVA_S3_ENDPOINT &&
-      process.env.MATRIVA_S3_BUCKET &&
-      process.env.MATRIVA_S3_ACCESS_KEY_ID &&
-      process.env.MATRIVA_S3_SECRET_ACCESS_KEY
-  );
-}
-
-function storageMode() {
-  const configuredAdapter = process.env.MATRIVA_STORAGE_ADAPTER?.trim().toLowerCase();
-  if (configuredAdapter === "local") return "local";
-  if (configuredAdapter === "s3") return "s3";
-
-  const environment = (process.env.MATRIVA_ENVIRONMENT ?? process.env.NODE_ENV ?? "local").toLowerCase();
-  if (["local", "development", "test"].includes(environment)) return "local";
-
-  return isS3Configured() ? "s3" : "local";
 }
 
 function sha256Hex(value: Buffer | string) {
@@ -940,8 +932,20 @@ const server = createServer((request, response) => {
             }
           }
         }
-        const content = await readStorageObject(asset.storage_key, asset.mime_type);
-        writeBinary(response, 200, content, asset.mime_type);
+        const delivery = await readGuideAssetWithFallback({
+          plan: guideAssetDeliveryPlan({
+            storageKey: asset.storage_key,
+            checksumSha256: asset.checksum_sha256,
+            mimeType: asset.mime_type,
+            preferredWidth: asset.delivery_width
+          }),
+          original: { key: asset.storage_key, mimeType: asset.mime_type },
+          read: readStorageObject
+        });
+        writeBinary(response, 200, delivery.content, delivery.mimeType, {
+          cacheControl: "private, max-age=31536000, immutable",
+          variant: delivery.variant
+        });
       } catch (error) {
         writeUnknownApiError(response, error);
       }
@@ -3582,6 +3586,7 @@ const server = createServer((request, response) => {
 
 try {
   validateAuthRuntimeConfig();
+  validateStorageConfiguration();
   await migrateDatabase();
 
   server.listen(port, host, () => {

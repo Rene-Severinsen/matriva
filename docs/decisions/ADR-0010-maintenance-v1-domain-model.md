@@ -44,7 +44,7 @@ The API environment owns object storage configuration:
 
 The bucket used for QA is `Matriva-qa`, configured outside the codebase. Values must not be committed, logged, returned through shared contracts, or copied into mobile configuration.
 
-When S3 environment variables are present, the API uses its S3-compatible adapter. Automated smoke tests use a local adapter rooted in `MATRIVA_OBJECT_STORAGE_DIR`, so tests do not require real S3 secrets. `MATRIVA_ATTACHMENT_STORAGE_DIR` remains accepted as a local-storage compatibility alias.
+Local file storage is permitted only for local development and automated tests. QA and production are S3-only: the API fails during startup if `MATRIVA_ENVIRONMENT=qa` or `MATRIVA_ENVIRONMENT=production` is combined with `MATRIVA_STORAGE_ADAPTER=local` or an incomplete S3 configuration. Automated smoke tests use a local adapter rooted in `MATRIVA_OBJECT_STORAGE_DIR`, so tests do not require real S3 secrets. `MATRIVA_ATTACHMENT_STORAGE_DIR` remains accepted as a local-storage compatibility alias for local/test runs only.
 
 ## Consequences
 

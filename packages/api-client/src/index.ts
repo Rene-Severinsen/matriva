@@ -172,6 +172,8 @@ import {
 export type MatrivaApiClientOptions = {
   baseUrl: string;
   fetchImpl?: typeof fetch;
+  appVersion?: string | null;
+  appBuild?: string | number | null;
   getAccessToken?: () => string | null | undefined;
   getRefreshToken?: () => string | null | undefined;
   onSessionRefreshed?: (tokens: SessionTokens) => void | Promise<void>;
@@ -252,6 +254,20 @@ function adminListSearchParams(input: Record<string, unknown> = {}) {
 
   const query = params.toString();
   return query ? `?${query}` : "";
+}
+
+function clientIdentityHeaders(options: MatrivaApiClientOptions, extra?: HeadersInit) {
+  const headers = new Headers(extra);
+
+  if (options.appVersion?.trim()) {
+    headers.set("x-matriva-app-version", options.appVersion.trim());
+  }
+
+  if (options.appBuild !== undefined && options.appBuild !== null && `${options.appBuild}`.trim()) {
+    headers.set("x-matriva-app-build", `${options.appBuild}`.trim());
+  }
+
+  return headers;
 }
 
 export type MatrivaApiClient = {
@@ -511,7 +527,9 @@ export function createMatrivaAdminApiClient(
   options: MatrivaApiClientOptions
 ): MatrivaAdminApiClient {
   const normalizedBaseUrl = options.baseUrl.replace(/\/$/, "");
-  const fetcher = options.fetchImpl ?? fetch;
+  const rawFetcher = options.fetchImpl ?? fetch;
+  const fetcher: typeof fetch = (input, init) =>
+    rawFetcher(input, { ...init, headers: clientIdentityHeaders(options, init?.headers) });
 
   function authHeaders(extra?: HeadersInit): HeadersInit {
     const token = options.getAccessToken?.();
@@ -793,6 +811,8 @@ export function createMatrivaApiClient(
 ): MatrivaApiClient {
   const normalizedBaseUrl = options.baseUrl.replace(/\/$/, "");
   const rawFetcher = options.fetchImpl ?? fetch;
+  const request: typeof fetch = (input, init) =>
+    rawFetcher(input, { ...init, headers: clientIdentityHeaders(options, init?.headers) });
   type SessionRefreshResult = {
     refreshed: boolean;
     expired: boolean;
@@ -822,7 +842,7 @@ export function createMatrivaApiClient(
           return { refreshed: false, expired: true, sourceRefreshToken: null };
         }
 
-        const response = await rawFetcher(`${normalizedBaseUrl}/v1/auth/refresh`, {
+        const response = await request(`${normalizedBaseUrl}/v1/auth/refresh`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ refreshToken })
@@ -856,7 +876,7 @@ export function createMatrivaApiClient(
   }
 
   const fetcher: typeof fetch = async (input, init) => {
-    const response = await rawFetcher(input, init);
+    const response = await request(input, init);
 
     if (response.status !== 401 || !options.getRefreshToken) {
       return response;
@@ -893,7 +913,7 @@ export function createMatrivaApiClient(
       ) {
         const retryHeaders = new Headers(init?.headers);
         retryHeaders.set("authorization", `Bearer ${currentAccessToken}`);
-        return rawFetcher(input, { ...init, headers: retryHeaders });
+        return request(input, { ...init, headers: retryHeaders });
       }
       throw new MatrivaApiError(
         401,
@@ -911,7 +931,7 @@ export function createMatrivaApiClient(
       retryHeaders.delete("authorization");
     }
 
-    return rawFetcher(input, { ...init, headers: retryHeaders });
+    return request(input, { ...init, headers: retryHeaders });
   };
 
   async function parseApiResponse(response: Response, fallbackMessage: string) {

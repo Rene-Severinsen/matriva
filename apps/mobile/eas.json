@@ -11,7 +11,8 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_MATRIVA_API_BASE_URL": "https://api-qa.matriva.dk"
+        "EXPO_PUBLIC_MATRIVA_API_BASE_URL": "https://api-qa.matriva.dk",
+        "EXPO_PUBLIC_MATRIVA_ENVIRONMENT": "QA"
       }
     },
     "production": {
@@ -21,7 +22,8 @@
       "distribution": "store",
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_MATRIVA_API_BASE_URL": "https://api-qa.matriva.dk"
+        "EXPO_PUBLIC_MATRIVA_API_BASE_URL": "https://api-qa.matriva.dk",
+        "EXPO_PUBLIC_MATRIVA_ENVIRONMENT": "QA"
       }
     }
   },

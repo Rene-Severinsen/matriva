@@ -111,6 +111,8 @@ import {
   reverseMaintenanceCompletionResponseSchema
 } from "@matriva/shared";
 
+import type { AppCompatibility } from "@matriva/shared";
+
 import { requireAdminUser, toAdminBootstrapResponse } from "./admin.ts";
 import { getAdminDashboard } from "./admin-dashboard.ts";
 import { getAdminHouse, listAdminHouses } from "./admin-houses.ts";
@@ -137,6 +139,13 @@ import {
   readGuideAssetWithFallback
 } from "./guide-asset-delivery.ts";
 import { DatafordelerClient, DatafordelerProviderError } from "./public-data/datafordeler-client.ts";
+import {
+  evaluateMobileCompatibility,
+  mobileAppBuildHeader,
+  mobileAppVersionHeader,
+  mobileClientIdentityFromHeaders,
+  mobileCompatibilityPolicyFromEnvironment
+} from "./mobile-compatibility.ts";
 import {
   ApiError,
   authenticateAccessToken,
@@ -310,6 +319,7 @@ function writeApiError(
     current?: number;
     storageLimitBytes?: number | null;
     storageBytes?: number;
+    compatibility?: AppCompatibility;
   }
 ) {
   writeJson(
@@ -333,7 +343,10 @@ function applyCorsHeaders(request: IncomingMessage, response: ServerResponse) {
   response.setHeader("access-control-allow-origin", origin);
   response.setHeader("vary", "Origin");
   response.setHeader("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-  response.setHeader("access-control-allow-headers", "authorization,content-type,x-matriva-guide-preview");
+  response.setHeader(
+    "access-control-allow-headers",
+    `authorization,content-type,x-matriva-guide-preview,${mobileAppVersionHeader},${mobileAppBuildHeader}`
+  );
   response.setHeader("access-control-max-age", "600");
 }
 
@@ -1578,6 +1591,22 @@ const server = createServer((request, response) => {
     void (async () => {
       try {
         const userId = await requireUserId(request);
+        const compatibility = evaluateMobileCompatibility(
+          mobileClientIdentityFromHeaders(request.headers),
+          mobileCompatibilityPolicyFromEnvironment()
+        );
+
+        if (compatibility.status === "upgrade_required") {
+          writeApiError(
+            response,
+            426,
+            "app_update_required",
+            "Denne version af Matriva skal opdateres for at fortsætte.",
+            { compatibility }
+          );
+          return;
+        }
+
         const bootstrap = await buildAppBootstrap(userId);
         const publicDataSummaries = await getHousePublicDataSummaries(
           userId,
@@ -1588,6 +1617,7 @@ const server = createServer((request, response) => {
           200,
           appBootstrapResponseSchema.parse({
             ...bootstrap,
+            compatibility,
             publicDataSummaries
           })
         );
@@ -1599,6 +1629,22 @@ const server = createServer((request, response) => {
   }
 
   if (request.method === "GET" && request.url === "/v1/bootstrap") {
+    const compatibility = evaluateMobileCompatibility(
+      mobileClientIdentityFromHeaders(request.headers),
+      mobileCompatibilityPolicyFromEnvironment()
+    );
+
+    if (compatibility.status === "upgrade_required") {
+      writeApiError(
+        response,
+        426,
+        "app_update_required",
+        "Denne version af Matriva skal opdateres for at fortsætte.",
+        { compatibility }
+      );
+      return;
+    }
+
     const now = new Date().toISOString();
     const body = homeBootstrapResponseSchema.parse({
       user: {
@@ -1618,6 +1664,7 @@ const server = createServer((request, response) => {
         },
         propertyType: "UNKNOWN"
       },
+      compatibility,
       entitlements: {
         plan: "free",
         configuredPlan: "free",

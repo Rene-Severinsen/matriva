@@ -4152,13 +4152,22 @@ export const entitlementValueSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("boolean"),
     value: z.boolean()
-  }),
+  }).strip(),
   z.object({
     kind: z.literal("limit"),
     value: z.number().int().nonnegative().nullable()
-  })
+  }).strip()
 ]);
 export type EntitlementValue = z.infer<typeof entitlementValueSchema>;
+
+// Feature maps are an additive response surface. Keep the known key enum for
+// typed application access and API error details, but do not make the wire
+// map exhaustive: a backend may add a new feature before every app version
+// knows about it.
+export const entitlementFeatureMapSchema = z.record(
+  z.string().min(1),
+  entitlementValueSchema
+);
 
 export const entitlementPlanSchema = z.enum(["free", "pro"]);
 export type EntitlementPlan = z.infer<typeof entitlementPlanSchema>;
@@ -4182,14 +4191,14 @@ export const complimentaryProGrantSchema = z.object({
   grantedByUserId: userIdSchema.nullable(),
   grantedAt: z.string().datetime(),
   reason: z.string().min(1)
-});
+}).strip();
 export type ComplimentaryProGrant = z.infer<typeof complimentaryProGrantSchema>;
 
 export const entitlementUsageSchema = z.object({
-  houses: z.object({ active: z.number().int().nonnegative(), limit: z.number().int().nonnegative().nullable() }),
-  documents: z.object({ active: z.number().int().nonnegative(), storageBytes: z.number().int().nonnegative(), limit: z.number().int().nonnegative().nullable(), storageLimitBytes: z.number().int().nonnegative().nullable() }),
-  tasks: z.object({ active: z.number().int().nonnegative(), limit: z.number().int().nonnegative().nullable() })
-});
+  houses: z.object({ active: z.number().int().nonnegative(), limit: z.number().int().nonnegative().nullable() }).strip(),
+  documents: z.object({ active: z.number().int().nonnegative(), storageBytes: z.number().int().nonnegative(), limit: z.number().int().nonnegative().nullable(), storageLimitBytes: z.number().int().nonnegative().nullable() }).strip(),
+  tasks: z.object({ active: z.number().int().nonnegative(), limit: z.number().int().nonnegative().nullable() }).strip()
+}).strip();
 export type EntitlementUsage = z.infer<typeof entitlementUsageSchema>;
 
 export const entitlementsSchema = z.object({
@@ -4199,17 +4208,17 @@ export const entitlementsSchema = z.object({
   status: entitlementStatusSchema,
   source: entitlementSourceSchema,
   complimentaryProGrant: complimentaryProGrantSchema.nullable(),
-  features: z.record(featureKeySchema, entitlementValueSchema),
+  features: entitlementFeatureMapSchema,
   usage: entitlementUsageSchema,
   evaluatedAt: z.string().datetime(),
   expiresAt: z.string().datetime().optional()
-});
+}).strip();
 
 export type Entitlements = z.infer<typeof entitlementsSchema>;
 
 export const adminEntitlementPlanConfigSchema = z.object({
   plan: entitlementPlanSchema,
-  features: z.record(featureKeySchema, entitlementValueSchema),
+  features: entitlementFeatureMapSchema,
   updatedAt: z.string().datetime(),
   updatedByUserId: userIdSchema.nullable()
 });
@@ -4222,7 +4231,7 @@ export const adminEntitlementConfigResponseSchema = z.object({
 export type AdminEntitlementConfigResponse = z.infer<typeof adminEntitlementConfigResponseSchema>;
 
 export const updateAdminEntitlementPlanConfigRequestSchema = z.object({
-  features: z.record(featureKeySchema, entitlementValueSchema)
+  features: entitlementFeatureMapSchema
 });
 export type UpdateAdminEntitlementPlanConfigRequest = z.infer<typeof updateAdminEntitlementPlanConfigRequestSchema>;
 
@@ -4255,6 +4264,16 @@ export type UpdateAdminUserEntitlementRequest = z.infer<
   typeof updateAdminUserEntitlementRequestSchema
 >;
 
+export const appCompatibilitySchema = z.object({
+  status: z.enum(["supported", "upgrade_required"]),
+  minimumSupportedAppVersion: z.string().min(1).nullable(),
+  minimumSupportedAppBuild: z.number().int().nonnegative().nullable(),
+  reason: z.enum(["minimum_app_version", "minimum_app_build"]).nullable(),
+  updateUrl: z.string().url().nullable()
+}).strip();
+
+export type AppCompatibility = z.infer<typeof appCompatibilitySchema>;
+
 export const apiErrorSchema = z.object({
   code: z.string().min(1),
   message: z.string().min(1),
@@ -4264,9 +4283,10 @@ export const apiErrorSchema = z.object({
     limit: z.number().int().nonnegative().nullable().optional(),
     current: z.number().int().nonnegative().optional(),
     storageLimitBytes: z.number().int().nonnegative().nullable().optional(),
-    storageBytes: z.number().int().nonnegative().optional()
-  }).optional()
-});
+    storageBytes: z.number().int().nonnegative().optional(),
+    compatibility: appCompatibilitySchema.optional()
+  }).strip().optional()
+}).strip();
 
 export type ApiError = z.infer<typeof apiErrorSchema>;
 
@@ -4306,8 +4326,15 @@ export const appBootstrapResponseSchema = z.object({
   publicDataSummaries: z.array(housePublicDataSummarySchema).default([]),
   entitlements: entitlementsSchema,
   cards: z.array(homeCardSchema),
+  compatibility: appCompatibilitySchema.default({
+    status: "supported",
+    minimumSupportedAppVersion: null,
+    minimumSupportedAppBuild: null,
+    reason: null,
+    updateUrl: null
+  }),
   generatedAt: z.string().datetime()
-});
+}).strip();
 
 export type AppBootstrapResponse = z.infer<typeof appBootstrapResponseSchema>;
 
@@ -4316,9 +4343,16 @@ export const homeBootstrapResponseSchema = z.object({
   house: houseSummarySchema.nullable(),
   entitlements: entitlementsSchema,
   cards: z.array(homeCardSchema),
+  compatibility: appCompatibilitySchema.default({
+    status: "supported",
+    minimumSupportedAppVersion: null,
+    minimumSupportedAppBuild: null,
+    reason: null,
+    updateUrl: null
+  }),
   generatedAt: z.string().datetime(),
   skeleton: z.literal(true)
-});
+}).strip();
 
 export type HomeBootstrapResponse = z.infer<typeof homeBootstrapResponseSchema>;
 

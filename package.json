@@ -35,6 +35,8 @@
     "check": "npm run check:no-firebase && npm run check:secrets && npm run check:bbr-codebooks && npm run check:bbr-public-data-parity && npm run typecheck && npm run lint",
     "test:entitlements-contract": "npm run build -w @matriva/shared && node --test tools/test-entitlements-contract.mjs",
     "test:recommendation-applicability": "node --experimental-strip-types --test tools/test-recommendation-applicability-v1.mjs",
+    "test:mobile-app-identity": "node --experimental-strip-types --test tools/test-mobile-app-identity.mjs",
+    "test:mobile-api-compatibility": "npm run build:packages && node --experimental-strip-types --test tools/test-mobile-api-compatibility.mjs",
     "smoke:auth": "node tools/smoke-auth.mjs",
     "test:house-invitation-entitlements": "node tools/smoke-house-invitation-entitlements.mjs",
     "test:house-membership-removal": "node tools/smoke-house-membership-removal.mjs",

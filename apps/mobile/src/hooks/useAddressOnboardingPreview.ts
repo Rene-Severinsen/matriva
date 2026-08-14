@@ -46,7 +46,9 @@ export function useAddressOnboardingPreview() {
   const apiClient = useMemo(
     () =>
       createMatrivaApiClient({
-        baseUrl: matrivaApiConfig.baseUrl
+        baseUrl: matrivaApiConfig.baseUrl,
+        appVersion: matrivaApiConfig.appVersion,
+        appBuild: matrivaApiConfig.appBuild
       }),
     []
   );

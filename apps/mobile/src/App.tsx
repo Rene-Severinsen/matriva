@@ -88,6 +88,7 @@ import {
 import { guideSectionLabel, guideSectionTitle, houseDocumentCategoryForType, presentGuideSection } from "@matriva/shared";
 
 import { matrivaApiConfig } from "./config/api";
+import { formatAppVersionLabel } from "./config/appIdentity";
 import { clearStoredSession, readStoredSession, writeStoredSession } from "./auth/sessionStorage";
 import { SwipeActionRow } from "./components/SwipeActionRow";
 import {
@@ -100,7 +101,8 @@ type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" |
 type MaintenanceFilter = "current" | "spring" | "summer" | "autumn" | "winter" | "all";
 type MaintenanceView = "main" | "history" | "historyDetail" | "taskDetail" | "recommendations" | "catalog" | "dismissedRecommendations" | "recommendationDetail";
 type AuthStatus = "restoring" | "anonymous" | "authenticated";
-type MoreView = "menu" | "profile" | "settings" | "sharing" | "subscription" | "guides";
+type AppCompatibilityState = "unknown" | "supported" | "upgrade_required";
+type MoreView = "menu" | "profile" | "settings" | "sharing" | "subscription" | "guides" | "about";
 type HouseView = "overview" | "details" | "improvements" | "improvementDetail" | "addImprovement";
 type GuideReturnLocation = "maintenance" | "more";
 type UnauthenticatedStep = "welcome" | "create" | "login";
@@ -186,6 +188,10 @@ function selectedAddressInput(
 
 function userFacingError(error: unknown): string {
   if (error instanceof MatrivaApiError) {
+    if (error.code === "app_update_required") {
+      return "Denne version af Matriva er ikke længere understøttet. Opdatér appen fra App Store eller TestFlight.";
+    }
+
     if (error.code === "entitlement_feature_not_included") {
       return "Denne funktion er ikke inkluderet i din aktuelle adgang.";
     }
@@ -4140,6 +4146,9 @@ function WelcomeScreen({
                   privatlivspolitik
                 </Text>.
               </Text>
+              <Text style={styles.welcomeVersion}>
+                {formatAppVersionLabel(matrivaApiConfig.appVersion, matrivaApiConfig.appBuild)}
+              </Text>
             </View>
           </View>
         </ScrollView>
@@ -4208,6 +4217,9 @@ function LoginScreen({
         {devMagicLink ? (
           <SecondaryButton label="Åbn udviklingslink" onPress={() => onOpenDevLink(devMagicLink)} />
         ) : null}
+        <Text style={styles.authVersion}>
+          {formatAppVersionLabel(matrivaApiConfig.appVersion, matrivaApiConfig.appBuild)}
+        </Text>
       </Card>
     </View>
   );
@@ -4272,6 +4284,17 @@ function BootstrapRetryScreen({
         loading={isLoading}
         disabled={isLoading}
         onPress={onRetry}
+      />
+    </View>
+  );
+}
+
+function UpgradeRequiredScreen() {
+  return (
+    <View style={styles.stack}>
+      <SectionHeader
+        title="Opdatér Matriva"
+        subtitle="Denne version af appen er ikke længere understøttet. Hent den nyeste version fra App Store eller TestFlight for at fortsætte."
       />
     </View>
   );
@@ -4589,6 +4612,7 @@ function MoreScreen({
   onOpenSharing,
   onOpenSubscription,
   onOpenGuides,
+  onOpenAbout,
   attentionCount,
   hasPendingHouseInvitations,
   sharingEnabled,
@@ -4600,6 +4624,7 @@ function MoreScreen({
   onOpenSharing: () => void;
   onOpenSubscription: () => void;
   onOpenGuides: () => void;
+  onOpenAbout: () => void;
   attentionCount: number;
   hasPendingHouseInvitations: boolean;
   sharingEnabled: boolean;
@@ -4617,15 +4642,16 @@ function MoreScreen({
           const isGuides = row === "Vejledninger";
           const isSettings = row === "Indstillinger";
           const isSharing = row === "Deling & adgang";
+          const isAbout = row === "Om Matriva";
           const canOpenSharing = sharingEnabled || hasPendingHouseInvitations;
-          const isEnabled = isProfile || isGuides || isSubscription || isSettings || (isSharing && canOpenSharing);
+          const isEnabled = isProfile || isGuides || isSubscription || isSettings || isAbout || (isSharing && canOpenSharing);
 
           return (
             <Pressable
               accessibilityRole="button"
               disabled={!isEnabled}
               key={row}
-              onPress={isProfile ? onOpenProfile : isGuides ? onOpenGuides : isSubscription ? onOpenSubscription : isSettings ? onOpenSettings : isSharing ? onOpenSharing : undefined}
+              onPress={isProfile ? onOpenProfile : isGuides ? onOpenGuides : isSubscription ? onOpenSubscription : isSettings ? onOpenSettings : isAbout ? onOpenAbout : isSharing ? onOpenSharing : undefined}
               style={({ pressed }) => [
                 styles.menuRow,
                 index === rows.length - 1 ? styles.menuRowLast : null,
@@ -4653,6 +4679,32 @@ function MoreScreen({
           <Text style={styles.menuText}>{isLoggingOut ? "Logger ud..." : "Log ud"}</Text>
           <Text style={styles.menuMeta}>Afslut session</Text>
         </Pressable>
+      </Card>
+    </View>
+  );
+}
+
+function AboutMatrivaScreen({ onBack }: { onBack: () => void }) {
+  return (
+    <View style={styles.stack}>
+      <View style={styles.screenTitleRow}>
+        <SectionHeader title="Om Matriva" subtitle="Appens runtime-oplysninger." />
+        <SecondaryButton label="Tilbage" onPress={onBack} />
+      </View>
+      <Card>
+        <InfoRow
+          label="App-version"
+          value={matrivaApiConfig.appVersion ?? "Ikke tilgængelig"}
+        />
+        <InfoRow
+          label="Buildnummer"
+          value={matrivaApiConfig.appBuild ?? "Ikke tilgængelig"}
+        />
+        {matrivaApiConfig.environmentLabel ? (
+          <Text style={styles.metaText}>
+            Miljø: {matrivaApiConfig.environmentLabel}
+          </Text>
+        ) : null}
       </Card>
     </View>
   );
@@ -4832,6 +4884,8 @@ export default function App() {
     () =>
       createMatrivaApiClient({
         baseUrl: matrivaApiConfig.baseUrl,
+        appVersion: matrivaApiConfig.appVersion,
+        appBuild: matrivaApiConfig.appBuild,
         getAccessToken: () => accessTokenRef.current,
         getRefreshToken: () => refreshTokenRef.current,
         onSessionRefreshed: async (tokens) => {
@@ -4852,6 +4906,8 @@ export default function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>("restoring");
   const [session, setSession] = useState<SessionTokens | null>(null);
   const [bootstrap, setBootstrap] = useState<AppBootstrapResponse | null>(null);
+  const [appCompatibilityState, setAppCompatibilityState] =
+    useState<AppCompatibilityState>("unknown");
   const [unauthenticatedStep, setUnauthenticatedStep] =
     useState<UnauthenticatedStep>("welcome");
   const [loginEmail, setLoginEmail] = useState("");
@@ -5085,6 +5141,7 @@ export default function App() {
     pendingOwnerClaimApprovalTokenRef.current = null;
     setSession(null);
     setBootstrap(null);
+    setAppCompatibilityState("unknown");
     setUnauthenticatedStep("welcome");
     setLoginEmail("");
     setLoginMessage(null);
@@ -5218,6 +5275,7 @@ export default function App() {
       const bootstrapResponse = await apiClient.getAppBootstrap();
       const guideResponse = await apiClient.listGuides({ previewDrafts: matrivaApiConfig.guidePreviewEnabled });
       setGuides(guideResponse.guides);
+      setAppCompatibilityState("supported");
       setBootstrap(bootstrapResponse);
       setProfileName(bootstrapResponse.profile.displayName ?? "");
       setHouses(bootstrapResponse.houses);
@@ -5261,10 +5319,16 @@ export default function App() {
         setHousePhoto(null);
       }
     } catch (caughtError) {
-      setError(userFacingError(caughtError));
+      if (caughtError instanceof MatrivaApiError && caughtError.code === "app_update_required") {
+        setAppCompatibilityState("upgrade_required");
+        setError(null);
+      } else {
+        setError(userFacingError(caughtError));
+      }
       setTasks([]);
       setMaintenanceHistory([]);
       setMaintenanceRecommendations([]);
+      setMaintenanceCatalog([]);
       setHouseDocuments([]);
       setSelectedHistoryDetail(null);
       setMaintenanceView("main");
@@ -7162,6 +7226,10 @@ export default function App() {
       return <GuideLibraryScreen guides={guides} selectedGuide={selectedGuide} apiBaseUrl={apiClient.baseUrl} accessToken={accessTokenRef.current} onOpen={(guide) => openGuide(guide, "more")} onBack={closeGuide} onExit={() => { setSelectedGuide(null); setMoreView("menu"); }} />;
     }
 
+    if (moreView === "about") {
+      return <AboutMatrivaScreen onBack={() => setMoreView("menu")} />;
+    }
+
     if (moreView === "settings") {
       return (
         <SettingsScreen
@@ -7186,6 +7254,7 @@ export default function App() {
         onOpenProfile={() => setMoreView("profile")}
         onOpenSubscription={() => setMoreView("subscription")}
         onOpenGuides={() => { setSelectedGuide(null); setMoreView("guides"); }}
+        onOpenAbout={() => setMoreView("about")}
         onOpenSettings={() => setMoreView("settings")}
         onOpenSharing={() => setMoreView("sharing")}
         attentionCount={moreAttentionCount}
@@ -7264,6 +7333,22 @@ export default function App() {
             />
           </ScrollView>
         </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
+  if (appCompatibilityState === "upgrade_required") {
+    return (
+      <SafeAreaView style={styles.screen}>
+        <StatusBar style="dark" />
+        <ScrollView
+          automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+          contentContainerStyle={styles.content}
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+          keyboardShouldPersistTaps="handled"
+        >
+          <UpgradeRequiredScreen />
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -7692,6 +7777,18 @@ const styles = StyleSheet.create({
   welcomeLegalLink: {
     color: theme.primary,
     textDecorationLine: "underline"
+  },
+  welcomeVersion: {
+    color: theme.muted,
+    fontSize: 11,
+    marginTop: 4,
+    textAlign: "center"
+  },
+  authVersion: {
+    color: theme.muted,
+    fontSize: 11,
+    marginTop: 10,
+    textAlign: "center"
   },
   loginTextActionPressed: {
     opacity: 0.65

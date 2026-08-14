@@ -8,6 +8,7 @@ import type { PoolClient } from "pg";
 
 import {
   appBootstrapResponseSchema,
+  houseFactsResponseSchema,
   entitlementValueSchema,
   entitlementsSchema,
   maintenanceHistoryEntrySchema,
@@ -63,6 +64,11 @@ import type {
   UserId
 } from "@matriva/shared";
 import type {
+  HouseApplicabilityState,
+  MaintenanceCatalogApplicabilityRule,
+  MaintenanceApplicabilityResult
+} from "./maintenance-catalog.ts";
+import type {
   AdminGuideResponse,
   AdminGuidesResponse,
   GuideAuditEntry,
@@ -87,6 +93,7 @@ import {
 } from "./house-profile-content.ts";
 import {
   maintenanceCatalogItems,
+  evaluateMaintenanceApplicability,
   recommendedPeriodLabel,
   type MaintenanceCatalogItem,
   type MaintenanceCatalogPeriod
@@ -783,6 +790,8 @@ export function createOpaqueId(
     | "mcat"
     | "mhide"
     | "mcomp"
+    | "hfact"
+    | "hcomp"
     | "doc"
 ) {
   return `${prefix}_${randomBytes(12).toString("hex")}`;
@@ -1043,26 +1052,187 @@ function suggestedDueDateForCatalogItem(
   return suggested <= yearEnd ? suggested : yearEnd;
 }
 
-function evaluateCatalogEligibility(item: MaintenanceCatalogItemRow) {
-  if (item.eligibility_rules?.type !== "universal_house") {
-    return {
-      eligible: false,
-      snapshot: {
-        type: item.eligibility_rules?.type ?? "unknown",
-        eligible: false,
-        reason: "Ukendt eligibility-regel blev afvist."
-      }
-    };
+function normalizeApplicabilityRule(rule: MaintenanceCatalogItemRow["eligibility_rules"]): MaintenanceCatalogApplicabilityRule {
+  // Existing rows created before V1 used `universal_house`.
+  if ((rule as { type?: string } | null)?.type === "universal_house") {
+    return { type: "UNIVERSAL" };
   }
+  return rule as MaintenanceCatalogApplicabilityRule;
+}
 
+function evaluateCatalogEligibility(
+  item: MaintenanceCatalogItemRow,
+  state: HouseApplicabilityState
+): MaintenanceApplicabilityResult & { snapshot: Record<string, unknown> } {
+  const result = evaluateMaintenanceApplicability(
+    normalizeApplicabilityRule(item.eligibility_rules),
+    state
+  );
   return {
-    eligible: true,
+    ...result,
     snapshot: {
-      type: "universal_house",
-      eligible: true,
-      reason: "Generel vedligeholdelsesanbefaling for huset."
+      type: normalizeApplicabilityRule(item.eligibility_rules).type,
+      eligible: result.eligible,
+      relevance: result.status,
+      reason: result.reason
     }
   };
+}
+
+type NormalizedHouseData = {
+  selection?: { primaryBuildingId?: string | null };
+  productBuildings?: Array<Record<string, any>>;
+  buildings?: Array<Record<string, any>>;
+};
+
+async function syncHouseFactsFromBbr(houseId: string) {
+  const result = await pool.query<{ normalized_payload: NormalizedHouseData }>(
+    `select normalized_payload
+     from house_public_data_snapshots
+     where house_id = $1 and is_current
+     limit 1`,
+    [houseId]
+  );
+  const normalized = result.rows[0]?.normalized_payload;
+  if (!normalized) return;
+
+  const buildings = normalized.productBuildings ?? normalized.buildings ?? [];
+  const primary = buildings.find((building) =>
+    building.bbrBuildingId === normalized.selection?.primaryBuildingId
+  ) ?? buildings[0];
+  const heating = primary?.heating ?? {};
+  const installationCode = heating.installation?.code ?? null;
+  const sourceCode = heating.source?.code ?? null;
+  const supplementaryCode = heating.supplementary?.code ?? null;
+  let heatingType: string | null = null;
+
+  if (installationCode === "5" || supplementaryCode === "1") heatingType = "heat_pump";
+  else if (installationCode === "1") heatingType = "district_heating";
+  else if (installationCode === "2" && sourceCode === "7") heatingType = "gas_boiler";
+  else if (installationCode === "2" && sourceCode === "3") heatingType = "oil_boiler";
+  else if (["2", "3", "6"].includes(installationCode)) heatingType = "central_heating";
+  else if (installationCode === "7") heatingType = "electric_heating";
+  else if (installationCode === "9") heatingType = "none";
+
+  const facts: Array<[string, unknown]> = [
+    ["bbr.heating.installation_code", installationCode],
+    ["bbr.heating.source_code", sourceCode],
+    ["bbr.heating.supplementary_code", supplementaryCode],
+    ["bbr.heating.type", heatingType],
+    ["bbr.roof.material_code", primary?.materials?.roof?.code ?? null],
+    ["bbr.facade.material_code", primary?.materials?.outerWall?.code ?? null]
+  ];
+  for (const [factKey, value] of facts) {
+    if (value === null) continue;
+    await pool.query(
+      `insert into house_facts (id, house_id, fact_key, value, source, confidence)
+       values ($1, $2, $3, $4::jsonb, 'bbr', 'high')
+       on conflict (house_id, fact_key) do update
+       set value = excluded.value, source = excluded.source, confidence = excluded.confidence, updated_at = now()
+       where house_facts.source = 'bbr'`,
+      [createOpaqueId("hfact"), houseId, factKey, JSON.stringify(value)]
+    );
+  }
+
+  const typeToComponent: Record<string, string> = {
+    heat_pump: "heat_pump",
+    district_heating: "district_heating",
+    gas_boiler: "gas_boiler",
+    oil_boiler: "oil_boiler",
+    central_heating: "central_heating"
+  };
+  const components: Array<[string, "present" | "absent"]> = [];
+  if (heatingType) {
+    components.push(["heating_system", heatingType === "none" ? "absent" : "present"]);
+    for (const key of Object.values(typeToComponent)) {
+      components.push([key, typeToComponent[heatingType] === key ? "present" : "absent"]);
+    }
+  }
+  if (primary) {
+    components.push(["roof", "present"], ["facade", "present"]);
+    const hasBasement = buildings.some((building) =>
+      (building.floors ?? []).some((floor: Record<string, any>) =>
+        (floor.basementAreaM2 ?? 0) > 0
+      )
+    );
+    if (hasBasement) components.push(["basement", "present"]);
+    const hasWetroom = (primary.units ?? []).some((unit: Record<string, any>) =>
+      unit.facilities?.bathType?.code === "V" || (unit.facilities?.bathroomCount ?? 0) > 0
+    );
+    if (hasWetroom) components.push(["wetroom", "present"]);
+  }
+  for (const [componentKey, status] of components) {
+    await pool.query(
+      `insert into house_components (id, house_id, component_key, status, source, confidence)
+       values ($1, $2, $3, $4, 'bbr', 'high')
+       on conflict (house_id, component_key) do update
+       set status = excluded.status, source = excluded.source, confidence = excluded.confidence, updated_at = now()
+       where house_components.source = 'bbr'`,
+      [createOpaqueId("hcomp"), houseId, componentKey, status]
+    );
+  }
+}
+
+async function loadHouseApplicabilityState(houseId: string): Promise<HouseApplicabilityState> {
+  await syncHouseFactsFromBbr(houseId);
+  const [factsResult, componentsResult] = await Promise.all([
+    pool.query<{ fact_key: string; value: unknown }>(
+      "select fact_key, value from house_facts where house_id = $1",
+      [houseId]
+    ),
+    pool.query<{ component_key: string; status: "present" | "absent" | "unknown" }>(
+      "select component_key, status from house_components where house_id = $1",
+      [houseId]
+    )
+  ]);
+  return {
+    facts: Object.fromEntries(factsResult.rows.map((row) => [row.fact_key, row.value])),
+    components: Object.fromEntries(componentsResult.rows.map((row) => [row.component_key, row.status]))
+  };
+}
+
+export async function getHouseFactsForHouse(userId: string, houseId: string) {
+  const house = await getSavedHouse(userId, houseId);
+  await syncHouseFactsFromBbr(house.id);
+  const [factsResult, componentsResult] = await Promise.all([
+    pool.query<{ fact_key: string; value: unknown; source: string; confidence: string; updated_at: Date }>(
+      "select fact_key, value, source, confidence, updated_at from house_facts where house_id = $1 order by fact_key",
+      [house.id]
+    ),
+    pool.query<{ component_key: string; status: "present" | "absent" | "unknown"; attributes: Record<string, unknown>; source: string; confidence: string; updated_at: Date }>(
+      "select component_key, status, attributes, source, confidence, updated_at from house_components where house_id = $1 order by component_key",
+      [house.id]
+    )
+  ]);
+  return houseFactsResponseSchema.parse({
+    facts: factsResult.rows.map((row) => ({ factKey: row.fact_key, value: row.value, source: row.source, confidence: row.confidence, updatedAt: row.updated_at.toISOString() })),
+    components: componentsResult.rows.map((row) => ({ componentKey: row.component_key, status: row.status, attributes: row.attributes ?? {}, source: row.source, confidence: row.confidence, updatedAt: row.updated_at.toISOString() })),
+    generatedAt: new Date().toISOString()
+  });
+}
+
+export async function upsertHouseFactForHouse(userId: string, houseId: string, factKey: string, input: { value: unknown; confidence: "high" | "medium" | "low" | "unknown" }) {
+  const house = await getSavedHouse(userId, houseId);
+  await pool.query(
+    `insert into house_facts (id, house_id, fact_key, value, source, confidence)
+     values ($1, $2, $3, $4::jsonb, 'user', $5)
+     on conflict (house_id, fact_key) do update
+     set value = excluded.value, source = excluded.source, confidence = excluded.confidence, updated_at = now()`,
+    [createOpaqueId("hfact"), house.id, factKey, JSON.stringify(input.value), input.confidence]
+  );
+  return getHouseFactsForHouse(userId, house.id);
+}
+
+export async function upsertHouseComponentForHouse(userId: string, houseId: string, componentKey: string, input: { status: "present" | "absent" | "unknown"; attributes: Record<string, unknown>; confidence: "high" | "medium" | "low" | "unknown" }) {
+  const house = await getSavedHouse(userId, houseId);
+  await pool.query(
+    `insert into house_components (id, house_id, component_key, status, attributes, source, confidence)
+     values ($1, $2, $3, $4, $5::jsonb, 'user', $6)
+     on conflict (house_id, component_key) do update
+     set status = excluded.status, attributes = excluded.attributes, source = excluded.source, confidence = excluded.confidence, updated_at = now()`,
+    [createOpaqueId("hcomp"), house.id, componentKey, input.status, JSON.stringify(input.attributes), input.confidence]
+  );
+  return getHouseFactsForHouse(userId, house.id);
 }
 
 function toCurrentUser(row: UserRow): CurrentUser {
@@ -2640,6 +2810,7 @@ async function ensureMaintenanceRecommendationInstancesForHouse(
   houseId: string
 ) {
   await syncMaintenanceCatalogItems();
+  const applicabilityState = await loadHouseApplicabilityState(houseId);
   const result = await pool.query<MaintenanceCatalogItemRow>(
     `
       select
@@ -2664,7 +2835,7 @@ async function ensureMaintenanceRecommendationInstancesForHouse(
   );
 
   for (const item of result.rows) {
-    const eligibility = evaluateCatalogEligibility(item);
+    const eligibility = evaluateCatalogEligibility(item, applicabilityState);
 
     if (!eligibility.eligible) {
       continue;
@@ -2835,6 +3006,50 @@ export async function listMaintenanceRecommendationsForHouse(
   );
 
   return result.rows.map(toMaintenanceRecommendation);
+}
+
+export async function listMaintenanceCatalogForHouse(
+  userId: string,
+  houseId: string,
+  scope: "recommended" | "all" = "all"
+) {
+  const house = await getSavedHouse(userId, houseId);
+  await syncMaintenanceCatalogItems();
+  const state = await loadHouseApplicabilityState(house.id);
+  const result = await pool.query<MaintenanceCatalogItemRow>(
+    `select id, catalog_key, catalog_version, title, short_description, season,
+            recommended_period, default_recurrence_interval, priority,
+            eligibility_rules, disclaimer_class, is_active, guide_template_id,
+            guide_version_id
+     from maintenance_catalog_items
+     where is_active
+     order by catalog_key, catalog_version`
+  );
+  const items = result.rows
+    .map((item) => {
+      const applicability = evaluateCatalogEligibility(item, state);
+      return {
+        catalogKey: item.catalog_key,
+        catalogVersion: item.catalog_version,
+        title: item.title,
+        shortDescription: item.short_description,
+        season: item.season,
+        recommendedPeriod: item.recommended_period,
+        defaultRecurrence: {
+          interval: item.default_recurrence_interval,
+          anchor: "completed_date" as const
+        },
+        priority: item.priority,
+        applicability: normalizeApplicabilityRule(item.eligibility_rules),
+        relevance: applicability.status,
+        guideTemplateId: item.guide_template_id,
+        guideVersionId: item.guide_version_id,
+        disclaimerClass: item.disclaimer_class,
+        isActive: item.is_active
+      };
+    })
+    .filter((item) => scope === "all" || item.relevance === "relevant");
+  return { items, scope, generatedAt: new Date().toISOString() };
 }
 
 export async function acceptMaintenanceRecommendationForHouse(

@@ -41,6 +41,8 @@ import {
   maintenanceHistoryDetailResponseSchema,
   reverseMaintenanceCompletionResponseSchema,
   maintenanceRecommendationsResponseSchema,
+  maintenanceCatalogResponseSchema,
+  houseFactsResponseSchema,
   dismissMaintenanceRecommendationResponseSchema,
   maintenanceTaskResponseSchema,
   maintenanceTasksResponseSchema,
@@ -137,6 +139,10 @@ import {
   type MaintenanceRecommendationId,
   type DismissMaintenanceRecommendationRequest,
   type MaintenanceRecommendationsResponse,
+  type MaintenanceCatalogResponse,
+  type HouseFactsResponse,
+  type UpsertHouseFactRequest,
+  type UpsertHouseComponentRequest,
   type DismissMaintenanceRecommendationResponse,
   type MoveMaintenanceTaskRequest,
   type RefreshSessionRequest,
@@ -426,6 +432,13 @@ export type MatrivaApiClient = {
     houseId: HouseId,
     status?: "pending" | "dismissed"
   ) => Promise<MaintenanceRecommendationsResponse>;
+  listMaintenanceCatalog: (
+    houseId: HouseId,
+    scope?: "recommended" | "all"
+  ) => Promise<MaintenanceCatalogResponse>;
+  getHouseFacts: (houseId: HouseId) => Promise<HouseFactsResponse>;
+  upsertHouseFact: (houseId: HouseId, factKey: string, input: UpsertHouseFactRequest) => Promise<HouseFactsResponse>;
+  upsertHouseComponent: (houseId: HouseId, componentKey: string, input: UpsertHouseComponentRequest) => Promise<HouseFactsResponse>;
   acceptMaintenanceRecommendation: (
     houseId: HouseId,
     recommendationId: MaintenanceRecommendationId,
@@ -1683,6 +1696,42 @@ export function createMatrivaApiClient(
 
       return maintenanceRecommendationsResponseSchema.parse(
         await parseApiResponse(response, "Could not load maintenance recommendations.")
+      );
+    },
+    async listMaintenanceCatalog(houseId, scope = "all") {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/maintenance-catalog?scope=${scope}`,
+        { headers: authHeaders() }
+      );
+      return maintenanceCatalogResponseSchema.parse(
+        await parseApiResponse(response, "Could not load maintenance catalog.")
+      );
+    },
+    async getHouseFacts(houseId) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/house-facts`,
+        { headers: authHeaders() }
+      );
+      return houseFactsResponseSchema.parse(
+        await parseApiResponse(response, "Could not load house facts.")
+      );
+    },
+    async upsertHouseFact(houseId, factKey, input) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/house-facts/facts/${encodeURIComponent(factKey)}`,
+        { method: "PUT", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) }
+      );
+      return houseFactsResponseSchema.parse(
+        await parseApiResponse(response, "Could not save house fact.")
+      );
+    },
+    async upsertHouseComponent(houseId, componentKey, input) {
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/houses/${houseId}/house-facts/components/${encodeURIComponent(componentKey)}`,
+        { method: "PUT", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) }
+      );
+      return houseFactsResponseSchema.parse(
+        await parseApiResponse(response, "Could not save house component.")
       );
     },
     async acceptMaintenanceRecommendation(houseId, recommendationId, input) {

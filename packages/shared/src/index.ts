@@ -2325,6 +2325,93 @@ export const houseDocumentsResponseSchema = z.object({
 
 export type HouseDocumentsResponse = z.infer<typeof houseDocumentsResponseSchema>;
 
+export const maintenanceApplicabilityTypeSchema = z.enum([
+  "UNIVERSAL",
+  "REQUIRES_COMPONENT",
+  "EXCLUDES_COMPONENT",
+  "ENRICHED_BY_FACTS"
+]);
+export type MaintenanceApplicabilityType = z.infer<typeof maintenanceApplicabilityTypeSchema>;
+
+export const maintenanceApplicabilityRuleSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("UNIVERSAL") }),
+  z.object({ type: z.literal("REQUIRES_COMPONENT"), componentKey: z.string().min(1), excludesComponentKey: z.string().min(1).optional() }),
+  z.object({ type: z.literal("EXCLUDES_COMPONENT"), componentKey: z.string().min(1) }),
+  z.object({ type: z.literal("ENRICHED_BY_FACTS"), factKeys: z.array(z.string().min(1)) })
+]);
+export type MaintenanceApplicabilityRule = z.infer<typeof maintenanceApplicabilityRuleSchema>;
+
+export const maintenanceCatalogRelevanceSchema = z.enum([
+  "relevant",
+  "possible",
+  "not_relevant"
+]);
+export type MaintenanceCatalogRelevance = z.infer<typeof maintenanceCatalogRelevanceSchema>;
+
+export const maintenanceCatalogItemSchema = z.object({
+  catalogKey: z.string().min(1),
+  catalogVersion: z.string().min(1),
+  title: z.string().min(1),
+  shortDescription: z.string().min(1),
+  season: maintenanceSeasonSchema,
+  recommendedPeriod: maintenanceRecommendationPeriodSchema,
+  defaultRecurrence: maintenanceRecurrenceSchema,
+  priority: maintenanceRecommendationPrioritySchema,
+  applicability: maintenanceApplicabilityRuleSchema,
+  relevance: maintenanceCatalogRelevanceSchema,
+  guideTemplateId: guideTemplateIdSchema.nullable(),
+  guideVersionId: guideVersionIdSchema.nullable(),
+  disclaimerClass: maintenanceRecommendationDisclaimerClassSchema,
+  isActive: z.boolean()
+});
+export type MaintenanceCatalogItem = z.infer<typeof maintenanceCatalogItemSchema>;
+
+export const maintenanceCatalogResponseSchema = z.object({
+  items: z.array(maintenanceCatalogItemSchema),
+  scope: z.enum(["recommended", "all"]),
+  generatedAt: z.string().datetime()
+});
+export type MaintenanceCatalogResponse = z.infer<typeof maintenanceCatalogResponseSchema>;
+
+export const houseFactSchema = z.object({
+  factKey: z.string().min(1),
+  value: z.unknown(),
+  source: z.enum(["bbr", "user", "manual", "ai"]),
+  confidence: z.enum(["high", "medium", "low", "unknown"]),
+  updatedAt: z.string().datetime()
+});
+export type HouseFact = z.infer<typeof houseFactSchema>;
+
+export const houseComponentSchema = z.object({
+  componentKey: z.string().min(1),
+  status: z.enum(["present", "absent", "unknown"]),
+  attributes: z.record(z.string(), z.unknown()),
+  source: z.enum(["bbr", "user", "manual", "ai"]),
+  confidence: z.enum(["high", "medium", "low", "unknown"]),
+  updatedAt: z.string().datetime()
+});
+export type HouseComponent = z.infer<typeof houseComponentSchema>;
+
+export const houseFactsResponseSchema = z.object({
+  facts: z.array(houseFactSchema),
+  components: z.array(houseComponentSchema),
+  generatedAt: z.string().datetime()
+});
+export type HouseFactsResponse = z.infer<typeof houseFactsResponseSchema>;
+
+export const upsertHouseFactRequestSchema = z.object({
+  value: z.unknown(),
+  confidence: z.enum(["high", "medium", "low", "unknown"]).default("unknown")
+});
+export type UpsertHouseFactRequest = z.infer<typeof upsertHouseFactRequestSchema>;
+
+export const upsertHouseComponentRequestSchema = z.object({
+  status: z.enum(["present", "absent", "unknown"]),
+  attributes: z.record(z.string(), z.unknown()).default({}),
+  confidence: z.enum(["high", "medium", "low", "unknown"]).default("unknown")
+});
+export type UpsertHouseComponentRequest = z.infer<typeof upsertHouseComponentRequestSchema>;
+
 export const maintenanceRecommendationSourceTypeSchema = z.enum([
   "matriva_catalog",
   "document_extracted",

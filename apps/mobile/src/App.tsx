@@ -72,6 +72,7 @@ import {
   type MaintenanceHistoryEntry,
   type MaintenanceHistoryDetail,
   type MaintenanceRecommendation,
+  type MaintenanceCatalogItem,
   type MaintenanceTask,
   formatDkkPrice,
   maintenanceTaskMatchesSeason,
@@ -97,7 +98,7 @@ import {
 type TabKey = "dashboard" | "house" | "maintenance" | "documents" | "more";
 type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" | "publicData" | "improvement" | "improvementProject" | "improvementItem" | "improvementExpense" | "improvementDocument" | "photo" | "recommendation" | "logout";
 type MaintenanceFilter = "current" | "spring" | "summer" | "autumn" | "winter" | "all";
-type MaintenanceView = "main" | "history" | "historyDetail" | "taskDetail" | "recommendations" | "dismissedRecommendations" | "recommendationDetail";
+type MaintenanceView = "main" | "history" | "historyDetail" | "taskDetail" | "recommendations" | "catalog" | "dismissedRecommendations" | "recommendationDetail";
 type AuthStatus = "restoring" | "anonymous" | "authenticated";
 type MoreView = "menu" | "profile" | "settings" | "sharing" | "subscription" | "guides";
 type HouseView = "overview" | "details" | "improvements" | "improvementDetail" | "addImprovement";
@@ -2937,6 +2938,56 @@ function sourceLabel(source: MaintenanceTask["source"]) {
   return null;
 }
 
+function MaintenanceCatalogScreen({
+  items,
+  onBack,
+  onRequestEnrichment
+}: {
+  items: MaintenanceCatalogItem[];
+  onBack: () => void;
+  onRequestEnrichment: (item: MaintenanceCatalogItem) => void;
+}) {
+  const [scope, setScope] = useState<"recommended" | "all">("recommended");
+  const visibleItems = scope === "recommended"
+    ? items.filter((item) => item.relevance === "relevant")
+    : items;
+  const relevanceLabel = (item: MaintenanceCatalogItem) =>
+    item.relevance === "relevant"
+      ? "Relevant for dit hus"
+      : item.relevance === "possible"
+        ? "Muligvis relevant"
+        : "Ikke relevant ud fra dine husdata";
+
+  return (
+    <View style={styles.stack}>
+      <SecondaryButton label="Tilbage" onPress={onBack} />
+      <SectionHeader title="Anbefalinger" subtitle="Matrivas samlede canonical katalog." />
+      <View style={styles.maintenanceFilterGrid}>
+        <SecondaryButton compact label="Anbefalet til dit hus" onPress={() => setScope("recommended")} />
+        <SecondaryButton compact label="Alle anbefalinger" onPress={() => setScope("all")} />
+      </View>
+      {visibleItems.length === 0 ? (
+        <EmptyState title="Ingen sikre match endnu" body="Hele kataloget er stadig tilgængeligt under Alle anbefalinger." />
+      ) : (
+        <View style={styles.taskList}>
+          {visibleItems.map((item) => (
+            <Pressable key={`${item.catalogKey}:${item.catalogVersion}`} onPress={() => onRequestEnrichment(item)}>
+              <Card>
+              <View style={styles.cardHeaderRow}>
+                <Text style={styles.cardTitle}>{item.title}</Text>
+                <Pill>{relevanceLabel(item)}</Pill>
+              </View>
+              <Text style={styles.compactBodyText}>{item.shortDescription}</Text>
+              <Text style={styles.metaText}>{item.defaultRecurrence.interval === "yearly" ? "Årligt" : "Ved behov"}</Text>
+              </Card>
+            </Pressable>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
 function MaintenanceScreen({
   house,
   currentUserId,
@@ -2953,8 +3004,11 @@ function MaintenanceScreen({
   onHistoryYearFilterChange,
   onOpenFullHistory,
   onOpenAllRecommendations,
+  onOpenCatalog,
+  onRequestEnrichment,
   onOpenDismissedRecommendations,
   selectedRecommendation,
+  catalogItems,
   onOpenRecommendationDetail,
   onOpenGuideForRecommendation,
   onOpenGuideForTask,
@@ -3018,8 +3072,11 @@ function MaintenanceScreen({
   onHistoryYearFilterChange: (year: number | null) => void;
   onOpenFullHistory: () => void;
   onOpenAllRecommendations: () => void;
+  onOpenCatalog: () => void;
+  onRequestEnrichment: (item: MaintenanceCatalogItem) => void;
   onOpenDismissedRecommendations: () => void;
   selectedRecommendation: MaintenanceRecommendation | null;
+  catalogItems: MaintenanceCatalogItem[];
   onOpenRecommendationDetail: (recommendation: MaintenanceRecommendation) => void;
   onOpenGuideForRecommendation: (recommendation: MaintenanceRecommendation) => void;
   onOpenGuideForTask: (task: MaintenanceTask) => void;
@@ -3386,6 +3443,7 @@ function MaintenanceScreen({
             <Text style={styles.iconActionText}>⋯</Text>
           </Pressable>
         </View>
+        <SecondaryButton label="Se hele kataloget" onPress={onOpenCatalog} />
         <Text style={styles.compactBodyText}>
           Matrivas anbefalinger er generelle forslag. Følg altid producentens anvisninger,
           og kontakt en fagperson ved tvivl.
@@ -3413,6 +3471,10 @@ function MaintenanceScreen({
         )}
       </View>
     );
+  }
+
+  if (view === "catalog") {
+    return <MaintenanceCatalogScreen items={catalogItems} onBack={onBackToMaintenance} onRequestEnrichment={onRequestEnrichment} />;
   }
 
   if (view === "historyDetail" && historyDetail) {
@@ -4817,6 +4879,7 @@ export default function App() {
   const [maintenanceRecommendations, setMaintenanceRecommendations] = useState<
     MaintenanceRecommendation[]
   >([]);
+  const [maintenanceCatalog, setMaintenanceCatalog] = useState<MaintenanceCatalogItem[]>([]);
   const [dismissedRecommendations, setDismissedRecommendations] = useState<MaintenanceRecommendation[]>([]);
   const [maintenanceSwipeHintSeen, setMaintenanceSwipeHintSeen] = useState<boolean | null>(null);
   const [houseDocuments, setHouseDocuments] = useState<HouseDocument[]>([]);
@@ -4969,6 +5032,51 @@ export default function App() {
     setMoreView("guides");
   }
 
+  function requestCatalogEnrichment(item: MaintenanceCatalogItem) {
+    if (!selectedHouse) return;
+    const applicability = item.applicability;
+    if (applicability.type === "ENRICHED_BY_FACTS" && applicability.factKeys[0]) {
+      const factKey = applicability.factKeys[0];
+      const saveFact = (value: string) => {
+        setLoadingAction("recommendation");
+        void apiClient.upsertHouseFact(selectedHouse.id, factKey, { value, confidence: "unknown" })
+          .then(() => loadMaintenanceV1(selectedHouse.id))
+          .catch((caughtError) => setError(userFacingError(caughtError)))
+          .finally(() => setLoadingAction(null));
+      };
+      if (factKey === "gutters.material") {
+        Alert.alert("Supplér husdata", "Hvilket materiale er tagrenderne lavet af? Du kan også springe over.", [
+          { text: "Kobber", onPress: () => saveFact("copper") },
+          { text: "Zink", onPress: () => saveFact("zinc") },
+          { text: "Plast", onPress: () => saveFact("plastic") },
+          { text: "Andet", onPress: () => saveFact("other") },
+          { text: "Ved ikke", onPress: () => saveFact("unknown") },
+          { text: "Spring over", style: "cancel" }
+        ]);
+      } else {
+        Alert.alert("Supplér husdata", "Vil du tilføje den manglende husoplysning?", [
+          { text: "Spring over", style: "cancel" },
+          { text: "Ved ikke", onPress: () => saveFact("unknown") }
+        ]);
+      }
+      return;
+    }
+    if (applicability.type === "REQUIRES_COMPONENT") {
+      const saveComponent = (status: "present" | "absent") => {
+        setLoadingAction("recommendation");
+        void apiClient.upsertHouseComponent(selectedHouse.id, applicability.componentKey, { status, attributes: {}, confidence: "unknown" })
+          .then(() => loadMaintenanceV1(selectedHouse.id))
+          .catch((caughtError) => setError(userFacingError(caughtError)))
+          .finally(() => setLoadingAction(null));
+      };
+      Alert.alert("Supplér husdata", `Har huset komponenten ${applicability.componentKey}?`, [
+        { text: "Ja", onPress: () => saveComponent("present") },
+        { text: "Nej", onPress: () => saveComponent("absent") },
+        { text: "Spring over", style: "cancel" }
+      ]);
+    }
+  }
+
   function resetUnauthenticatedFlowState() {
     accessTokenRef.current = null;
     refreshTokenRef.current = null;
@@ -4996,6 +5104,7 @@ export default function App() {
     setShowHouseSelectionModal(false);
     setTasks([]);
     setMaintenanceRecommendations([]);
+    setMaintenanceCatalog([]);
     setDismissedRecommendations([]);
     setMaintenanceView("main");
     setMaintenanceBackView("main");
@@ -5050,17 +5159,19 @@ export default function App() {
 
   const loadMaintenanceV1 = useCallback(
     async (houseId: HouseId) => {
-      const [taskResponse, historyResponse, recommendationResponse, dismissedRecommendationResponse] =
+      const [taskResponse, historyResponse, recommendationResponse, dismissedRecommendationResponse, catalogResponse] =
         await Promise.all([
           apiClient.listMaintenanceTasks(houseId),
           apiClient.listMaintenanceHistory(houseId),
           apiClient.listMaintenanceRecommendations(houseId, "pending"),
-          apiClient.listMaintenanceRecommendations(houseId, "dismissed")
+          apiClient.listMaintenanceRecommendations(houseId, "dismissed"),
+          apiClient.listMaintenanceCatalog(houseId, "all")
         ]);
       setTasks(taskResponse.tasks);
       setMaintenanceHistory(historyResponse.history);
       setMaintenanceRecommendations(recommendationResponse.recommendations);
       setDismissedRecommendations(dismissedRecommendationResponse.recommendations);
+      setMaintenanceCatalog(catalogResponse.items);
     },
     [apiClient]
   );
@@ -5142,6 +5253,7 @@ export default function App() {
         setTasks([]);
         setMaintenanceHistory([]);
         setMaintenanceRecommendations([]);
+        setMaintenanceCatalog([]);
         setHouseDocuments([]);
         setSelectedHistoryDetail(null);
         setMaintenanceView("main");
@@ -6904,6 +7016,7 @@ export default function App() {
           selectedTask={selectedTask}
           recommendations={maintenanceRecommendations}
           dismissedRecommendations={dismissedRecommendations}
+          catalogItems={maintenanceCatalog}
           filter={maintenanceFilter}
           historyYearFilter={historyYearFilter}
           view={maintenanceView}
@@ -6911,6 +7024,8 @@ export default function App() {
           onHistoryYearFilterChange={setHistoryYearFilter}
           onOpenFullHistory={() => openMaintenanceView("history")}
           onOpenAllRecommendations={() => openMaintenanceView("recommendations")}
+          onOpenCatalog={() => openMaintenanceView("catalog", "recommendations")}
+          onRequestEnrichment={requestCatalogEnrichment}
           onOpenDismissedRecommendations={() => openMaintenanceView("dismissedRecommendations")}
           selectedRecommendation={selectedRecommendation}
           onOpenRecommendationDetail={(recommendation) => {

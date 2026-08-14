@@ -74,6 +74,10 @@ import {
   maintenanceHistoryResponseSchema,
   maintenanceHistoryDetailResponseSchema,
   maintenanceRecommendationsResponseSchema,
+  maintenanceCatalogResponseSchema,
+  houseFactsResponseSchema,
+  upsertHouseFactRequestSchema,
+  upsertHouseComponentRequestSchema,
   houseDocumentsResponseSchema,
   houseDocumentResponseSchema,
   logoutRequestSchema,
@@ -187,6 +191,10 @@ import {
   listHouseDocumentsForHouse,
   listMaintenanceHistoryForHouse,
   listMaintenanceRecommendationsForHouse,
+  listMaintenanceCatalogForHouse,
+  getHouseFactsForHouse,
+  upsertHouseFactForHouse,
+  upsertHouseComponentForHouse,
   listMaintenanceTasksForHouse,
   listHouseImprovements,
   listSavedHouses,
@@ -2357,6 +2365,91 @@ const server = createServer((request, response) => {
         );
         const content = await readStorageObject(objectKey, document.mimeType);
         writeBinary(response, 200, content, document.mimeType);
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const houseMaintenanceCatalogMatch =
+    /^\/v1\/houses\/([^/]+)\/maintenance-catalog(?:\?.*)?$/.exec(
+      request.url ?? ""
+    );
+
+  if (request.method === "GET" && houseMaintenanceCatalogMatch) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(houseMaintenanceCatalogMatch[1]);
+      if (!parsedHouseId.success) {
+        writeApiError(response, 400, "maintenance_catalog_house_id_invalid", "Kataloget kræver et gyldigt house_ ID.");
+        return;
+      }
+      try {
+        const userId = await requireUserId(request);
+        const url = new URL(request.url ?? "/", `http://${host}:${port}`);
+        const scope = url.searchParams.get("scope") ?? "all";
+        if (scope !== "all" && scope !== "recommended") {
+          writeApiError(response, 400, "maintenance_catalog_scope_invalid", "Katalog scope skal være all eller recommended.");
+          return;
+        }
+        const catalog = await listMaintenanceCatalogForHouse(userId, parsedHouseId.data, scope);
+        writeJson(response, 200, maintenanceCatalogResponseSchema.parse(catalog));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  const houseFactsMatch =
+    /^\/v1\/houses\/([^/]+)\/house-facts(?:\/(facts|components)\/([^/]+))?$/.exec(
+      (request.url ?? "").split("?")[0] ?? ""
+    );
+
+  if (request.method === "GET" && houseFactsMatch && !houseFactsMatch[2]) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(houseFactsMatch[1]);
+      if (!parsedHouseId.success) {
+        writeApiError(response, 400, "house_facts_house_id_invalid", "House facts kræver et gyldigt house_ ID.");
+        return;
+      }
+      try {
+        const userId = await requireUserId(request);
+        writeJson(response, 200, houseFactsResponseSchema.parse(await getHouseFactsForHouse(userId, parsedHouseId.data)));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "PUT" && houseFactsMatch && houseFactsMatch[2] && houseFactsMatch[3]) {
+    void (async () => {
+      const parsedHouseId = houseIdSchema.safeParse(houseFactsMatch[1]);
+      if (!parsedHouseId.success) {
+        writeApiError(response, 400, "house_facts_house_id_invalid", "House facts kræver et gyldigt house_ ID.");
+        return;
+      }
+      try {
+        const userId = await requireUserId(request);
+        const payload = await readJsonBody(request);
+        if (houseFactsMatch[2] === "facts") {
+          const parsed = upsertHouseFactRequestSchema.safeParse(payload);
+          if (!parsed.success) {
+            writeApiError(response, 400, "house_fact_invalid", "Husfakta er ugyldige.");
+            return;
+          }
+          const facts = await upsertHouseFactForHouse(userId, parsedHouseId.data, decodeURIComponent(houseFactsMatch[3]!), parsed.data);
+          writeJson(response, 200, houseFactsResponseSchema.parse(facts));
+          return;
+        }
+        const parsed = upsertHouseComponentRequestSchema.safeParse(payload);
+        if (!parsed.success) {
+          writeApiError(response, 400, "house_component_invalid", "Komponentdata er ugyldige.");
+          return;
+        }
+        const facts = await upsertHouseComponentForHouse(userId, parsedHouseId.data, decodeURIComponent(houseFactsMatch[3]!), parsed.data);
+        writeJson(response, 200, houseFactsResponseSchema.parse(facts));
       } catch (error) {
         writeUnknownApiError(response, error);
       }

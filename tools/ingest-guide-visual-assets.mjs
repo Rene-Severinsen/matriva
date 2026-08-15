@@ -112,6 +112,17 @@ function productionMetadata(asset) {
 }
 
 async function ingestGuidePlacements(client, guideVersionId, placements, hotspots) {
+  const version = await client.query(
+    "select publication_status from guide_versions where id = $1",
+    [guideVersionId]
+  );
+  assert.equal(version.rowCount, 1, `Guide version ${guideVersionId} must exist before asset ingest.`);
+
+  if (["published", "archived"].includes(version.rows[0].publication_status)) {
+    console.log(`Skipped immutable guide version ${guideVersionId}; assets are already managed by the published content.`);
+    return;
+  }
+
   const activePlacementIds = placements.map((placement) => placement.id);
   await client.query(
     `delete from guide_hotspots

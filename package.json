@@ -65,6 +65,7 @@
     "test:storage-policy": "npm run build -w @matriva/api && node tools/test-storage-policy.mjs",
     "verify:qa-runtime": "node tools/verify-qa-runtime.mjs",
     "deploy:qa": "bash infra/hetzner/deploy-qa.sh",
+    "deploy:testflight": "node tools/deploy-testflight.mjs",
     "generate:house-a-a01-facade-board": "node tools/generate-house-a-a01-rendered-facade-validation-board.mjs",
     "test:house-a-a01-facade-board": "node tools/test-house-a-a01-rendered-facade-validation-board.mjs",
     "generate:house-a-a01-garden-board": "node tools/generate-house-a-a01-natural-garden-test-board.mjs",

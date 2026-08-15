@@ -2872,6 +2872,45 @@ async function ensureMaintenanceRecommendationInstancesForHouse(
       continue;
     }
 
+    const archivedTask = await pool.query<{ id: string }>(
+      `
+        select id
+        from maintenance_tasks
+        where house_id = $1
+          and origin_catalog_key = $2
+          and origin_catalog_version = $3
+          and deleted_at is null
+          and archived_at is not null
+          and status <> 'done'
+        order by updated_at desc
+        limit 1
+      `,
+      [houseId, item.catalog_key, item.catalog_version]
+    );
+
+    if (archivedTask.rows[0]) {
+      const reopened = await pool.query(
+        `
+          update maintenance_recommendations
+          set status = 'pending',
+              accepted_task_id = $4,
+              dismissed_at = null,
+              updated_at = now()
+          where house_id = $1
+            and catalog_key = $2
+            and catalog_version = $3
+            and period_key = $5
+            and status = 'accepted'
+            and accepted_task_id = $4
+        `,
+        [houseId, item.catalog_key, item.catalog_version, archivedTask.rows[0].id, periodKey]
+      );
+
+      if (reopened.rowCount) {
+        continue;
+      }
+    }
+
     await pool.query(
       `
         insert into maintenance_recommendations (
@@ -3080,13 +3119,47 @@ export async function acceptMaintenanceRecommendationForHouse(
     }
 
     if (recommendation.accepted_task_id) {
-      const task = await getMaintenanceTaskForHouse(
-        userId,
-        house.id,
-        recommendation.accepted_task_id
+      const existingTaskResult = await client.query<MaintenanceTaskRow>(
+        `
+          select
+            ${maintenanceTaskReturningColumns()}
+          from maintenance_tasks
+          where id = $1 and house_id = $2 and deleted_at is null
+          for update
+        `,
+        [recommendation.accepted_task_id, house.id]
       );
+      const existingTask = existingTaskResult.rows[0];
+
+      if (!existingTask) {
+        throw new ApiError(404, "maintenance_task_not_found", "Opgaven blev ikke fundet.");
+      }
+
+      if (existingTask.archived_at) {
+        const restoredTaskResult = await client.query<MaintenanceTaskRow>(
+          `
+            update maintenance_tasks
+            set archived_at = null,
+                status = case when status = 'dismissed' then 'planned' else status end,
+                updated_at = now()
+            where id = $1 and house_id = $2 and deleted_at is null
+            returning
+              ${maintenanceTaskReturningColumns()}
+          `,
+          [existingTask.id, house.id]
+        );
+        const restoredTask = restoredTaskResult.rows[0];
+
+        if (!restoredTask) {
+          throw new ApiError(409, "maintenance_task_restore_failed", "Opgaven kunne ikke gendannes.");
+        }
+
+        await client.query("commit");
+        return toMaintenanceTask(restoredTask);
+      }
+
       await client.query("commit");
-      return task;
+      return toMaintenanceTask(existingTask);
     }
 
     if (recommendation.status === "dismissed") {

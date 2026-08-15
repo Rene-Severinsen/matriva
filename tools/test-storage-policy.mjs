@@ -29,4 +29,16 @@ const local = { MATRIVA_ENVIRONMENT: "local", MATRIVA_STORAGE_ADAPTER: "local" }
 assert.equal(storageMode(local), "local");
 assert.doesNotThrow(() => validateStorageConfiguration(local));
 
+assert.equal(
+  storageMode({
+    MATRIVA_ENVIRONMENT: "local",
+    MATRIVA_S3_ENDPOINT: "https://hel1.example.test",
+    MATRIVA_S3_BUCKET: "matriva-local",
+    MATRIVA_S3_ACCESS_KEY_ID: "access",
+    MATRIVA_S3_SECRET_ACCESS_KEY: "secret"
+  }),
+  "local",
+  "Local environment must stay on local storage unless S3 is explicitly selected."
+);
+
 console.log("Storage policy validated: local/dev/test may use local storage; QA/production require S3.");

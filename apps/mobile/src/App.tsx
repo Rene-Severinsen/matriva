@@ -73,6 +73,7 @@ import {
   type MaintenanceHistoryDetail,
   type MaintenanceRecommendation,
   type MaintenanceCatalogItem,
+  type HouseFactsResponse,
   type MaintenanceTask,
   formatDkkPrice,
   maintenanceTaskMatchesSeason,
@@ -99,7 +100,7 @@ import {
 type TabKey = "dashboard" | "house" | "maintenance" | "documents" | "more";
 type LoadingAction = "app" | "auth" | "profile" | "address" | "house" | "task" | "publicData" | "improvement" | "improvementProject" | "improvementItem" | "improvementExpense" | "improvementDocument" | "photo" | "recommendation" | "logout";
 type MaintenanceFilter = "current" | "spring" | "summer" | "autumn" | "winter" | "all";
-type MaintenanceView = "main" | "history" | "historyDetail" | "taskDetail" | "recommendations" | "catalog" | "dismissedRecommendations" | "recommendationDetail";
+type MaintenanceView = "main" | "history" | "historyDetail" | "taskDetail" | "catalog" | "recommendationDetail";
 type AuthStatus = "restoring" | "anonymous" | "authenticated";
 type AppCompatibilityState = "unknown" | "supported" | "upgrade_required";
 type MoreView = "menu" | "profile" | "settings" | "sharing" | "subscription" | "guides" | "about";
@@ -307,6 +308,18 @@ function isActiveMaintenanceTask(task: MaintenanceTask) {
   return task.status !== "done" && task.status !== "dismissed";
 }
 
+function activeTaskForCatalogItem(
+  tasks: MaintenanceTask[],
+  item: MaintenanceCatalogItem
+) {
+  return tasks.find(
+    (task) =>
+      isActiveMaintenanceTask(task) &&
+      task.originCatalogKey === item.catalogKey &&
+      task.originCatalogVersion === item.catalogVersion
+  ) ?? null;
+}
+
 function isTaskOverdueForDisplay(task: MaintenanceTask) {
   if (task.status === "overdue" || !!task.timing.daysOverdue) {
     return true;
@@ -332,11 +345,11 @@ function compareMaintenanceTasksByDueDate(a: MaintenanceTask, b: MaintenanceTask
     return aDueDate.localeCompare(bDueDate);
   }
 
-  if (aDueDate && !bDueDate) {
+  if (!aDueDate && bDueDate) {
     return -1;
   }
 
-  if (!aDueDate && bDueDate) {
+  if (aDueDate && !bDueDate) {
     return 1;
   }
 
@@ -1167,6 +1180,23 @@ function MaintenanceSummary({
   );
 }
 
+function FindTasksLinkRow({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityLabel="Find opgaver"
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.linkRow, pressed ? styles.linkRowPressed : null]}
+    >
+      <View style={styles.taskRowBody}>
+        <Text style={styles.linkRowText}>Find opgaver</Text>
+        <Text style={styles.metaText}>Anbefalinger til dit hus og hele kataloget</Text>
+      </View>
+      <Text style={styles.linkRowIcon}>›</Text>
+    </Pressable>
+  );
+}
+
 function InfoRow({
   label,
   value
@@ -1828,7 +1858,8 @@ function DashboardScreen({
   onAddHouse,
   onCreateTask,
   onOpenTasks,
-  onOpenTask
+  onOpenTask,
+  onOpenFindTasks
 }: {
   house: SavedHouse | null;
   houses: SavedHouse[];
@@ -1838,6 +1869,7 @@ function DashboardScreen({
   onCreateTask: () => void;
   onOpenTasks: () => void;
   onOpenTask: (task: MaintenanceTask) => void;
+  onOpenFindTasks: () => void;
   onSelectHouse: (houseId: HouseId) => void;
   onAddHouse: () => void;
 }) {
@@ -1880,6 +1912,7 @@ function DashboardScreen({
         onOpenTasks={onOpenTasks}
         onOpenTask={onOpenTask}
       />
+      <FindTasksLinkRow onPress={onOpenFindTasks} />
     </View>
   );
 }
@@ -2744,7 +2777,7 @@ function taskMatchesFilter(task: MaintenanceTask, filter: MaintenanceFilter) {
       task.status === "due" ||
       !!task.timing.daysOverdue ||
       (task.timing.daysUntilDue !== undefined && task.timing.daysUntilDue <= 30) ||
-      season === currentMaintenanceSeason() ||
+      isTaskInCurrentSeason(task) ||
       season === "all_year"
     );
   }
@@ -2770,93 +2803,24 @@ function currentMaintenanceSeason() {
   return "autumn";
 }
 
-function RecommendationCard({
-  recommendation,
-  isSaving,
-  onAccept,
-  onDismiss,
-  onOpenGuide,
-  openRowId,
-  onSwipeOpen
-}: {
-  recommendation: MaintenanceRecommendation;
-  isSaving: boolean;
-  onAccept: (recommendation: MaintenanceRecommendation) => void;
-  onDismiss: (recommendation: MaintenanceRecommendation) => void;
-  onOpenGuide: (recommendation: MaintenanceRecommendation) => void;
-  openRowId: string | null;
-  onSwipeOpen: (rowId: string) => void;
-}) {
-  const timingText = recommendation.recommendedTimingLabel;
+function isTaskInCurrentSeason(task: MaintenanceTask) {
+  if (maintenanceTaskSeason(task) !== currentMaintenanceSeason()) {
+    return false;
+  }
 
-  return (
-    <SwipeActionRow
-      disabled={isSaving}
-      openRowId={openRowId}
-      onOpened={onSwipeOpen}
-      onLongSwipeLeft={() => onDismiss(recommendation)}
-      onLongSwipeRight={() => onAccept(recommendation)}
-      rowId={`recommendation:${recommendation.id}`}
-      swipeLeftActions={[
-        {
-          accessibilityLabel: `Afvis forslag: ${recommendation.title}`,
-          icon: "×",
-          label: "Afvis forslag",
-          tone: "destructive",
-          onPress: () => onDismiss(recommendation)
-        }
-      ]}
-      swipeRightAction={{
-        accessibilityLabel: `Tilføj ${recommendation.title}`,
-        label: "Tilføj",
-        onPress: () => onAccept(recommendation)
-      }}
-    >
-      <View style={styles.taskRow}>
-        <View style={styles.taskRowBody}>
-          <Text style={styles.taskRowTitle}>{recommendation.title}</Text>
-          <Text style={styles.taskTiming}>{timingText}</Text>
-          <Text style={styles.compactBodyText}>{recommendation.description}</Text>
-          {recommendation.guideVersionId ? <SecondaryButton disabled={isSaving} label="Læs vejledning" onPress={() => onOpenGuide(recommendation)} /> : null}
-        </View>
-        <View style={styles.recommendationActions}>
-          <SecondaryButton
-            disabled={isSaving}
-            label="Afvis forslag"
-            onPress={() => onDismiss(recommendation)}
-          />
-          <PrimaryButton
-            loading={isSaving}
-            label="Tilføj"
-            onPress={() => onAccept(recommendation)}
-          />
-        </View>
-      </View>
-    </SwipeActionRow>
-  );
+  if (task.timing.type === "specific_deadline" && task.timing.dueDate) {
+    return task.timing.dueDate.slice(0, 4) === todayDateOnly().slice(0, 4);
+  }
+
+  return true;
 }
 
-function DismissedRecommendationRow({
-  recommendation,
-  onPress
-}: {
-  recommendation: MaintenanceRecommendation;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`Åbn anbefaling: ${recommendation.title}`} onPress={onPress}>
-      <View style={styles.taskRow}>
-        <View style={styles.taskRowBody}>
-          <Text style={styles.taskRowTitle}>{recommendation.title}</Text>
-          <Text style={styles.taskTiming}>
-            {recommendation.dismissedAt ? `Afvist ${formatDisplayDate(recommendation.dismissedAt.slice(0, 10))}` : recommendation.recommendedTimingLabel}
-          </Text>
-          <Text style={styles.compactBodyText}>{recommendation.description}</Text>
-        </View>
-        <Text style={styles.linkRowIcon}>›</Text>
-      </View>
-    </Pressable>
-  );
+function isTaskInCurrentYear(task: MaintenanceTask) {
+  if (task.timing.type !== "specific_deadline" || !task.timing.dueDate) {
+    return true;
+  }
+
+  return task.timing.dueDate.slice(0, 4) === todayDateOnly().slice(0, 4);
 }
 
 function MaintenanceHistoryRow({
@@ -2944,18 +2908,111 @@ function sourceLabel(source: MaintenanceTask["source"]) {
   return null;
 }
 
+function catalogPeriodLabel(item: MaintenanceCatalogItem) {
+  if (item.recommendedPeriod.type === "all_year") {
+    return "Hele året";
+  }
+
+  if (item.recommendedPeriod.type === "season") {
+    return item.recommendedPeriod.season === "spring" ? "Forår" : "Efterår";
+  }
+
+  const monthNames = [
+    "januar", "februar", "marts", "april", "maj", "juni",
+    "juli", "august", "september", "oktober", "november", "december"
+  ];
+
+  return `${monthNames[item.recommendedPeriod.startMonth - 1]}-${monthNames[item.recommendedPeriod.endMonth - 1]}`;
+}
+
+function catalogRecurrenceLabel(item: MaintenanceCatalogItem) {
+  return maintenanceRecurrenceOptions.find(
+    (option) => option.key === item.defaultRecurrence.interval
+  )?.label ?? "Efter behov";
+}
+
+const houseFactLabels: Record<string, string> = {
+  "gutters.material": "Materiale på tagrender",
+  "bbr.roof.material_code": "Tagmateriale",
+  "bbr.facade.material_code": "Facademateriale",
+  "bbr.ground.sewer": "Kloakforhold",
+  "bbr.heating.type": "Varmeinstallation"
+};
+
+const houseComponentLabels: Record<string, string> = {
+  basement: "Kælder eller krybekælder",
+  drainage: "Dræn",
+  facade: "Facade",
+  heating_system: "Varmeanlæg",
+  central_heating: "Centralvarme",
+  district_heating: "Fjernvarmeunit",
+  gas_boiler: "Gasfyr",
+  oil_boiler: "Oliefyr",
+  heat_pump: "Varmepumpe",
+  mechanical_ventilation: "Mekanisk ventilation",
+  ventilation: "Ventilationsanlæg",
+  heat_recovery: "Varmegenvinding",
+  roof: "Tag",
+  solar_panels: "Solceller",
+  wetroom: "Vådrum"
+};
+
+function houseFactLabel(factKey: string) {
+  return houseFactLabels[factKey] ?? "Husoplysning";
+}
+
+function houseComponentLabel(componentKey: string) {
+  return houseComponentLabels[componentKey] ?? "Husets installation";
+}
+
+function houseValueLabel(value: unknown) {
+  if (value === undefined || value === null || value === "" || value === "unknown") {
+    return "Ikke angivet";
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "Ja" : "Nej";
+  }
+
+  return String(value);
+}
+
+function houseFactValueLabel(factKey: string, value: unknown) {
+  const labels: Record<string, string> = {
+    copper: "Kobber",
+    zinc: "Zink",
+    plastic: "Plast",
+    other: "Andet",
+    unknown: "Ikke angivet"
+  };
+
+  if (factKey === "gutters.material" && typeof value === "string") {
+    return labels[value] ?? value;
+  }
+
+  return houseValueLabel(value);
+}
+
+function componentStatusLabel(status: "present" | "absent" | "unknown" | undefined) {
+  if (status === "present") return "Ja";
+  if (status === "absent") return "Nej";
+  return "Ikke angivet";
+}
+
 function MaintenanceCatalogScreen({
   items,
+  tasks,
   onBack,
-  onRequestEnrichment
+  onOpenItem
 }: {
   items: MaintenanceCatalogItem[];
+  tasks: MaintenanceTask[];
   onBack: () => void;
-  onRequestEnrichment: (item: MaintenanceCatalogItem) => void;
+  onOpenItem: (item: MaintenanceCatalogItem) => void;
 }) {
   const [scope, setScope] = useState<"recommended" | "all">("recommended");
   const visibleItems = scope === "recommended"
-    ? items.filter((item) => item.relevance === "relevant")
+    ? items.filter((item) => item.relevance === "relevant" && !activeTaskForCatalogItem(tasks, item))
     : items;
   const relevanceLabel = (item: MaintenanceCatalogItem) =>
     item.relevance === "relevant"
@@ -2964,29 +3021,62 @@ function MaintenanceCatalogScreen({
         ? "Muligvis relevant"
         : "Ikke relevant ud fra dine husdata";
 
+  const groupedItems = visibleItems.reduce<Record<string, MaintenanceCatalogItem[]>>((groups, item) => {
+    const group = item.season === "all_year" ? "Hele året" : item.season === "spring" ? "Forår" : item.season === "autumn" ? "Efterår" : "Sommer";
+    (groups[group] ??= []).push(item);
+    return groups;
+  }, {});
+
   return (
     <View style={styles.stack}>
       <SecondaryButton label="Tilbage" onPress={onBack} />
-      <SectionHeader title="Anbefalinger" subtitle="Matrivas samlede canonical katalog." />
+      <SectionHeader title="Find opgaver" subtitle="Se vedligehold, der passer til dit hus." />
       <View style={styles.maintenanceFilterGrid}>
-        <SecondaryButton compact label="Anbefalet til dit hus" onPress={() => setScope("recommended")} />
-        <SecondaryButton compact label="Alle anbefalinger" onPress={() => setScope("all")} />
+        {(["recommended", "all"] as const).map((nextScope) => (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: scope === nextScope }}
+            key={nextScope}
+            onPress={() => setScope(nextScope)}
+            style={[styles.filterChip, scope === nextScope ? styles.filterChipSelected : null]}
+          >
+            <Text style={[styles.filterChipText, scope === nextScope ? styles.filterChipTextSelected : null]}>
+              {nextScope === "recommended" ? "Anbefalet til dit hus" : "Alle anbefalinger"}
+            </Text>
+          </Pressable>
+        ))}
       </View>
       {visibleItems.length === 0 ? (
         <EmptyState title="Ingen sikre match endnu" body="Hele kataloget er stadig tilgængeligt under Alle anbefalinger." />
       ) : (
-        <View style={styles.taskList}>
-          {visibleItems.map((item) => (
-            <Pressable key={`${item.catalogKey}:${item.catalogVersion}`} onPress={() => onRequestEnrichment(item)}>
-              <Card>
-              <View style={styles.cardHeaderRow}>
-                <Text style={styles.cardTitle}>{item.title}</Text>
-                <Pill>{relevanceLabel(item)}</Pill>
-              </View>
-              <Text style={styles.compactBodyText}>{item.shortDescription}</Text>
-              <Text style={styles.metaText}>{item.defaultRecurrence.interval === "yearly" ? "Årligt" : "Ved behov"}</Text>
-              </Card>
-            </Pressable>
+        <View style={styles.stack}>
+          {Object.entries(groupedItems).map(([group, groupItems]) => (
+            <View key={group} style={styles.taskList}>
+              <Text style={styles.sectionEyebrow}>{group}</Text>
+              {groupItems.map((item) => (
+                (() => {
+                  const activeTask = activeTaskForCatalogItem(tasks, item);
+
+                  return (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Åbn opgave: ${item.title}`}
+                  key={`${item.catalogKey}:${item.catalogVersion}`}
+                  onPress={() => onOpenItem(item)}
+                  style={({ pressed }) => [styles.catalogRow, pressed ? styles.linkRowPressed : null]}
+                >
+                  <View style={styles.taskRowBody}>
+                    <Text style={styles.taskRowTitle}>{item.title}</Text>
+                    <Text style={styles.compactBodyText}>{item.shortDescription}</Text>
+                    <Text style={styles.metaText}>{catalogRecurrenceLabel(item)} · {item.season === "all_year" ? "Hele året" : catalogPeriodLabel(item)}</Text>
+                    <Text style={[styles.metaText, activeTask ? styles.successText : null]}>{activeTask ? "Allerede tilføjet til Mine opgaver" : relevanceLabel(item)}</Text>
+                  </View>
+                  <Text style={styles.linkRowIcon}>›</Text>
+                </Pressable>
+                  );
+                })()
+              ))}
+            </View>
           ))}
         </View>
       )}
@@ -3002,7 +3092,6 @@ function MaintenanceScreen({
   historyDetail,
   selectedTask,
   recommendations,
-  dismissedRecommendations,
   filter,
   historyYearFilter,
   view,
@@ -3010,15 +3099,15 @@ function MaintenanceScreen({
   onHistoryYearFilterChange,
   onOpenFullHistory,
   onOpenAllRecommendations,
-  onOpenCatalog,
-  onRequestEnrichment,
-  onOpenDismissedRecommendations,
   selectedRecommendation,
   catalogItems,
-  onOpenRecommendationDetail,
+  selectedCatalogItem,
+  houseFacts,
+  onOpenCatalogItem,
+  onSaveEnrichment,
   onOpenGuideForRecommendation,
+  onOpenGuideForCatalogItem,
   onOpenGuideForTask,
-  onRestoreRecommendation,
   onBackToMaintenance,
   onOpenTaskDetail,
   onOpenHistoryDetail,
@@ -3049,7 +3138,6 @@ function MaintenanceScreen({
   onDeadlineClear,
   onCompleteTask,
   onAcceptRecommendation,
-  onDismissRecommendation,
   swipeHintSeen,
   onDismissSwipeHint,
   onSave,
@@ -3070,7 +3158,6 @@ function MaintenanceScreen({
   historyDetail: MaintenanceHistoryDetail | null;
   selectedTask: MaintenanceTask | null;
   recommendations: MaintenanceRecommendation[];
-  dismissedRecommendations: MaintenanceRecommendation[];
   filter: MaintenanceFilter;
   historyYearFilter: number | null;
   view: MaintenanceView;
@@ -3078,15 +3165,20 @@ function MaintenanceScreen({
   onHistoryYearFilterChange: (year: number | null) => void;
   onOpenFullHistory: () => void;
   onOpenAllRecommendations: () => void;
-  onOpenCatalog: () => void;
-  onRequestEnrichment: (item: MaintenanceCatalogItem) => void;
-  onOpenDismissedRecommendations: () => void;
   selectedRecommendation: MaintenanceRecommendation | null;
   catalogItems: MaintenanceCatalogItem[];
-  onOpenRecommendationDetail: (recommendation: MaintenanceRecommendation) => void;
+  selectedCatalogItem: MaintenanceCatalogItem | null;
+  houseFacts: HouseFactsResponse | null;
+  onOpenCatalogItem: (item: MaintenanceCatalogItem) => void;
+  onSaveEnrichment: (input: {
+    kind: "fact" | "component";
+    key: string;
+    value?: string;
+    status?: "present" | "absent" | "unknown";
+  }) => void;
   onOpenGuideForRecommendation: (recommendation: MaintenanceRecommendation) => void;
+  onOpenGuideForCatalogItem: (item: MaintenanceCatalogItem) => void;
   onOpenGuideForTask: (task: MaintenanceTask) => void;
-  onRestoreRecommendation: (recommendation: MaintenanceRecommendation) => void;
   onBackToMaintenance: () => void;
   onOpenTaskDetail: (task: MaintenanceTask) => void;
   onOpenHistoryDetail: (entry: MaintenanceHistoryEntry) => void;
@@ -3117,7 +3209,6 @@ function MaintenanceScreen({
   onDeadlineClear: () => void;
   onCompleteTask: (task: MaintenanceTask) => void;
   onAcceptRecommendation: (recommendation: MaintenanceRecommendation) => void;
-  onDismissRecommendation: (recommendation: MaintenanceRecommendation) => void;
   swipeHintSeen: boolean | null;
   onDismissSwipeHint: () => void;
   onSave: () => void;
@@ -3148,7 +3239,7 @@ function MaintenanceScreen({
   );
 
   useEffect(() => {
-    if (view !== "main" && view !== "recommendations") {
+    if (view !== "main") {
       setOpenSwipeRowId(null);
     }
   }, [view]);
@@ -3185,6 +3276,14 @@ function MaintenanceScreen({
     pendingEditTaskId.current = null;
     setShowDetailDatePicker(false);
   }, [selectedTask?.id]);
+
+  const [enrichmentField, setEnrichmentField] = useState<string | null>(null);
+  const [enrichmentValue, setEnrichmentValue] = useState("");
+
+  useEffect(() => {
+    setEnrichmentField(null);
+    setEnrichmentValue("");
+  }, [selectedCatalogItem?.catalogKey]);
 
   if (!house) {
     return (
@@ -3403,84 +3502,164 @@ function MaintenanceScreen({
     );
   }
 
-  if (view === "recommendationDetail" && selectedRecommendation) {
-    return (
-      <View style={styles.stack}>
-        <SecondaryButton label="Tilbage" onPress={onBackToMaintenance} />
-        <SectionHeader title={selectedRecommendation.title} subtitle="Afvist anbefaling" />
-        <Card>
-          <Text style={styles.taskTiming}>{selectedRecommendation.recommendedTimingLabel}</Text>
-          <Text style={styles.compactBodyText}>{selectedRecommendation.description}</Text>
-          {selectedRecommendation.guideVersionId ? <SecondaryButton label="Læs vejledning" onPress={() => onOpenGuideForRecommendation(selectedRecommendation)} /> : null}
-          {selectedRecommendation.dismissedAt ? (
-            <Text style={styles.metaText}>Afvist {formatDisplayDate(selectedRecommendation.dismissedAt.slice(0, 10))}</Text>
-          ) : null}
-          <PrimaryButton label="Gendan anbefaling" onPress={() => onRestoreRecommendation(selectedRecommendation)} loading={isSaving} />
-        </Card>
-      </View>
-    );
-  }
+  if (view === "recommendationDetail") {
+    const catalogItem = selectedCatalogItem ?? (selectedRecommendation
+      ? catalogItems.find((item) => item.catalogKey === selectedRecommendation.catalogKey)
+      : null);
+    const matchingRecommendation = selectedRecommendation ?? (catalogItem
+      ? recommendations.find((recommendation) => recommendation.catalogKey === catalogItem.catalogKey)
+      : null);
+    const activeTask = catalogItem ? activeTaskForCatalogItem(tasks, catalogItem) : null;
 
-  if (view === "dismissedRecommendations") {
-    return (
-      <View style={styles.stack}>
-        <SecondaryButton label="Tilbage" onPress={onBackToMaintenance} />
-        <SectionHeader title="Afviste anbefalinger" subtitle="Forslag, du tidligere har afvist." />
-        {dismissedRecommendations.length > 0 ? (
-          <View style={styles.taskList}>
-            {dismissedRecommendations.map((recommendation) => (
-              <DismissedRecommendationRow key={recommendation.id} recommendation={recommendation} onPress={() => onOpenRecommendationDetail(recommendation)} />
-            ))}
-          </View>
-        ) : (
-          <EmptyState title="Du har ingen afviste anbefalinger." body="Afviste forslag, som kan gendannes, vises her." />
-        )}
-      </View>
-    );
-  }
-
-  if (view === "recommendations") {
-    return (
-      <View style={styles.stack}>
-        <SecondaryButton label="Tilbage" onPress={onBackToMaintenance} />
-        <View style={styles.screenTitleRow}>
-          <SectionHeader title="Anbefalet til dit hus" subtitle="Generelle forslag fra Matriva-kataloget." />
-          <Pressable accessibilityRole="button" accessibilityLabel="Flere anbefalingsvalg" onPress={() => Alert.alert("Anbefalinger", undefined, [{ text: "Se afviste anbefalinger", onPress: onOpenDismissedRecommendations }, { text: "Annuller", style: "cancel" }])} style={styles.iconAction}>
-            <Text style={styles.iconActionText}>⋯</Text>
-          </Pressable>
+    if (!catalogItem && !selectedRecommendation) {
+      return (
+        <View style={styles.stack}>
+          <SecondaryButton label="Tilbage" onPress={onBackToMaintenance} />
+          <EmptyState title="Opgaven blev ikke fundet" body="Prøv at åbne kataloget igen." />
         </View>
-        <SecondaryButton label="Se hele kataloget" onPress={onOpenCatalog} />
-        <Text style={styles.compactBodyText}>
-          Matrivas anbefalinger er generelle forslag. Følg altid producentens anvisninger,
-          og kontakt en fagperson ved tvivl.
-        </Text>
-        {recommendations.length > 0 ? (
-          <View style={styles.taskList}>
-            {recommendations.map((recommendation) => (
-              <RecommendationCard
-                isSaving={isSaving}
-                key={recommendation.id}
-                onAccept={onAcceptRecommendation}
-                onDismiss={onDismissRecommendation}
-                onOpenGuide={onOpenGuideForRecommendation}
-                onSwipeOpen={handleSwipeOpened}
-                openRowId={openSwipeRowId}
-                recommendation={recommendation}
-              />
-            ))}
+      );
+    }
+
+    const title = catalogItem?.title ?? selectedRecommendation?.title ?? "Vedligehold";
+    const description = catalogItem?.shortDescription ?? selectedRecommendation?.description ?? "";
+    const timingLabel = catalogItem
+      ? `${catalogRecurrenceLabel(catalogItem)} · ${catalogPeriodLabel(catalogItem)}`
+      : selectedRecommendation?.recommendedTimingLabel ?? "";
+    const relevance = catalogItem?.relevance ?? "relevant";
+    const relevanceText = relevance === "relevant"
+      ? "Relevant for dit hus"
+      : relevance === "possible"
+        ? "Muligvis relevant"
+        : "Ikke relevant ud fra dine husoplysninger";
+    const enrichmentFields = catalogItem?.applicability.type === "ENRICHED_BY_FACTS"
+      ? catalogItem.applicability.factKeys.map((key) => ({ kind: "fact" as const, key }))
+      : catalogItem?.applicability.type === "REQUIRES_COMPONENT" || catalogItem?.applicability.type === "EXCLUDES_COMPONENT"
+        ? [{ kind: "component" as const, key: catalogItem.applicability.componentKey }]
+        : [];
+    const componentOptions: Array<{ label: string; status: "present" | "absent" | "unknown" }> = [
+      { label: "Ja", status: "present" },
+      { label: "Nej", status: "absent" },
+      { label: "Ved ikke", status: "unknown" }
+    ];
+    const factOptions = enrichmentField === "gutters.material"
+      ? ["Zink", "Plast", "Kobber", "Andet", "Ved ikke"]
+      : [];
+
+    return (
+      <View style={styles.stack}>
+        <SecondaryButton label="Tilbage" onPress={onBackToMaintenance} />
+        <SectionHeader title={title} subtitle="Vedligehold for dit hus" />
+        <Card>
+          <Text style={styles.detailTitle}>{title}</Text>
+          <Text style={styles.compactBodyText}>{description}</Text>
+          <View style={styles.infoList}>
+            <InfoRow label="Anbefalet interval" value={timingLabel} />
+            <InfoRow label="Relevans for dit hus" value={activeTask ? "Allerede tilføjet til Mine opgaver" : relevanceText} />
           </View>
-        ) : (
-          <EmptyState
-            title="Ingen nye anbefalinger lige nu"
-            body="Vi viser nye forslag, når de bliver relevante for dit hus og perioden."
+          {selectedRecommendation?.why ? <Text style={styles.metaText}>{selectedRecommendation.why}</Text> : null}
+        </Card>
+        {catalogItem?.guideTemplateId ? (
+          <SecondaryButton
+            label="Læs vejledning"
+            onPress={() => matchingRecommendation
+              ? onOpenGuideForRecommendation(matchingRecommendation)
+              : onOpenGuideForCatalogItem(catalogItem)}
           />
+        ) : null}
+        {enrichmentFields.length > 0 ? (
+          <Card>
+            <Text style={styles.cardTitle}>Om dit hus</Text>
+            <Text style={styles.compactBodyText}>Du kan udfylde oplysningerne, hvis du kender dem. Det er frivilligt, og du kan altid fortsætte.</Text>
+            <View style={styles.infoList}>
+              {enrichmentFields.map((field) => {
+                const fact = field.kind === "fact" ? houseFacts?.facts.find((candidate) => candidate.factKey === field.key) : null;
+                const component = field.kind === "component" ? houseFacts?.components.find((candidate) => candidate.componentKey === field.key) : null;
+                const value = field.kind === "fact"
+                  ? houseFactValueLabel(field.key, fact?.value)
+                  : componentStatusLabel(component?.status);
+                const isOpen = enrichmentField === field.key;
+
+                return (
+                  <View key={`${field.kind}:${field.key}`}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Rediger ${field.kind === "fact" ? houseFactLabel(field.key) : houseComponentLabel(field.key)}`}
+                      onPress={() => {
+                        setEnrichmentField(isOpen ? null : field.key);
+                        setEnrichmentValue(field.kind === "fact" ? houseFactValueLabel(field.key, fact?.value) : "");
+                      }}
+                      style={({ pressed }) => [styles.infoRow, pressed ? styles.linkRowPressed : null]}
+                    >
+                      <Text style={styles.infoLabel}>{field.kind === "fact" ? houseFactLabel(field.key) : houseComponentLabel(field.key)}</Text>
+                      <View style={styles.infoValueRow}>
+                        <Text style={styles.infoValue}>{value}</Text>
+                        <Text style={styles.linkRowIcon}>›</Text>
+                      </View>
+                    </Pressable>
+                    {isOpen ? (
+                      <View style={styles.enrichmentEditor}>
+                        {field.kind === "component" ? (
+                          <View style={styles.choiceWrap}>
+                            {componentOptions.map((option) => (
+                              <Pressable
+                                accessibilityRole="button"
+                                key={option.status}
+                                onPress={() => onSaveEnrichment({ kind: "component", key: field.key, status: option.status })}
+                                style={[styles.choiceChip, component?.status === option.status ? styles.choiceChipSelected : null]}
+                              >
+                                <Text style={[styles.choiceChipText, component?.status === option.status ? styles.choiceChipTextSelected : null]}>{option.label}</Text>
+                              </Pressable>
+                            ))}
+                          </View>
+                        ) : factOptions.length > 0 ? (
+                          <View style={styles.choiceWrap}>
+                            {factOptions.map((option) => (
+                              <Pressable
+                                accessibilityRole="button"
+                                key={option}
+                                onPress={() => onSaveEnrichment({ kind: "fact", key: field.key, value: option === "Ved ikke" ? "unknown" : option.toLowerCase() })}
+                                style={[styles.choiceChip, enrichmentValue === option ? styles.choiceChipSelected : null]}
+                              >
+                                <Text style={[styles.choiceChipText, enrichmentValue === option ? styles.choiceChipTextSelected : null]}>{option}</Text>
+                              </Pressable>
+                            ))}
+                          </View>
+                        ) : (
+                          <View style={styles.enrichmentInputRow}>
+                            <TextInput
+                              accessibilityLabel="Husoplysning"
+                              onChangeText={setEnrichmentValue}
+                              placeholder="Skriv det, du ved"
+                              placeholderTextColor={theme.muted}
+                              style={[styles.input, styles.enrichmentInput]}
+                              value={enrichmentValue === "Ikke angivet" ? "" : enrichmentValue}
+                            />
+                            <SecondaryButton compact label="Gem" disabled={!enrichmentValue.trim() || isSaving} onPress={() => onSaveEnrichment({ kind: "fact", key: field.key, value: enrichmentValue.trim() })} />
+                          </View>
+                        )}
+                      </View>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </View>
+          </Card>
+        ) : null}
+        {activeTask ? (
+          <SecondaryButton compact label="Åbn i Mine opgaver" onPress={() => onOpenTaskDetail(activeTask)} />
+        ) : relevance === "not_relevant" ? (
+          <Text style={styles.metaText}>Oplysningerne kan ændres ovenfor, hvis Matriva tager fejl.</Text>
+        ) : matchingRecommendation ? (
+          <PrimaryButton compact label="Føj til Mine opgaver" loading={isSaving} onPress={() => onAcceptRecommendation(matchingRecommendation)} />
+        ) : (
+          <Text style={styles.metaText}>Denne anbefaling kan føjes til dine opgaver, når den er relevant for huset.</Text>
         )}
       </View>
     );
   }
 
   if (view === "catalog") {
-    return <MaintenanceCatalogScreen items={catalogItems} onBack={onBackToMaintenance} onRequestEnrichment={onRequestEnrichment} />;
+    return <MaintenanceCatalogScreen items={catalogItems} tasks={tasks} onBack={onBackToMaintenance} onOpenItem={onOpenCatalogItem} />;
   }
 
   if (view === "historyDetail" && historyDetail) {
@@ -3624,22 +3803,16 @@ function MaintenanceScreen({
       (task) => {
         const season = maintenanceTaskSeason(task);
 
-        if (filter === "current") {
-          return season === currentMaintenanceSeason();
+        if (filter === "current" || filter === "all") {
+          return isTaskInCurrentSeason(task);
         }
 
-        if (filter === "all") {
-          return season !== null && season !== "all_year";
-        }
-
-        return season === filter;
+        return season === filter && isTaskInCurrentYear(task);
       }
-    )
+    ).sort(compareMaintenanceTasksByDueDate)
   );
-  const laterTasks = takeSectionTasks(filteredTasks);
+  const laterTasks = takeSectionTasks(filteredTasks).sort(compareMaintenanceTasksByDueDate);
   const latestHistory = history.slice(0, 3);
-  const visibleRecommendations = recommendations.slice(0, 3);
-  const hiddenRecommendationCount = Math.max(recommendations.length - visibleRecommendations.length, 0);
 
   return (
     <View style={styles.stack}>
@@ -3656,7 +3829,7 @@ function MaintenanceScreen({
       />
       <View style={styles.screenTitleRow}>
         <SectionHeader
-          title="Vedligeholdelse"
+          title="Vedligehold"
           subtitle={
             activeTasks.length === 1
               ? "1 opgave for dit hus."
@@ -3666,7 +3839,9 @@ function MaintenanceScreen({
         {!showForm ? <SecondaryButton label="Opret opgave" onPress={onShowForm} /> : null}
       </View>
 
-      {swipeHintSeen === false && (activeTasks.length > 0 || recommendations.length > 0) ? (
+      <FindTasksLinkRow onPress={onOpenAllRecommendations} />
+
+      {swipeHintSeen === false && activeTasks.length > 0 ? (
         <View
           accessibilityLabel="Swipe til højre for en positiv handling og til venstre for flere muligheder"
           style={styles.swipeHint}
@@ -3847,10 +4022,10 @@ function MaintenanceScreen({
         onSelect={onDeadlineSelect}
       />
 
-      {activeTasks.length === 0 && recommendations.length === 0 ? (
+      {activeTasks.length === 0 ? (
         <EmptyState
-          title="Kom godt i gang med vedligeholdelsen"
-          body="Opret din første opgave, eller se Matrivas anbefalinger til dit hus."
+          title="Ingen aktive opgaver"
+          body="Dine kommende og forfaldne opgaver vises her. Du kan finde nye forslag under Find opgaver."
         />
       ) : (
         <View style={styles.stack}>
@@ -3910,38 +4085,6 @@ function MaintenanceScreen({
               title="Senere"
             />
           ) : null}
-          {recommendations.length > 0 ? (
-            <View style={styles.taskList}>
-              <Text style={styles.sectionEyebrow}>Anbefalet til dit hus</Text>
-              <Text style={styles.compactBodyText}>
-                Matrivas anbefalinger er generelle forslag. Følg altid producentens anvisninger,
-                og kontakt en fagperson ved tvivl.
-              </Text>
-              {visibleRecommendations.map((recommendation) => (
-                <RecommendationCard
-                  isSaving={isSaving}
-                  key={recommendation.id}
-                onAccept={onAcceptRecommendation}
-                onDismiss={onDismissRecommendation}
-                onOpenGuide={onOpenGuideForRecommendation}
-                onSwipeOpen={handleSwipeOpened}
-                  openRowId={openSwipeRowId}
-                  recommendation={recommendation}
-                />
-              ))}
-              {hiddenRecommendationCount > 0 ? (
-                <SecondaryButton
-                  label={`Vis alle (${recommendations.length})`}
-                  onPress={onOpenAllRecommendations}
-                />
-              ) : null}
-            </View>
-          ) : (
-            <EmptyState
-              title="Ingen nye anbefalinger lige nu"
-              body="Vi viser nye forslag, når de bliver relevante for dit hus og årstiden."
-            />
-          )}
         </View>
       )}
 
@@ -4936,7 +5079,7 @@ export default function App() {
     MaintenanceRecommendation[]
   >([]);
   const [maintenanceCatalog, setMaintenanceCatalog] = useState<MaintenanceCatalogItem[]>([]);
-  const [dismissedRecommendations, setDismissedRecommendations] = useState<MaintenanceRecommendation[]>([]);
+  const [houseFacts, setHouseFacts] = useState<HouseFactsResponse | null>(null);
   const [maintenanceSwipeHintSeen, setMaintenanceSwipeHintSeen] = useState<boolean | null>(null);
   const [houseDocuments, setHouseDocuments] = useState<HouseDocument[]>([]);
   const [documentPreview, setDocumentPreview] = useState<{
@@ -4955,6 +5098,7 @@ export default function App() {
   const [historyReversalError, setHistoryReversalError] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<TaskId | null>(null);
   const [selectedRecommendation, setSelectedRecommendation] = useState<MaintenanceRecommendation | null>(null);
+  const [selectedCatalogItem, setSelectedCatalogItem] = useState<MaintenanceCatalogItem | null>(null);
   const [maintenanceFilter, setMaintenanceFilter] =
     useState<MaintenanceFilter>("current");
   const [historyYearFilter, setHistoryYearFilter] = useState<number | null>(null);
@@ -5068,6 +5212,7 @@ export default function App() {
     setSelectedTaskId(null);
     setSelectedHistoryDetail(null);
     setSelectedRecommendation(null);
+    setSelectedCatalogItem(null);
     setMaintenanceView(maintenanceBackView);
     setMaintenanceBackView("main");
   }
@@ -5088,48 +5233,60 @@ export default function App() {
     setMoreView("guides");
   }
 
-  function requestCatalogEnrichment(item: MaintenanceCatalogItem) {
-    if (!selectedHouse) return;
-    const applicability = item.applicability;
-    if (applicability.type === "ENRICHED_BY_FACTS" && applicability.factKeys[0]) {
-      const factKey = applicability.factKeys[0];
-      const saveFact = (value: string) => {
-        setLoadingAction("recommendation");
-        void apiClient.upsertHouseFact(selectedHouse.id, factKey, { value, confidence: "unknown" })
-          .then(() => loadMaintenanceV1(selectedHouse.id))
-          .catch((caughtError) => setError(userFacingError(caughtError)))
-          .finally(() => setLoadingAction(null));
-      };
-      if (factKey === "gutters.material") {
-        Alert.alert("Supplér husdata", "Hvilket materiale er tagrenderne lavet af? Du kan også springe over.", [
-          { text: "Kobber", onPress: () => saveFact("copper") },
-          { text: "Zink", onPress: () => saveFact("zinc") },
-          { text: "Plast", onPress: () => saveFact("plastic") },
-          { text: "Andet", onPress: () => saveFact("other") },
-          { text: "Ved ikke", onPress: () => saveFact("unknown") },
-          { text: "Spring over", style: "cancel" }
-        ]);
-      } else {
-        Alert.alert("Supplér husdata", "Vil du tilføje den manglende husoplysning?", [
-          { text: "Spring over", style: "cancel" },
-          { text: "Ved ikke", onPress: () => saveFact("unknown") }
-        ]);
-      }
+  function openGuideForCatalogItem(item: MaintenanceCatalogItem) {
+    if (!item.guideTemplateId) {
+      setError("Vejledningen er ikke tilgængelig lige nu.");
       return;
     }
-    if (applicability.type === "REQUIRES_COMPONENT") {
-      const saveComponent = (status: "present" | "absent") => {
-        setLoadingAction("recommendation");
-        void apiClient.upsertHouseComponent(selectedHouse.id, applicability.componentKey, { status, attributes: {}, confidence: "unknown" })
-          .then(() => loadMaintenanceV1(selectedHouse.id))
-          .catch((caughtError) => setError(userFacingError(caughtError)))
-          .finally(() => setLoadingAction(null));
-      };
-      Alert.alert("Supplér husdata", `Har huset komponenten ${applicability.componentKey}?`, [
-        { text: "Ja", onPress: () => saveComponent("present") },
-        { text: "Nej", onPress: () => saveComponent("absent") },
-        { text: "Spring over", style: "cancel" }
-      ]);
+
+    const guide = guides.find((candidate) =>
+      candidate.id === item.guideTemplateId && candidate.version.id === item.guideVersionId
+    ) ?? guides.find((candidate) => candidate.id === item.guideTemplateId);
+
+    if (!guide) {
+      setError("Vejledningen er ikke tilgængelig lige nu.");
+      return;
+    }
+
+    openGuide(guide, "maintenance");
+    setActiveTab("more");
+    setMoreView("guides");
+  }
+
+  async function saveCatalogEnrichment(input: {
+    kind: "fact" | "component";
+    key: string;
+    value?: string;
+    status?: "present" | "absent" | "unknown";
+  }) {
+    if (!selectedHouse) return;
+
+    setLoadingAction("recommendation");
+    setError(null);
+
+    try {
+      if (input.kind === "fact") {
+        await apiClient.upsertHouseFact(selectedHouse.id, input.key, {
+          value: input.value ?? "unknown",
+          confidence: "unknown"
+        });
+      } else {
+        await apiClient.upsertHouseComponent(selectedHouse.id, input.key, {
+          status: input.status ?? "unknown",
+          attributes: {},
+          confidence: "unknown"
+        });
+      }
+      const catalogItems = await loadMaintenanceV1(selectedHouse.id);
+      if (selectedCatalogItem) {
+        setSelectedCatalogItem(
+          catalogItems.find((item) => item.catalogKey === selectedCatalogItem.catalogKey) ?? selectedCatalogItem
+        );
+      }
+    } catch (caughtError) {
+      setError(userFacingError(caughtError));
+    } finally {
+      setLoadingAction(null);
     }
   }
 
@@ -5160,11 +5317,12 @@ export default function App() {
     setSelectedHouseId(null);
     setShowHouseSelectionModal(false);
     setTasks([]);
+    setHouseFacts(null);
     setMaintenanceRecommendations([]);
     setMaintenanceCatalog([]);
-    setDismissedRecommendations([]);
     setMaintenanceView("main");
     setMaintenanceBackView("main");
+    setSelectedCatalogItem(null);
     setHouseDocuments([]);
     setImprovements([]);
     setHousePhoto(null);
@@ -5216,19 +5374,20 @@ export default function App() {
 
   const loadMaintenanceV1 = useCallback(
     async (houseId: HouseId) => {
-      const [taskResponse, historyResponse, recommendationResponse, dismissedRecommendationResponse, catalogResponse] =
+      const [taskResponse, historyResponse, recommendationResponse, catalogResponse, houseFactsResponse] =
         await Promise.all([
           apiClient.listMaintenanceTasks(houseId),
           apiClient.listMaintenanceHistory(houseId),
           apiClient.listMaintenanceRecommendations(houseId, "pending"),
-          apiClient.listMaintenanceRecommendations(houseId, "dismissed"),
-          apiClient.listMaintenanceCatalog(houseId, "all")
+          apiClient.listMaintenanceCatalog(houseId, "all"),
+          apiClient.getHouseFacts(houseId).catch(() => null)
         ]);
       setTasks(taskResponse.tasks);
       setMaintenanceHistory(historyResponse.history);
       setMaintenanceRecommendations(recommendationResponse.recommendations);
-      setDismissedRecommendations(dismissedRecommendationResponse.recommendations);
       setMaintenanceCatalog(catalogResponse.items);
+      setHouseFacts(houseFactsResponse);
+      return catalogResponse.items;
     },
     [apiClient]
   );
@@ -5312,6 +5471,7 @@ export default function App() {
         setMaintenanceHistory([]);
         setMaintenanceRecommendations([]);
         setMaintenanceCatalog([]);
+        setHouseFacts(null);
         setHouseDocuments([]);
         setSelectedHistoryDetail(null);
         setMaintenanceView("main");
@@ -5329,6 +5489,7 @@ export default function App() {
       setMaintenanceHistory([]);
       setMaintenanceRecommendations([]);
       setMaintenanceCatalog([]);
+      setHouseFacts(null);
       setHouseDocuments([]);
       setSelectedHistoryDetail(null);
       setMaintenanceView("main");
@@ -6456,7 +6617,7 @@ export default function App() {
     setError(null);
 
     try {
-      await apiClient.acceptMaintenanceRecommendation(
+      const response = await apiClient.acceptMaintenanceRecommendation(
         selectedHouse.id,
         recommendation.id,
         {
@@ -6464,73 +6625,17 @@ export default function App() {
           recurrenceInterval
         }
       );
+      setTasks((current) => [
+        response.task,
+        ...current.filter((task) => task.id !== response.task.id)
+      ]);
       await loadMaintenanceV1(selectedHouse.id);
-    } catch (caughtError) {
-      setError(userFacingError(caughtError));
-    } finally {
-      setLoadingAction(null);
-    }
-  }
-
-  async function dismissRecommendation(recommendation: MaintenanceRecommendation) {
-    if (!selectedHouse) {
-      setError("Tilføj et hus, før du afviser anbefalinger.");
-      return;
-    }
-
-    Alert.alert("Afvis anbefaling", "Hvordan vil du skjule anbefalingen?", [
-      { text: "Annuller", style: "cancel" },
-      {
-        text: "Ikke nu",
-        onPress: () => void dismissRecommendationWithMode(recommendation, "not_now")
-      },
-      {
-        text: "Vis ikke igen",
-        style: "destructive",
-        onPress: () => void dismissRecommendationWithMode(recommendation, "hide_forever")
-      }
-    ]);
-  }
-
-  async function dismissRecommendationWithMode(
-    recommendation: MaintenanceRecommendation,
-    mode: "not_now" | "hide_forever"
-  ) {
-    if (!selectedHouse) {
-      return;
-    }
-
-    setLoadingAction("recommendation");
-    setError(null);
-
-    try {
-      await apiClient.dismissMaintenanceRecommendation(selectedHouse.id, recommendation.id, {
-        mode
-      });
-      await loadMaintenanceV1(selectedHouse.id);
-    } catch (caughtError) {
-      setError(userFacingError(caughtError));
-    } finally {
-      setLoadingAction(null);
-    }
-  }
-
-  async function restoreRecommendation(recommendation: MaintenanceRecommendation) {
-    if (!selectedHouse) {
-      return;
-    }
-
-    setLoadingAction("recommendation");
-    setError(null);
-
-    try {
-      await apiClient.restoreMaintenanceRecommendation(selectedHouse.id, recommendation.id);
-      await loadMaintenanceV1(selectedHouse.id);
+      setSelectedTaskId(response.task.id);
       setSelectedRecommendation(null);
-      setMaintenanceView("dismissedRecommendations");
-      Alert.alert("Anbefaling gendannet", "Anbefalingen er gendannet.");
-    } catch (_caughtError) {
-      setError("Anbefalingen kunne ikke gendannes lige nu. Prøv igen.");
+      setSelectedCatalogItem(null);
+      openMaintenanceView("taskDetail", "main");
+    } catch (caughtError) {
+      setError(userFacingError(caughtError));
     } finally {
       setLoadingAction(null);
     }
@@ -6924,6 +7029,12 @@ export default function App() {
             setMaintenanceBackView("main");
             setMaintenanceView("main");
           }}
+          onOpenFindTasks={() => {
+            setActiveTab("maintenance");
+            setShowTaskForm(false);
+            setMaintenanceBackView("main");
+            setMaintenanceView("catalog");
+          }}
           onOpenTask={(task) => {
             setActiveTab("maintenance");
             setShowTaskForm(false);
@@ -7079,7 +7190,6 @@ export default function App() {
           historyDetail={selectedHistoryDetail}
           selectedTask={selectedTask}
           recommendations={maintenanceRecommendations}
-          dismissedRecommendations={dismissedRecommendations}
           catalogItems={maintenanceCatalog}
           filter={maintenanceFilter}
           historyYearFilter={historyYearFilter}
@@ -7087,16 +7197,18 @@ export default function App() {
           onFilterChange={setMaintenanceFilter}
           onHistoryYearFilterChange={setHistoryYearFilter}
           onOpenFullHistory={() => openMaintenanceView("history")}
-          onOpenAllRecommendations={() => openMaintenanceView("recommendations")}
-          onOpenCatalog={() => openMaintenanceView("catalog", "recommendations")}
-          onRequestEnrichment={requestCatalogEnrichment}
-          onOpenDismissedRecommendations={() => openMaintenanceView("dismissedRecommendations")}
+          onOpenAllRecommendations={() => openMaintenanceView("catalog", "main")}
           selectedRecommendation={selectedRecommendation}
-          onOpenRecommendationDetail={(recommendation) => {
-            setSelectedRecommendation(recommendation);
-            openMaintenanceView("recommendationDetail");
+          selectedCatalogItem={selectedCatalogItem}
+          houseFacts={houseFacts}
+          onOpenCatalogItem={(item) => {
+            setSelectedCatalogItem(item);
+            setSelectedRecommendation(maintenanceRecommendations.find((recommendation) => recommendation.catalogKey === item.catalogKey) ?? null);
+            openMaintenanceView("recommendationDetail", "catalog");
           }}
+          onSaveEnrichment={(input) => void saveCatalogEnrichment(input)}
           onOpenGuideForRecommendation={openGuideForRecommendation}
+          onOpenGuideForCatalogItem={openGuideForCatalogItem}
           onOpenGuideForTask={(task) => {
             const guide = guides.find((candidate) =>
               candidate.id === task.guideTemplateId &&
@@ -7110,7 +7222,6 @@ export default function App() {
             setActiveTab("more");
             setMoreView("guides");
           }}
-          onRestoreRecommendation={(recommendation) => void restoreRecommendation(recommendation)}
           onBackToMaintenance={goBackToMaintenance}
           onOpenTaskDetail={(task) => {
             setSelectedTaskId(task.id);
@@ -7161,7 +7272,6 @@ export default function App() {
           }}
           onCompleteTask={confirmCompleteTask}
           onAcceptRecommendation={(recommendation) => void acceptRecommendation(recommendation)}
-          onDismissRecommendation={(recommendation) => void dismissRecommendation(recommendation)}
           swipeHintSeen={maintenanceSwipeHintSeen}
           onDismissSwipeHint={dismissMaintenanceSwipeHint}
           onSave={() => void saveTask()}
@@ -8179,6 +8289,14 @@ const styles = StyleSheet.create({
     flex: 1,
     rowGap: 3
   },
+  catalogRow: {
+    alignItems: "center",
+    borderBottomColor: theme.border,
+    borderBottomWidth: 1,
+    columnGap: 10,
+    flexDirection: "row",
+    paddingVertical: 12
+  },
   swipeHint: {
     alignItems: "center",
     backgroundColor: theme.primarySoft,
@@ -8251,10 +8369,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
     marginBottom: 8,
     textTransform: "uppercase"
-  },
-  recommendationActions: {
-    alignItems: "flex-end",
-    rowGap: 8
   },
   historyRow: {
     backgroundColor: theme.primaryFaint,
@@ -8525,6 +8639,28 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     lineHeight: 21
+  },
+  infoValueRow: {
+    alignItems: "center",
+    columnGap: 8,
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  enrichmentEditor: {
+    backgroundColor: theme.primaryFaint,
+    borderRadius: 8,
+    marginBottom: 8,
+    padding: 10,
+    rowGap: 10
+  },
+  enrichmentInputRow: {
+    alignItems: "center",
+    columnGap: 8,
+    flexDirection: "row"
+  },
+  enrichmentInput: {
+    flex: 1,
+    minHeight: 42
   },
   publicDataTitle: {
     color: theme.text,

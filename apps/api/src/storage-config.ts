@@ -36,6 +36,7 @@ export function storageMode(environment: StorageEnvironment = process.env): Stor
 
   if (configuredAdapter === "local") return "local";
   if (configuredAdapter === "s3") return "s3";
+  if (runtimeEnvironment(environment) === "local") return "local";
   return hasS3Configuration(environment) ? "s3" : "local";
 }
 

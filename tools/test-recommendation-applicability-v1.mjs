@@ -39,11 +39,137 @@ test("gas boiler recommendation is filtered when a heat pump is known", () => {
   assert.equal(result.eligible, false);
 });
 
-test("unknown heating data is not treated as false", () => {
+test("component-specific recommendations require positive evidence", () => {
+  for (const componentKey of [
+    "basement",
+    "chimney",
+    "gas_boiler",
+    "oil_boiler",
+    "heat_pump",
+    "district_heating",
+    "ventilation",
+    "heat_recovery",
+    "drainage"
+  ]) {
+    const result = evaluateMaintenanceApplicability(
+      { type: "REQUIRES_COMPONENT", componentKey },
+      { components: {}, facts: {} }
+    );
+    assert.equal(result.status, "not_relevant", `${componentKey} must not be recommended when unknown`);
+    assert.equal(result.eligible, false, `${componentKey} must not be eligible when unknown`);
+
+    const present = evaluateMaintenanceApplicability(
+      { type: "REQUIRES_COMPONENT", componentKey },
+      { components: { [componentKey]: "present" }, facts: {} }
+    );
+    assert.equal(present.status, "relevant", `${componentKey} must be relevant when present`);
+    assert.equal(present.eligible, true, `${componentKey} must be eligible when present`);
+  }
+});
+
+test("composite component requirements use strict all and any semantics", () => {
+  const requiresAll = { type: "REQUIRES_COMPONENT", requiresAll: ["basement", "basement_ventilation"] };
+  assert.equal(
+    evaluateMaintenanceApplicability(requiresAll, { components: { basement: "present" }, facts: {} }).status,
+    "not_relevant"
+  );
+  assert.equal(
+    evaluateMaintenanceApplicability(requiresAll, {
+      components: { basement: "present", basement_ventilation: "present" },
+      facts: {}
+    }).status,
+    "relevant"
+  );
+  assert.equal(
+    evaluateMaintenanceApplicability(requiresAll, {
+      components: { basement: "present", basement_ventilation: "unknown" },
+      facts: {}
+    }).eligible,
+    false
+  );
+
+  const requiresAny = { type: "REQUIRES_COMPONENT", requiresAny: ["wood_stove", "fireplace", "chimney"] };
+  assert.equal(
+    evaluateMaintenanceApplicability(requiresAny, { components: { fireplace: "present" }, facts: {} }).status,
+    "relevant"
+  );
+  assert.equal(
+    evaluateMaintenanceApplicability(requiresAny, { components: { chimney: "unknown" }, facts: {} }).status,
+    "not_relevant"
+  );
+});
+
+test("unknown enrichment data does not block relevant recommendations", () => {
+  for (const factKey of ["gutters.material", "bbr.roof.material_code", "bbr.facade.material_code", "bbr.ground.sewer"]) {
+    const result = evaluateMaintenanceApplicability(
+      { type: "ENRICHED_BY_FACTS", factKeys: [factKey] },
+      { components: {}, facts: {} }
+    );
+    assert.equal(result.status, "relevant", `${factKey} must remain relevant without enrichment`);
+    assert.equal(result.eligible, true, `${factKey} must remain eligible without enrichment`);
+  }
+});
+
+test("catalog dependency classifications protect installation-specific tasks", () => {
+  const byKey = new Map(maintenanceCatalogItems.map((item) => [item.catalogKey, item]));
+  for (const [catalogKey, componentKey] of [
+    ["basement_damp_check", "basement"],
+    ["district_heating_unit_check", "district_heating"],
+    ["gas_boiler_service", "gas_boiler"],
+    ["oil_boiler_service", "oil_boiler"],
+    ["heat_pump_service", "heat_pump"],
+    ["ventilation_filter_check", "ventilation"],
+    ["heat_recovery_check", "heat_recovery"]
+  ]) {
+    const item = byKey.get(catalogKey);
+    assert(item);
+    assert.equal(item.eligibilityRules.type, "REQUIRES_COMPONENT");
+    assert.equal(item.eligibilityRules.componentKey, componentKey);
+  }
+  const basementVentilation = byKey.get("basement_ventilation_check");
+  assert(basementVentilation);
+  assert.deepEqual(basementVentilation.eligibilityRules.requiresAll, ["basement", "basement_ventilation"]);
+  const chimney = byKey.get("chimney_and_flashing_check");
+  assert(chimney);
+  assert.deepEqual(chimney.eligibilityRules.requiresAny, ["chimney", "wood_stove", "fireplace"]);
+  assert.equal(byKey.get("smoke_alarm_check")?.eligibilityRules.type, "UNIVERSAL");
+  assert.equal(byKey.get("wetroom_joints_check")?.eligibilityRules.type, "UNIVERSAL");
+});
+
+test("Ringstedgade-like house cannot receive basement or chimney recommendations", () => {
+  const byKey = new Map(maintenanceCatalogItems.map((item) => [item.catalogKey, item]));
+  const ringstedgade = {
+    components: {
+      basement: "absent",
+      heating_system: "present",
+      gas_boiler: "present",
+      chimney: "unknown",
+      supplementary_heating: "absent"
+    },
+    facts: {
+      "bbr.heating.type": "natural_gas",
+      "bbr.heating.supplementary": "absent"
+    }
+  };
+
+  for (const catalogKey of ["basement_ventilation_check", "chimney_and_flashing_check"]) {
+    const item = byKey.get(catalogKey);
+    assert(item);
+    const result = evaluateMaintenanceApplicability(item.eligibilityRules, ringstedgade);
+    assert.equal(result.status, "not_relevant", `${catalogKey} must not be relevant for Ringstedgade`);
+    assert.equal(result.eligible, false, `${catalogKey} must not be eligible for Ringstedgade`);
+  }
+
+  const universal = byKey.get("smoke_alarm_check");
+  assert(universal);
+  assert.equal(evaluateMaintenanceApplicability(universal.eligibilityRules, ringstedgade).status, "relevant");
+});
+
+test("unknown required heating data is not recommended", () => {
   const gas = maintenanceCatalogItems.find((item) => item.catalogKey === "gas_boiler_service");
   assert(gas);
   const result = evaluateMaintenanceApplicability(gas.eligibilityRules, emptyState);
-  assert.equal(result.status, "possible");
+  assert.equal(result.status, "not_relevant");
   assert.equal(result.eligible, false);
 });
 
@@ -64,12 +190,30 @@ test("house enrichment is persisted as reusable house/component data", () => {
   assert.match(db, /upsertHouseComponentForHouse/);
 });
 
+test("BBR explicitly records zero basement area as absent without inventing unknown absence", () => {
+  const db = readFileSync(new URL("../apps/api/src/db.ts", import.meta.url), "utf8");
+  assert.match(db, /delete from house_facts where house_id = \$1 and source = 'bbr'/);
+  assert.match(db, /delete from house_components where house_id = \$1 and source = 'bbr'/);
+  assert.match(db, /basementAreas = buildings\.flatMap/);
+  assert.match(db, /basementAreas\.some\(\(area\) => area > 0\) \? "present" : "absent"/);
+  assert.match(db, /if \(basementAreas\.length > 0\)/);
+});
+
 test("catalog visibility is not gated by a recommendation-specific entitlement", () => {
   const server = readFileSync(new URL("../apps/api/src/server.ts", import.meta.url), "utf8");
   const db = readFileSync(new URL("../apps/api/src/db.ts", import.meta.url), "utf8");
   assert.match(server, /maintenance-catalog/);
   assert.match(db, /scope: "recommended" \| "all"/);
   assert.match(db, /where is_active/);
+});
+
+test("all catalog scope can display non-applicable entries without relabeling them as relevant", () => {
+  const db = readFileSync(new URL("../apps/api/src/db.ts", import.meta.url), "utf8");
+  const app = readFileSync(new URL("../apps/mobile/src/App.tsx", import.meta.url), "utf8");
+  assert.match(db, /\.filter\(\(item\) => scope === "all" \|\| item\.relevance === "relevant"\)/);
+  assert.match(app, /const scopedItems = scope === "recommended"/);
+  assert.match(app, /: items;/);
+  assert.match(app, /"Ikke relevant ud fra dine husdata"/);
 });
 
 test("existing task entitlements remain the activation authority", () => {
@@ -114,7 +258,7 @@ test("mobile recommendation detail uses optional inline house enrichment", () =>
   const app = readFileSync(new URL("../apps/mobile/src/App.tsx", import.meta.url), "utf8");
   assert.match(app, /Om dit hus/);
   assert.match(app, /onSaveEnrichment=\{\(input\) => void saveCatalogEnrichment\(input\)\}/);
-  assert.match(app, /Du kan udfylde oplysningerne, hvis du kender dem/);
+  assert.match(app, /Nu hvor opgaven er tilføjet, kan du udfylde oplysninger om dit hus/);
   assert.match(app, /Føj til Mine opgaver/);
   assert.doesNotMatch(app, /Har huset komponenten \$\{applicability\.componentKey\}/);
 });

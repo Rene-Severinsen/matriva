@@ -1092,7 +1092,8 @@ function MaintenanceSummary({
   upcomingTasks,
   onCreateTask,
   onOpenTasks,
-  onOpenTask
+  onOpenTask,
+  onOpenFindTasks
 }: {
   activeTasks: MaintenanceTask[];
   overdueTasks: MaintenanceTask[];
@@ -1100,10 +1101,15 @@ function MaintenanceSummary({
   onCreateTask: () => void;
   onOpenTasks: () => void;
   onOpenTask: (task: MaintenanceTask) => void;
+  onOpenFindTasks: () => void;
 }) {
-  const taskPreview = overdueTasks[0] ?? upcomingTasks[0] ?? activeTasks[0] ?? null;
-  const taskPreviewDescription = taskPreview ? visibleTaskDescription(taskPreview) : null;
-  const taskPreviewIsOverdue = taskPreview ? isTaskOverdueForDisplay(taskPreview) : false;
+  const dashboardTasks = [
+    ...[...overdueTasks].sort(compareMaintenanceTasksByDueDate),
+    ...[...upcomingTasks].sort(compareMaintenanceTasksByDueDate),
+    ...[...activeTasks].filter(
+      (task) => !overdueTasks.includes(task) && !upcomingTasks.includes(task)
+    ).sort(compareMaintenanceTasksByDueDate)
+  ].slice(0, 3);
 
   return (
     <Card>
@@ -1139,31 +1145,37 @@ function MaintenanceSummary({
         </View>
       </View>
 
-      {taskPreview ? (
-        <Pressable
-          accessibilityLabel={`Åbn opgave: ${taskPreview.title}`}
-          accessibilityRole="button"
-          onPress={() => onOpenTask(taskPreview)}
-          style={({ pressed }) => [
-            styles.summaryTaskPreview,
-            pressed ? styles.summaryTaskPreviewPressed : null
-          ]}
-        >
-          <View style={styles.cardHeaderRow}>
-            <View style={styles.taskTitleGroup}>
-              <Text style={styles.cardTitle}>{taskPreview.title}</Text>
-              <Text style={styles.taskTiming}>{formatTiming(taskPreview)}</Text>
-            </View>
-            <Pill
-              tone={taskPreviewIsOverdue ? "warning" : "default"}
-            >
-              {formatStatus(taskPreviewIsOverdue ? "overdue" : taskPreview.status)}
-            </Pill>
-          </View>
-          {taskPreviewDescription ? (
-            <Text style={styles.compactBodyText}>{taskPreviewDescription}</Text>
-          ) : null}
-        </Pressable>
+      <FindTasksLinkRow onPress={onOpenFindTasks} />
+
+      {dashboardTasks.length > 0 ? (
+        <View style={styles.summaryTaskList}>
+          {dashboardTasks.map((task) => {
+            const taskIsOverdue = isTaskOverdueForDisplay(task);
+
+            return (
+              <Pressable
+                accessibilityLabel={`Åbn opgave: ${task.title}`}
+                accessibilityRole="button"
+                key={task.id}
+                onPress={() => onOpenTask(task)}
+                style={({ pressed }) => [
+                  styles.summaryTaskPreview,
+                  pressed ? styles.summaryTaskPreviewPressed : null
+                ]}
+              >
+                <View style={styles.cardHeaderRow}>
+                  <View style={styles.taskTitleGroup}>
+                    <Text style={styles.cardTitle}>{task.title}</Text>
+                    <Text style={styles.taskTiming}>{formatTiming(task)}</Text>
+                  </View>
+                  <Pill tone={taskIsOverdue ? "warning" : "default"}>
+                    {formatStatus(taskIsOverdue ? "overdue" : task.status)}
+                  </Pill>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
       ) : (
         <View style={styles.summaryEmpty}>
           <Text style={styles.emptyTitle}>Ingen opgaver kræver opmærksomhed</Text>
@@ -1174,7 +1186,7 @@ function MaintenanceSummary({
       )}
 
       <View style={styles.summaryActions}>
-        <PrimaryButton label="Opret opgave" onPress={onCreateTask} />
+        <SecondaryButton compact label="Opret opgave" onPress={onCreateTask} />
       </View>
     </Card>
   );
@@ -1911,8 +1923,8 @@ function DashboardScreen({
         onCreateTask={onCreateTask}
         onOpenTasks={onOpenTasks}
         onOpenTask={onOpenTask}
+        onOpenFindTasks={onOpenFindTasks}
       />
-      <FindTasksLinkRow onPress={onOpenFindTasks} />
     </View>
   );
 }
@@ -2951,7 +2963,11 @@ const houseComponentLabels: Record<string, string> = {
   heat_pump: "Varmepumpe",
   mechanical_ventilation: "Mekanisk ventilation",
   ventilation: "Ventilationsanlæg",
+  basement_ventilation: "Ventilation i kælder",
   heat_recovery: "Varmegenvinding",
+  chimney: "Skorsten eller brændeovn",
+  wood_stove: "Brændeovn",
+  fireplace: "Pejs",
   roof: "Tag",
   solar_panels: "Solceller",
   wetroom: "Vådrum"
@@ -2999,6 +3015,145 @@ function componentStatusLabel(status: "present" | "absent" | "unknown" | undefin
   return "Ikke angivet";
 }
 
+function HouseEnrichmentCard({
+  catalogItem,
+  houseFacts,
+  isSaving,
+  onSaveEnrichment
+}: {
+  catalogItem: MaintenanceCatalogItem;
+  houseFacts: HouseFactsResponse | null;
+  isSaving: boolean;
+  onSaveEnrichment: (input: {
+    kind: "fact" | "component";
+    key: string;
+    value?: string;
+    status?: "present" | "absent" | "unknown";
+  }) => void;
+}) {
+  const [enrichmentField, setEnrichmentField] = useState<string | null>(null);
+  const [enrichmentValue, setEnrichmentValue] = useState("");
+
+  useEffect(() => {
+    setEnrichmentField(null);
+    setEnrichmentValue("");
+  }, [catalogItem.catalogKey, catalogItem.catalogVersion]);
+
+  const componentKeys = catalogItem.applicability.type === "REQUIRES_COMPONENT"
+    ? [
+        ...(catalogItem.applicability.componentKey ? [catalogItem.applicability.componentKey] : []),
+        ...(catalogItem.applicability.requiresAll ?? []),
+        ...(catalogItem.applicability.requiresAny ?? [])
+      ].filter((key, index, keys) => keys.indexOf(key) === index)
+    : catalogItem.applicability.type === "EXCLUDES_COMPONENT"
+      ? [catalogItem.applicability.componentKey]
+      : [];
+  const enrichmentFields = catalogItem.applicability.type === "ENRICHED_BY_FACTS"
+    ? catalogItem.applicability.factKeys.map((key) => ({ kind: "fact" as const, key }))
+    : componentKeys.length > 0
+      ? componentKeys.map((key) => ({ kind: "component" as const, key }))
+      : [];
+
+  if (enrichmentFields.length === 0) return null;
+
+  const componentOptions: Array<{ label: string; status: "present" | "absent" | "unknown" }> = [
+    { label: "Ja", status: "present" },
+    { label: "Nej", status: "absent" },
+    { label: "Ved ikke", status: "unknown" }
+  ];
+  const factOptions = enrichmentField === "gutters.material"
+    ? ["Zink", "Plast", "Kobber", "Andet", "Ved ikke"]
+    : [];
+
+  return (
+    <Card>
+      <Text style={styles.cardTitle}>Om dit hus</Text>
+      <Text style={styles.compactBodyText}>
+        Nu hvor opgaven er tilføjet, kan du udfylde oplysninger om dit hus. Det er frivilligt, og du kan altid fortsætte.
+      </Text>
+      <View style={styles.infoList}>
+        {enrichmentFields.map((field) => {
+          const fact = field.kind === "fact" ? houseFacts?.facts.find((candidate) => candidate.factKey === field.key) : null;
+          const component = field.kind === "component" ? houseFacts?.components.find((candidate) => candidate.componentKey === field.key) : null;
+          const value = field.kind === "fact"
+            ? houseFactValueLabel(field.key, fact?.value)
+            : componentStatusLabel(component?.status);
+          const isOpen = enrichmentField === field.key;
+
+          return (
+            <View key={`${field.kind}:${field.key}`}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Rediger ${field.kind === "fact" ? houseFactLabel(field.key) : houseComponentLabel(field.key)}`}
+                onPress={() => {
+                  setEnrichmentField(isOpen ? null : field.key);
+                  setEnrichmentValue(field.kind === "fact" ? houseFactValueLabel(field.key, fact?.value) : "");
+                }}
+                style={({ pressed }) => [styles.infoRow, pressed ? styles.linkRowPressed : null]}
+              >
+                <Text style={styles.infoLabel}>{field.kind === "fact" ? houseFactLabel(field.key) : houseComponentLabel(field.key)}</Text>
+                <View style={styles.infoValueRow}>
+                  <Text style={styles.infoValue}>{value}</Text>
+                  <Text style={styles.linkRowIcon}>›</Text>
+                </View>
+              </Pressable>
+              {isOpen ? (
+                <View style={styles.enrichmentEditor}>
+                  {field.kind === "component" ? (
+                    <View style={styles.choiceWrap}>
+                      {componentOptions.map((option) => (
+                        <Pressable
+                          accessibilityRole="button"
+                          key={option.status}
+                          disabled={isSaving}
+                          onPress={() => onSaveEnrichment({ kind: "component", key: field.key, status: option.status })}
+                          style={[styles.choiceChip, component?.status === option.status ? styles.choiceChipSelected : null]}
+                        >
+                          <Text style={[styles.choiceChipText, component?.status === option.status ? styles.choiceChipTextSelected : null]}>{option.label}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : factOptions.length > 0 ? (
+                    <View style={styles.choiceWrap}>
+                      {factOptions.map((option) => (
+                        <Pressable
+                          accessibilityRole="button"
+                          key={option}
+                          disabled={isSaving}
+                          onPress={() => {
+                            setEnrichmentValue(option);
+                            onSaveEnrichment({ kind: "fact", key: field.key, value: option === "Ved ikke" ? "unknown" : option.toLowerCase() });
+                          }}
+                          style={[styles.choiceChip, enrichmentValue === option ? styles.choiceChipSelected : null]}
+                        >
+                          <Text style={[styles.choiceChipText, enrichmentValue === option ? styles.choiceChipTextSelected : null]}>{option}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : (
+                    <View style={styles.enrichmentInputRow}>
+                      <TextInput
+                        accessibilityLabel="Husoplysning"
+                        editable={!isSaving}
+                        onChangeText={setEnrichmentValue}
+                        placeholder="Skriv det, du ved"
+                        placeholderTextColor={theme.muted}
+                        style={[styles.input, styles.enrichmentInput]}
+                        value={enrichmentValue === "Ikke angivet" ? "" : enrichmentValue}
+                      />
+                      <SecondaryButton compact label="Gem" disabled={!enrichmentValue.trim() || isSaving} onPress={() => onSaveEnrichment({ kind: "fact", key: field.key, value: enrichmentValue.trim() })} />
+                    </View>
+                  )}
+                </View>
+              ) : null}
+            </View>
+          );
+        })}
+      </View>
+    </Card>
+  );
+}
+
 function MaintenanceCatalogScreen({
   items,
   tasks,
@@ -3011,9 +3166,17 @@ function MaintenanceCatalogScreen({
   onOpenItem: (item: MaintenanceCatalogItem) => void;
 }) {
   const [scope, setScope] = useState<"recommended" | "all">("recommended");
-  const visibleItems = scope === "recommended"
+  const [searchQuery, setSearchQuery] = useState("");
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const scopedItems = scope === "recommended"
     ? items.filter((item) => item.relevance === "relevant" && !activeTaskForCatalogItem(tasks, item))
     : items;
+  const searchedItems = normalizedSearchQuery
+    ? scopedItems.filter((item) =>
+        `${item.title} ${item.shortDescription}`.toLowerCase().includes(normalizedSearchQuery)
+      )
+    : scopedItems;
+  const visibleItems = searchedItems;
   const relevanceLabel = (item: MaintenanceCatalogItem) =>
     item.relevance === "relevant"
       ? "Relevant for dit hus"
@@ -3031,6 +3194,20 @@ function MaintenanceCatalogScreen({
     <View style={styles.stack}>
       <SecondaryButton label="Tilbage" onPress={onBack} />
       <SectionHeader title="Find opgaver" subtitle="Se vedligehold, der passer til dit hus." />
+      <View style={styles.catalogSearchRow}>
+        <TextInput
+          accessibilityLabel="Søg efter opgave"
+          onChangeText={setSearchQuery}
+          placeholder="Søg efter opgave"
+          placeholderTextColor={theme.muted}
+          returnKeyType="search"
+          style={[styles.input, styles.catalogSearchInput]}
+          value={searchQuery}
+        />
+        {searchQuery ? (
+          <SecondaryButton compact label="Ryd" onPress={() => setSearchQuery("")} />
+        ) : null}
+      </View>
       <View style={styles.maintenanceFilterGrid}>
         {(["recommended", "all"] as const).map((nextScope) => (
           <Pressable
@@ -3047,7 +3224,10 @@ function MaintenanceCatalogScreen({
         ))}
       </View>
       {visibleItems.length === 0 ? (
-        <EmptyState title="Ingen sikre match endnu" body="Hele kataloget er stadig tilgængeligt under Alle anbefalinger." />
+        <EmptyState
+          title={normalizedSearchQuery ? "Ingen opgaver fundet" : "Ingen sikre match endnu"}
+          body={normalizedSearchQuery ? "Prøv et andet søgeord eller vælg Alle anbefalinger." : "Hele kataloget er stadig tilgængeligt under Alle anbefalinger."}
+        />
       ) : (
         <View style={styles.stack}>
           {Object.entries(groupedItems).map(([group, groupItems]) => (
@@ -3141,6 +3321,7 @@ function MaintenanceScreen({
   swipeHintSeen,
   onDismissSwipeHint,
   onSave,
+  isEnrichmentSaving,
   onboarding,
   completionNoteTask,
   completionNote,
@@ -3212,6 +3393,7 @@ function MaintenanceScreen({
   swipeHintSeen: boolean | null;
   onDismissSwipeHint: () => void;
   onSave: () => void;
+  isEnrichmentSaving: boolean;
   onboarding: React.ComponentProps<typeof HouseOnboarding>;
   completionNoteTask: MaintenanceTask | null;
   completionNote: string;
@@ -3277,14 +3459,6 @@ function MaintenanceScreen({
     setShowDetailDatePicker(false);
   }, [selectedTask?.id]);
 
-  const [enrichmentField, setEnrichmentField] = useState<string | null>(null);
-  const [enrichmentValue, setEnrichmentValue] = useState("");
-
-  useEffect(() => {
-    setEnrichmentField(null);
-    setEnrichmentValue("");
-  }, [selectedCatalogItem?.catalogKey]);
-
   if (!house) {
     return (
       <View style={styles.stack}>
@@ -3310,6 +3484,12 @@ function MaintenanceScreen({
   });
 
   if (view === "taskDetail" && selectedTask) {
+    const taskCatalogItem = selectedTask.originCatalogKey
+      ? catalogItems.find((item) =>
+          item.catalogKey === selectedTask.originCatalogKey &&
+          (!selectedTask.originCatalogVersion || item.catalogVersion === selectedTask.originCatalogVersion)
+        ) ?? catalogItems.find((item) => item.catalogKey === selectedTask.originCatalogKey)
+      : null;
     const recurrenceText = recurrenceLabel(selectedTask.recurrence);
     const sourceText = selectedTask.source === "user_created"
       ? formatSource(selectedTask, currentUserId)
@@ -3471,6 +3651,14 @@ function MaintenanceScreen({
             ) : null}
           </View>
         )}
+        {taskCatalogItem ? (
+          <HouseEnrichmentCard
+            catalogItem={taskCatalogItem}
+            houseFacts={houseFacts}
+            isSaving={isEnrichmentSaving}
+            onSaveEnrichment={onSaveEnrichment}
+          />
+        ) : null}
         {!isTaskEditing ? (
           <View style={styles.compactActionRow}>
             <Pressable
@@ -3531,20 +3719,6 @@ function MaintenanceScreen({
       : relevance === "possible"
         ? "Muligvis relevant"
         : "Ikke relevant ud fra dine husoplysninger";
-    const enrichmentFields = catalogItem?.applicability.type === "ENRICHED_BY_FACTS"
-      ? catalogItem.applicability.factKeys.map((key) => ({ kind: "fact" as const, key }))
-      : catalogItem?.applicability.type === "REQUIRES_COMPONENT" || catalogItem?.applicability.type === "EXCLUDES_COMPONENT"
-        ? [{ kind: "component" as const, key: catalogItem.applicability.componentKey }]
-        : [];
-    const componentOptions: Array<{ label: string; status: "present" | "absent" | "unknown" }> = [
-      { label: "Ja", status: "present" },
-      { label: "Nej", status: "absent" },
-      { label: "Ved ikke", status: "unknown" }
-    ];
-    const factOptions = enrichmentField === "gutters.material"
-      ? ["Zink", "Plast", "Kobber", "Andet", "Ved ikke"]
-      : [];
-
     return (
       <View style={styles.stack}>
         <SecondaryButton label="Tilbage" onPress={onBackToMaintenance} />
@@ -3554,7 +3728,7 @@ function MaintenanceScreen({
           <Text style={styles.compactBodyText}>{description}</Text>
           <View style={styles.infoList}>
             <InfoRow label="Anbefalet interval" value={timingLabel} />
-            <InfoRow label="Relevans for dit hus" value={activeTask ? "Allerede tilføjet til Mine opgaver" : relevanceText} />
+            <InfoRow label="Vurdering" value={activeTask ? "Allerede tilføjet til Mine opgaver" : relevanceText} />
           </View>
           {selectedRecommendation?.why ? <Text style={styles.metaText}>{selectedRecommendation.why}</Text> : null}
         </Card>
@@ -3565,85 +3739,6 @@ function MaintenanceScreen({
               ? onOpenGuideForRecommendation(matchingRecommendation)
               : onOpenGuideForCatalogItem(catalogItem)}
           />
-        ) : null}
-        {enrichmentFields.length > 0 ? (
-          <Card>
-            <Text style={styles.cardTitle}>Om dit hus</Text>
-            <Text style={styles.compactBodyText}>Du kan udfylde oplysningerne, hvis du kender dem. Det er frivilligt, og du kan altid fortsætte.</Text>
-            <View style={styles.infoList}>
-              {enrichmentFields.map((field) => {
-                const fact = field.kind === "fact" ? houseFacts?.facts.find((candidate) => candidate.factKey === field.key) : null;
-                const component = field.kind === "component" ? houseFacts?.components.find((candidate) => candidate.componentKey === field.key) : null;
-                const value = field.kind === "fact"
-                  ? houseFactValueLabel(field.key, fact?.value)
-                  : componentStatusLabel(component?.status);
-                const isOpen = enrichmentField === field.key;
-
-                return (
-                  <View key={`${field.kind}:${field.key}`}>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Rediger ${field.kind === "fact" ? houseFactLabel(field.key) : houseComponentLabel(field.key)}`}
-                      onPress={() => {
-                        setEnrichmentField(isOpen ? null : field.key);
-                        setEnrichmentValue(field.kind === "fact" ? houseFactValueLabel(field.key, fact?.value) : "");
-                      }}
-                      style={({ pressed }) => [styles.infoRow, pressed ? styles.linkRowPressed : null]}
-                    >
-                      <Text style={styles.infoLabel}>{field.kind === "fact" ? houseFactLabel(field.key) : houseComponentLabel(field.key)}</Text>
-                      <View style={styles.infoValueRow}>
-                        <Text style={styles.infoValue}>{value}</Text>
-                        <Text style={styles.linkRowIcon}>›</Text>
-                      </View>
-                    </Pressable>
-                    {isOpen ? (
-                      <View style={styles.enrichmentEditor}>
-                        {field.kind === "component" ? (
-                          <View style={styles.choiceWrap}>
-                            {componentOptions.map((option) => (
-                              <Pressable
-                                accessibilityRole="button"
-                                key={option.status}
-                                onPress={() => onSaveEnrichment({ kind: "component", key: field.key, status: option.status })}
-                                style={[styles.choiceChip, component?.status === option.status ? styles.choiceChipSelected : null]}
-                              >
-                                <Text style={[styles.choiceChipText, component?.status === option.status ? styles.choiceChipTextSelected : null]}>{option.label}</Text>
-                              </Pressable>
-                            ))}
-                          </View>
-                        ) : factOptions.length > 0 ? (
-                          <View style={styles.choiceWrap}>
-                            {factOptions.map((option) => (
-                              <Pressable
-                                accessibilityRole="button"
-                                key={option}
-                                onPress={() => onSaveEnrichment({ kind: "fact", key: field.key, value: option === "Ved ikke" ? "unknown" : option.toLowerCase() })}
-                                style={[styles.choiceChip, enrichmentValue === option ? styles.choiceChipSelected : null]}
-                              >
-                                <Text style={[styles.choiceChipText, enrichmentValue === option ? styles.choiceChipTextSelected : null]}>{option}</Text>
-                              </Pressable>
-                            ))}
-                          </View>
-                        ) : (
-                          <View style={styles.enrichmentInputRow}>
-                            <TextInput
-                              accessibilityLabel="Husoplysning"
-                              onChangeText={setEnrichmentValue}
-                              placeholder="Skriv det, du ved"
-                              placeholderTextColor={theme.muted}
-                              style={[styles.input, styles.enrichmentInput]}
-                              value={enrichmentValue === "Ikke angivet" ? "" : enrichmentValue}
-                            />
-                            <SecondaryButton compact label="Gem" disabled={!enrichmentValue.trim() || isSaving} onPress={() => onSaveEnrichment({ kind: "fact", key: field.key, value: enrichmentValue.trim() })} />
-                          </View>
-                        )}
-                      </View>
-                    ) : null}
-                  </View>
-                );
-              })}
-            </View>
-          </Card>
         ) : null}
         {activeTask ? (
           <SecondaryButton compact label="Åbn i Mine opgaver" onPress={() => onOpenTaskDetail(activeTask)} />
@@ -7289,6 +7384,7 @@ export default function App() {
             }
           }}
           onSaveCompletion={() => void saveCompletionFromModal()}
+          isEnrichmentSaving={loadingAction === "recommendation"}
           onboarding={onboardingProps}
         />
       );
@@ -8541,6 +8637,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 14,
     rowGap: 8
+  },
+  summaryTaskList: {
+    rowGap: 8
+  },
+  catalogSearchRow: {
+    alignItems: "center",
+    columnGap: 8,
+    flexDirection: "row"
+  },
+  catalogSearchInput: {
+    flex: 1,
+    minHeight: 44
   },
   summaryTaskPreviewPressed: {
     backgroundColor: theme.primarySoft

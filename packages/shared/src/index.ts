@@ -2335,7 +2335,13 @@ export type MaintenanceApplicabilityType = z.infer<typeof maintenanceApplicabili
 
 export const maintenanceApplicabilityRuleSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("UNIVERSAL") }),
-  z.object({ type: z.literal("REQUIRES_COMPONENT"), componentKey: z.string().min(1), excludesComponentKey: z.string().min(1).optional() }),
+  z.object({
+    type: z.literal("REQUIRES_COMPONENT"),
+    componentKey: z.string().min(1).optional(),
+    requiresAll: z.array(z.string().min(1)).min(1).optional(),
+    requiresAny: z.array(z.string().min(1)).min(1).optional(),
+    excludesComponentKey: z.string().min(1).optional()
+  }),
   z.object({ type: z.literal("EXCLUDES_COMPONENT"), componentKey: z.string().min(1) }),
   z.object({ type: z.literal("ENRICHED_BY_FACTS"), factKeys: z.array(z.string().min(1)) })
 ]);

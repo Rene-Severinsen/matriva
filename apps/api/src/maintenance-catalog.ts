@@ -15,7 +15,13 @@ export type MaintenanceCatalogPeriod =
 
 export type MaintenanceCatalogApplicabilityRule =
   | { type: "UNIVERSAL" }
-  | { type: "REQUIRES_COMPONENT"; componentKey: string; excludesComponentKey?: string }
+  | {
+      type: "REQUIRES_COMPONENT";
+      componentKey?: string;
+      requiresAll?: ReadonlyArray<string>;
+      requiresAny?: ReadonlyArray<string>;
+      excludesComponentKey?: string;
+    }
   | { type: "EXCLUDES_COMPONENT"; componentKey: string }
   | { type: "ENRICHED_BY_FACTS"; factKeys: ReadonlyArray<string> };
 
@@ -67,7 +73,7 @@ export const maintenanceCatalogItems: ReadonlyArray<MaintenanceCatalogItem> = [
   catalogItem({ catalogKey: "wetroom_joints_check", title: "Kontroller fuger i vådrum", shortDescription: "Se efter revner, løse fuger og misfarvninger i vådrum.", season: "all_year", defaultRecurrenceInterval: "yearly", priority: "normal", disclaimerClass: "general", isActive: true }),
   catalogItem({ catalogKey: "roof_surface_check", title: "Efterse tagfladen", shortDescription: "Se efter løse, knækkede eller forskudte tagdele.", season: "spring", recommendedPeriod: { type: "month_range", startMonth: 3, endMonth: 5 }, defaultRecurrenceInterval: "yearly", priority: "normal", applicability: { type: "ENRICHED_BY_FACTS", factKeys: ["bbr.roof.material_code"] }, disclaimerClass: "safety", isActive: true }),
   catalogItem({ catalogKey: "roof_moss_and_growth_check", title: "Kontroller mos og belægninger på tag", shortDescription: "Vurder mos og belægninger uden at beskadige tagmaterialet.", season: "spring", recommendedPeriod: { type: "month_range", startMonth: 3, endMonth: 5 }, defaultRecurrenceInterval: "every_2_years", priority: "normal", applicability: { type: "REQUIRES_COMPONENT", componentKey: "roof" }, disclaimerClass: "safety", isActive: true }),
-  catalogItem({ catalogKey: "chimney_and_flashing_check", title: "Efterse skorsten og inddækning", shortDescription: "Se efter synlige skader omkring skorsten og inddækning.", season: "spring", recommendedPeriod: { type: "month_range", startMonth: 3, endMonth: 5 }, defaultRecurrenceInterval: "yearly", priority: "normal", disclaimerClass: "safety", isActive: true }),
+  catalogItem({ catalogKey: "chimney_and_flashing_check", title: "Efterse skorsten og inddækning", shortDescription: "Se efter synlige skader omkring skorsten og inddækning.", season: "spring", recommendedPeriod: { type: "month_range", startMonth: 3, endMonth: 5 }, defaultRecurrenceInterval: "yearly", priority: "normal", applicability: { type: "REQUIRES_COMPONENT", requiresAny: ["chimney", "wood_stove", "fireplace"] }, disclaimerClass: "safety", isActive: true }),
   catalogItem({ catalogKey: "gutter_joints_check", title: "Efterse samlinger i tagrender", shortDescription: "Kontroller samlinger for utætheder og forskydninger.", season: "spring", recommendedPeriod: { type: "month_range", startMonth: 3, endMonth: 5 }, defaultRecurrenceInterval: "yearly", priority: "normal", disclaimerClass: "general", isActive: true }),
   catalogItem({ catalogKey: "facade_mortar_check", title: "Kontroller mørtelfuger i facade", shortDescription: "Se efter udvaskede, revnede eller løse mørtelfuger.", season: "spring", recommendedPeriod: { type: "month_range", startMonth: 3, endMonth: 5 }, defaultRecurrenceInterval: "every_5_years", priority: "normal", applicability: { type: "ENRICHED_BY_FACTS", factKeys: ["bbr.facade.material_code"] }, disclaimerClass: "general", isActive: true }),
   catalogItem({ catalogKey: "facade_surface_clean_check", title: "Vurder facade og overfladebehandling", shortDescription: "Vurder om facadeoverfladen er slidt eller beskadiget.", season: "spring", recommendedPeriod: { type: "month_range", startMonth: 3, endMonth: 5 }, defaultRecurrenceInterval: "every_5_years", priority: "normal", applicability: { type: "REQUIRES_COMPONENT", componentKey: "facade" }, disclaimerClass: "professional_review", isActive: true }),
@@ -75,7 +81,7 @@ export const maintenanceCatalogItems: ReadonlyArray<MaintenanceCatalogItem> = [
   catalogItem({ catalogKey: "door_hardware_and_security_check", title: "Kontroller døre og beslag", shortDescription: "Test låse, hængsler, greb og tætningslister.", season: "all_year", defaultRecurrenceInterval: "yearly", priority: "normal", disclaimerClass: "general", isActive: true }),
   catalogItem({ catalogKey: "foundation_crack_check", title: "Kontroller fundament for revner", shortDescription: "Se efter nye eller voksende revner omkring sokkel og fundament.", season: "spring", recommendedPeriod: { type: "month_range", startMonth: 3, endMonth: 5 }, defaultRecurrenceInterval: "yearly", priority: "normal", disclaimerClass: "professional_review", isActive: true }),
   catalogItem({ catalogKey: "basement_damp_check", title: "Kontroller kælder for fugt", shortDescription: "Se efter fugt, lugt og misfarvninger i kælder eller krybekælder.", season: "all_year", defaultRecurrenceInterval: "yearly", priority: "normal", applicability: { type: "REQUIRES_COMPONENT", componentKey: "basement" }, disclaimerClass: "professional_review", isActive: true }),
-  catalogItem({ catalogKey: "basement_ventilation_check", title: "Kontroller ventilation i kælder", shortDescription: "Kontroller luftskifte og synlige ventilationsåbninger.", season: "spring", recommendedPeriod: { type: "month_range", startMonth: 3, endMonth: 5 }, defaultRecurrenceInterval: "yearly", priority: "normal", applicability: { type: "REQUIRES_COMPONENT", componentKey: "basement" }, disclaimerClass: "general", isActive: true }),
+  catalogItem({ catalogKey: "basement_ventilation_check", title: "Kontroller ventilation i kælder", shortDescription: "Kontroller luftskifte og synlige ventilationsåbninger.", season: "spring", recommendedPeriod: { type: "month_range", startMonth: 3, endMonth: 5 }, defaultRecurrenceInterval: "yearly", priority: "normal", applicability: { type: "REQUIRES_COMPONENT", requiresAll: ["basement", "basement_ventilation"] }, disclaimerClass: "general", isActive: true }),
   catalogItem({ catalogKey: "terrain_slope_check", title: "Kontroller terrænets fald fra huset", shortDescription: "Se om overfladevand ledes væk fra huset.", season: "autumn", recommendedPeriod: { type: "month_range", startMonth: 9, endMonth: 11 }, defaultRecurrenceInterval: "every_2_years", priority: "normal", disclaimerClass: "general", isActive: true }),
   catalogItem({ catalogKey: "drain_inspection_check", title: "Vurder dræn og brønde", shortDescription: "Se efter tegn på tilstopning eller vand omkring brønde.", season: "autumn", recommendedPeriod: { type: "month_range", startMonth: 9, endMonth: 11 }, defaultRecurrenceInterval: "every_5_years", priority: "normal", applicability: { type: "REQUIRES_COMPONENT", componentKey: "drainage" }, disclaimerClass: "professional_review", isActive: true }),
   catalogItem({ catalogKey: "sewer_backflow_check", title: "Kontroller risiko for kloaktilbageløb", shortDescription: "Vurder synlige tegn på tilbageløb og afløbsproblemer.", season: "all_year", defaultRecurrenceInterval: "every_5_years", priority: "normal", applicability: { type: "ENRICHED_BY_FACTS", factKeys: ["bbr.ground.sewer"] }, disclaimerClass: "professional_review", isActive: true }),
@@ -143,10 +149,20 @@ export type MaintenanceApplicabilityResult = {
   reason: string;
 };
 
+function requiredComponentKeys(rule: Extract<MaintenanceCatalogApplicabilityRule, { type: "REQUIRES_COMPONENT" }>) {
+  const requiresAll = [...(rule.requiresAll ?? [])];
+  if (rule.componentKey && !requiresAll.includes(rule.componentKey)) {
+    requiresAll.unshift(rule.componentKey);
+  }
+  return { requiresAll, requiresAny: [...(rule.requiresAny ?? [])] };
+}
+
 /**
- * Pure V1 evaluator. Missing facts/components deliberately produce `possible`
- * rather than `not_relevant`; only positive known absence can filter a
- * component-specific recommendation.
+ * Pure V1 evaluator. Component-specific recommendations require positive
+ * evidence that the component exists. Missing/unknown component data is not
+ * enough to recommend the task. Enrichment fields deliberately remain
+ * non-blocking: missing material/model/etc. data does not make a task
+ * irrelevant.
  */
 export function evaluateMaintenanceApplicability(
   rule: MaintenanceCatalogApplicabilityRule,
@@ -166,20 +182,32 @@ export function evaluateMaintenanceApplicability(
     };
   }
 
-  const componentStatus = state.components[rule.componentKey];
-
   if (rule.type === "REQUIRES_COMPONENT") {
     if (rule.excludesComponentKey && state.components[rule.excludesComponentKey] === "present") {
       return { status: "not_relevant", eligible: false, reason: `Komponenten ${rule.excludesComponentKey} udelukker anbefalingen.` };
     }
-    if (componentStatus === "present") {
-      return { status: "relevant", eligible: true, reason: `Komponenten ${rule.componentKey} er registreret.` };
+    const { requiresAll, requiresAny } = requiredComponentKeys(rule);
+    const missingAll = requiresAll.filter((key) => state.components[key] !== "present");
+    const anySatisfied = requiresAny.length === 0 || requiresAny.some((key) => state.components[key] === "present");
+    if (requiresAll.length === 0 && requiresAny.length === 0) {
+      return { status: "not_relevant", eligible: false, reason: "Anbefalingen mangler en gyldig komponentafhængighed." };
     }
-    if (componentStatus === "absent") {
-      return { status: "not_relevant", eligible: false, reason: `Komponenten ${rule.componentKey} er registreret som fraværende.` };
+    if (missingAll.length > 0 || !anySatisfied) {
+      const missing = [...missingAll, ...requiresAny.filter((key) => state.components[key] !== "present")];
+      return {
+        status: "not_relevant",
+        eligible: false,
+        reason: `Nødvendige komponenter er ikke positivt dokumenteret: ${missing.join(", ")}.`
+      };
     }
-    return { status: "possible", eligible: false, reason: `Det er endnu ukendt, om komponenten ${rule.componentKey} findes.` };
+    return {
+      status: "relevant",
+      eligible: true,
+      reason: "Alle nødvendige komponentafhængigheder er positivt dokumenteret."
+    };
   }
+
+  const componentStatus = state.components[rule.componentKey];
 
   if (componentStatus === "present") {
     return { status: "not_relevant", eligible: false, reason: `Komponenten ${rule.componentKey} gør anbefalingen irrelevant.` };

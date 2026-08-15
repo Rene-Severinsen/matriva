@@ -1094,6 +1094,14 @@ async function syncHouseFactsFromBbr(houseId: string) {
     [houseId]
   );
   const normalized = result.rows[0]?.normalized_payload;
+  await pool.query(
+    "delete from house_facts where house_id = $1 and source = 'bbr'",
+    [houseId]
+  );
+  await pool.query(
+    "delete from house_components where house_id = $1 and source = 'bbr'",
+    [houseId]
+  );
   if (!normalized) return;
 
   const buildings = normalized.productBuildings ?? normalized.buildings ?? [];
@@ -1145,17 +1153,31 @@ async function syncHouseFactsFromBbr(houseId: string) {
   if (heatingType) {
     components.push(["heating_system", heatingType === "none" ? "absent" : "present"]);
     for (const key of Object.values(typeToComponent)) {
+      if (key === "central_heating") continue;
       components.push([key, typeToComponent[heatingType] === key ? "present" : "absent"]);
     }
+    components.push([
+      "central_heating",
+      ["district_heating", "gas_boiler", "oil_boiler", "central_heating"].includes(heatingType)
+        ? "present"
+        : "absent"
+    ]);
+    if (installationCode === "3" || ["2", "5"].includes(supplementaryCode ?? "")) {
+      components.push(["chimney", "present"]);
+    }
+    if (supplementaryCode === "2") components.push(["wood_stove", "present"]);
+    if (supplementaryCode === "5") components.push(["fireplace", "present"]);
   }
   if (primary) {
     components.push(["roof", "present"], ["facade", "present"]);
-    const hasBasement = buildings.some((building) =>
-      (building.floors ?? []).some((floor: Record<string, any>) =>
-        (floor.basementAreaM2 ?? 0) > 0
-      )
+    const basementAreas = buildings.flatMap((building) =>
+      (building.floors ?? [])
+        .map((floor: Record<string, any>) => floor.basementAreaM2)
+        .filter((value: unknown): value is number => typeof value === "number" && Number.isFinite(value))
     );
-    if (hasBasement) components.push(["basement", "present"]);
+    if (basementAreas.length > 0) {
+      components.push(["basement", basementAreas.some((area) => area > 0) ? "present" : "absent"]);
+    }
     const hasWetroom = (primary.units ?? []).some((unit: Record<string, any>) =>
       unit.facilities?.bathType?.code === "V" || (unit.facilities?.bathroomCount ?? 0) > 0
     );
@@ -2838,6 +2860,15 @@ async function ensureMaintenanceRecommendationInstancesForHouse(
     const eligibility = evaluateCatalogEligibility(item, applicabilityState);
 
     if (!eligibility.eligible) {
+      await pool.query(
+        `delete from maintenance_recommendations
+         where house_id = $1
+           and catalog_key = $2
+           and catalog_version = $3
+           and status = 'pending'
+           and accepted_task_id is null`,
+        [houseId, item.catalog_key, item.catalog_version]
+      );
       continue;
     }
 

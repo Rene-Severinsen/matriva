@@ -9,8 +9,8 @@ remote_root="${QA_REMOTE_ROOT:-/usr/home/b9kady/matriva-qa}"
 health_timeout="${QA_HEALTH_TIMEOUT_SECONDS:-90}"
 remote_user="${QA_REMOTE_USER:-b9kady}"
 qa_service_name="${QA_SERVICE_NAME:-nodejs_b9kady_760_D0703219126.service}"
-qa_node_binary="${QA_NODE_BINARY:-/usr/local/nodejs/24/bin/node}"
 qa_api_entrypoint="${QA_API_ENTRYPOINT:-apps/api/dist/server.js}"
+qa_socket_path="${QA_SOCKET_PATH:-/run/nodejs/b9kady_760_D0703219126.sock}"
 qa_base_url="${QA_BASE_URL:-https://api-qa.matriva.dk}"
 
 for command_name in git npm node rsync ssh curl; do
@@ -63,7 +63,7 @@ echo "=== QA S3 asset sync and delivery variants ==="
 remote_qa_api_pid() {
   ssh "$remote_host" "
     set -eu
-    pid=\$(ps -eo pid=,user=,args= | awk '\$2 == \"$remote_user\" && \$3 == \"$qa_node_binary\" && \$4 == \"$qa_api_entrypoint\" { print \$1; exit }')
+    pid=\$(ps -eo pid=,user=,args= | awk -v wanted_user='$remote_user' -v wanted_entry='$qa_api_entrypoint' '\$2 == wanted_user && \$4 == wanted_entry { print \$1; exit }')
     test -n \"\$pid\"
     test \"\$(readlink /proc/\$pid/cwd)\" = \"$remote_root\"
     grep -Fq \"$qa_service_name\" /proc/\$pid/cgroup
@@ -129,7 +129,10 @@ ssh "$remote_host" "kill -TERM '$old_pid'"
 restart_deadline="$(( $(date +%s) + health_timeout ))"
 new_pid=""
 while [ "$(date +%s)" -lt "$restart_deadline" ]; do
-  new_pid="$(ssh "$remote_host" "ps -eo pid=,user=,args= | awk '\$2 == \"$remote_user\" && \$3 == \"$qa_node_binary\" && \$4 == \"$qa_api_entrypoint\" { print \$1; exit }'" || true)"
+  # The QA unit is socket-activated. A request on the Unix socket is what
+  # starts the replacement service after the old process receives SIGTERM.
+  ssh "$remote_host" "curl --fail --silent --show-error --unix-socket '$qa_socket_path' http://localhost/health >/dev/null" || true
+  new_pid="$(ssh "$remote_host" "ps -eo pid=,user=,args= | awk -v wanted_user='$remote_user' -v wanted_entry='$qa_api_entrypoint' '\$2 == wanted_user && \$4 == wanted_entry { print \$1; exit }'" || true)"
   if [ -n "$new_pid" ] && [ "$new_pid" != "$old_pid" ]; then
     if ssh "$remote_host" "test \"\$(readlink /proc/$new_pid/cwd)\" = \"$remote_root\" && grep -Fq \"$qa_service_name\" /proc/$new_pid/cgroup"; then
       break

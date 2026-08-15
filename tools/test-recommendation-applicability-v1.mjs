@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { z } from "zod";
 
 import {
   evaluateMaintenanceApplicability,
+  legacyCompatibleApplicabilityRule,
   maintenanceCatalogItems
 } from "../apps/api/src/maintenance-catalog.ts";
 import { guideContentSeeds } from "../apps/api/src/guide-content.ts";
@@ -13,6 +15,25 @@ const emptyState = { components: {}, facts: {} };
 test("V1 catalog contains 50 unique canonical recommendations", () => {
   assert.equal(maintenanceCatalogItems.length, 50);
   assert.equal(new Set(maintenanceCatalogItems.map((item) => item.catalogKey)).size, 50);
+});
+
+test("composite applicability remains parseable by legacy mobile clients", () => {
+  const legacyRuleSchema = z.discriminatedUnion("type", [
+    z.object({ type: z.literal("UNIVERSAL") }),
+    z.object({ type: z.literal("REQUIRES_COMPONENT"), componentKey: z.string(), excludesComponentKey: z.string().optional() }),
+    z.object({ type: z.literal("EXCLUDES_COMPONENT"), componentKey: z.string() }),
+    z.object({ type: z.literal("ENRICHED_BY_FACTS"), factKeys: z.array(z.string()) })
+  ]);
+
+  for (const item of maintenanceCatalogItems) {
+    const compatible = legacyCompatibleApplicabilityRule(item.eligibilityRules);
+    assert.doesNotThrow(() => legacyRuleSchema.parse(compatible), item.catalogKey);
+    if (item.eligibilityRules.type === "REQUIRES_COMPONENT" && !item.eligibilityRules.componentKey) {
+      assert.equal(compatible.componentKey, "__composite_dependency__");
+    }
+  }
+  const db = readFileSync(new URL("../apps/api/src/db.ts", import.meta.url), "utf8");
+  assert.match(db, /legacyCompatibleApplicabilityRule\(normalizeApplicabilityRule/);
 });
 
 test("existing guide-linked canonical keys remain stable", () => {

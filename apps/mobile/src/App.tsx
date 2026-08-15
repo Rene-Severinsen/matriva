@@ -86,7 +86,7 @@ import {
   type UserProfile,
   type GuideResponse
 } from "@matriva/shared";
-import { guideSectionLabel, guideSectionTitle, houseDocumentCategoryForType, presentGuideSection } from "@matriva/shared";
+import { LEGACY_COMPOSITE_COMPONENT_KEY, guideSectionLabel, guideSectionTitle, houseDocumentCategoryForType, presentGuideSection } from "@matriva/shared";
 
 import { matrivaApiConfig } from "./config/api";
 import { formatAppVersionLabel } from "./config/appIdentity";
@@ -3041,7 +3041,9 @@ function HouseEnrichmentCard({
 
   const componentKeys = catalogItem.applicability.type === "REQUIRES_COMPONENT"
     ? [
-        ...(catalogItem.applicability.componentKey ? [catalogItem.applicability.componentKey] : []),
+        ...(catalogItem.applicability.componentKey && catalogItem.applicability.componentKey !== LEGACY_COMPOSITE_COMPONENT_KEY
+          ? [catalogItem.applicability.componentKey]
+          : []),
         ...(catalogItem.applicability.requiresAll ?? []),
         ...(catalogItem.applicability.requiresAny ?? [])
       ].filter((key, index, keys) => keys.indexOf(key) === index)

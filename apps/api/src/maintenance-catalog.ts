@@ -1,3 +1,4 @@
+import { LEGACY_COMPOSITE_COMPONENT_KEY } from "@matriva/shared";
 import type { MaintenanceRecurrenceInterval, MaintenanceSeason } from "@matriva/shared";
 
 export const MAINTENANCE_CATALOG_VERSION = "2026-07.generic-maintenance-v1";
@@ -24,6 +25,16 @@ export type MaintenanceCatalogApplicabilityRule =
     }
   | { type: "EXCLUDES_COMPONENT"; componentKey: string }
   | { type: "ENRICHED_BY_FACTS"; factKeys: ReadonlyArray<string> };
+
+// Older mobile clients require componentKey on every REQUIRES_COMPONENT rule.
+// This fallback is only added at the API response boundary; the applicability
+// engine and persisted catalog rules continue to use requiresAll/requiresAny.
+export function legacyCompatibleApplicabilityRule(rule: MaintenanceCatalogApplicabilityRule) {
+  if (rule.type === "REQUIRES_COMPONENT" && !rule.componentKey) {
+    return { ...rule, componentKey: LEGACY_COMPOSITE_COMPONENT_KEY };
+  }
+  return rule;
+}
 
 // `eligibilityRules` is retained as the persisted column name for backwards
 // compatibility with the existing admin/content model. The V1 contract is

@@ -2333,6 +2333,8 @@ export const maintenanceApplicabilityTypeSchema = z.enum([
 ]);
 export type MaintenanceApplicabilityType = z.infer<typeof maintenanceApplicabilityTypeSchema>;
 
+export const LEGACY_COMPOSITE_COMPONENT_KEY = "__composite_dependency__";
+
 export const maintenanceApplicabilityRuleSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("UNIVERSAL") }),
   z.object({

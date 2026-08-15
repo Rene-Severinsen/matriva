@@ -94,6 +94,7 @@ import {
 import {
   maintenanceCatalogItems,
   evaluateMaintenanceApplicability,
+  legacyCompatibleApplicabilityRule,
   recommendedPeriodLabel,
   type MaintenanceCatalogItem,
   type MaintenanceCatalogPeriod
@@ -3110,7 +3111,7 @@ export async function listMaintenanceCatalogForHouse(
           anchor: "completed_date" as const
         },
         priority: item.priority,
-        applicability: normalizeApplicabilityRule(item.eligibility_rules),
+        applicability: legacyCompatibleApplicabilityRule(normalizeApplicabilityRule(item.eligibility_rules)),
         relevance: applicability.status,
         guideTemplateId: item.guide_template_id,
         guideVersionId: item.guide_version_id,

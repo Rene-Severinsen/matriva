@@ -151,6 +151,8 @@ type UserRow = {
 };
 
 type UserProfileRow = {
+  first_name: string | null;
+  last_name: string | null;
   display_name: string | null;
   preferred_locale: "da-DK";
   prompt_for_completion_note: boolean;
@@ -1270,8 +1272,20 @@ function toCurrentUser(row: UserRow): CurrentUser {
   });
 }
 
+function splitLegacyDisplayName(value: string | null | undefined) {
+  const parts = (value ?? "").trim().split(/\s+/).filter(Boolean);
+  const splitAt = parts.length > 2 && parts.length % 2 === 0 ? parts.length / 2 : 1;
+  return {
+    firstName: parts.slice(0, splitAt).join(" "),
+    lastName: parts.slice(splitAt).join(" ")
+  };
+}
+
 function toProfile(row: UserProfileRow | undefined): UserProfile {
+  const legacyName = splitLegacyDisplayName(row?.display_name);
   return userProfileSchema.parse({
+    firstName: row?.first_name ?? (legacyName.firstName || null),
+    lastName: row?.last_name ?? (legacyName.lastName || null),
     displayName: row?.display_name ?? null,
     preferredLocale: row?.preferred_locale ?? "da-DK",
     promptForCompletionNote: row?.prompt_for_completion_note ?? true,
@@ -1765,7 +1779,7 @@ export async function getUserByEmail(email: string) {
 
 export async function getProfileForUser(userId: string) {
   const result = await pool.query<UserProfileRow>(
-    `select up.display_name, up.preferred_locale, up.prompt_for_completion_note,
+    `select up.first_name, up.last_name, up.display_name, up.preferred_locale, up.prompt_for_completion_note,
             case when exists (
               select 1 from house_memberships hm
               join houses h on h.id = hm.house_id
@@ -1892,14 +1906,16 @@ export async function logoutSession(userId: string, refreshToken?: string) {
 }
 
 export async function updateProfile(userId: string, input: UpdateProfileRequest) {
+  const firstName = input.firstName.trim();
+  const lastName = input.lastName.trim();
   const result = await pool.query<UserProfileRow>(
     `
       update user_profiles
-      set display_name = $2, preferred_locale = $3, updated_at = now()
+      set first_name = $2::text, last_name = $3::text, display_name = concat_ws(' ', $2::text, $3::text), preferred_locale = $4::text, updated_at = now()
       where user_id = $1
-      returning display_name, preferred_locale, prompt_for_completion_note, default_house_id
+      returning first_name, last_name, display_name, preferred_locale, prompt_for_completion_note, default_house_id
     `,
-    [userId, input.displayName.trim(), input.preferredLocale ?? "da-DK"]
+    [userId, firstName, lastName, input.preferredLocale ?? "da-DK"]
   );
 
   return toProfile(result.rows[0]);
@@ -1914,7 +1930,7 @@ export async function updateMaintenanceSettings(
       update user_profiles
       set prompt_for_completion_note = $2, updated_at = now()
       where user_id = $1
-      returning display_name, preferred_locale, prompt_for_completion_note, default_house_id
+      returning first_name, last_name, display_name, preferred_locale, prompt_for_completion_note, default_house_id
     `,
     [userId, input.promptForCompletionNote]
   );
@@ -1936,8 +1952,8 @@ export async function updateDefaultHouse(userId: string, input: UpdateDefaultHou
 
   const result = await pool.query<UserProfileRow>(
     `update user_profiles set default_house_id = $2, updated_at = now()
-     where user_id = $1
-     returning display_name, preferred_locale, prompt_for_completion_note, default_house_id`,
+      where user_id = $1
+      returning first_name, last_name, display_name, preferred_locale, prompt_for_completion_note, default_house_id`,
     [userId, input.houseId]
   );
   return toProfile(result.rows[0]);

@@ -145,6 +145,8 @@ export const adminRoleSchema = z.enum(["SUPER_ADMIN"]);
 export type AdminRole = z.infer<typeof adminRoleSchema>;
 
 export const userProfileSchema = z.object({
+  firstName: z.string().trim().min(1).nullable(),
+  lastName: z.string().trim().min(1).nullable(),
   displayName: z.string().min(1).nullable(),
   preferredLocale: z.literal("da-DK"),
   promptForCompletionNote: z.boolean(),
@@ -948,7 +950,8 @@ export type UpdateAdminRecommendationGuideRequest = z.infer<
 >;
 
 export const updateProfileRequestSchema = z.object({
-  displayName: z.string().trim().min(1).max(120),
+  firstName: z.string().trim().min(1).max(80),
+  lastName: z.string().trim().min(1).max(120),
   preferredLocale: z.literal("da-DK").optional()
 });
 

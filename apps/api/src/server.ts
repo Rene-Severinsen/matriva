@@ -1526,7 +1526,7 @@ const server = createServer((request, response) => {
         const parsedRequest = updateProfileRequestSchema.safeParse(payload);
 
         if (!parsedRequest.success) {
-          writeApiError(response, 400, "profile_request_invalid", "Profilen kræver et navn.");
+          writeApiError(response, 400, "profile_request_invalid", "Profilen kræver både fornavn og efternavn.");
           return;
         }
 

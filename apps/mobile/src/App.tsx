@@ -119,6 +119,15 @@ type Tab = {
   icon: "view-dashboard-outline" | "check-bold" | "file-document-outline" | "dots-horizontal";
 };
 
+function splitDisplayName(value: string | null | undefined) {
+  const parts = (value ?? "").trim().split(/\s+/).filter(Boolean);
+  const splitAt = parts.length > 2 && parts.length % 2 === 0 ? parts.length / 2 : 1;
+  return {
+    firstName: parts.slice(0, splitAt).join(" "),
+    lastName: parts.slice(splitAt).join(" ")
+  };
+}
+
 const tabs: Tab[] = [
   { key: "dashboard", icon: "view-dashboard-outline", label: "Dashboard" },
   { key: "house", icon: "view-dashboard-outline", label: "Mit hus" },
@@ -4467,15 +4476,19 @@ function LoginScreen({
 
 function ProfileOnboardingScreen({
   user,
-  displayName,
+  firstName,
+  lastName,
   isSaving,
-  onNameChange,
+  onFirstNameChange,
+  onLastNameChange,
   onSave
 }: {
   user: CurrentUser;
-  displayName: string;
+  firstName: string;
+  lastName: string;
   isSaving: boolean;
-  onNameChange: (value: string) => void;
+  onFirstNameChange: (value: string) => void;
+  onLastNameChange: (value: string) => void;
   onSave: () => void;
 }) {
   return (
@@ -4484,19 +4497,29 @@ function ProfileOnboardingScreen({
       <Card>
         <InfoRow label="Email" value={user.email} />
         <View style={styles.formSection}>
-          <Text style={styles.label}>Navn</Text>
+          <Text style={styles.label}>Fornavn</Text>
           <TextInput
             autoCapitalize="words"
-            onChangeText={onNameChange}
-            placeholder="Dit navn"
+            autoComplete="given-name"
+            onChangeText={onFirstNameChange}
+            placeholder="Dit fornavn"
             style={styles.input}
-            value={displayName}
+            value={firstName}
+          />
+          <Text style={styles.label}>Efternavn</Text>
+          <TextInput
+            autoCapitalize="words"
+            autoComplete="family-name"
+            onChangeText={onLastNameChange}
+            placeholder="Dit efternavn"
+            style={styles.input}
+            value={lastName}
           />
         </View>
         <PrimaryButton
           label="Fortsæt"
           loading={isSaving}
-          disabled={isSaving || displayName.trim().length === 0}
+          disabled={isSaving || firstName.trim().length === 0 || lastName.trim().length === 0}
           onPress={onSave}
         />
       </Card>
@@ -5069,18 +5092,22 @@ function SettingsScreen({
 function ProfileScreen({
   user,
   profile,
-  displayName,
+  firstName,
+  lastName,
   isSaving,
   onBack,
-  onNameChange,
+  onFirstNameChange,
+  onLastNameChange,
   onSaveProfile
 }: {
   user: CurrentUser | null;
   profile: UserProfile | null;
-  displayName: string;
+  firstName: string;
+  lastName: string;
   isSaving: boolean;
   onBack: () => void;
-  onNameChange: (value: string) => void;
+  onFirstNameChange: (value: string) => void;
+  onLastNameChange: (value: string) => void;
   onSaveProfile: () => void;
 }) {
   return (
@@ -5093,19 +5120,29 @@ function ProfileScreen({
         <InfoRow label="Navn" value={profile?.displayName ?? "Ikke sat"} />
         <InfoRow label="Email" value={user?.email ?? "Ikke indlæst"} />
         <View style={styles.formSection}>
-          <Text style={styles.label}>Rediger navn</Text>
+          <Text style={styles.label}>Fornavn</Text>
           <TextInput
             autoCapitalize="words"
-            onChangeText={onNameChange}
-            placeholder="Dit navn"
+            autoComplete="given-name"
+            onChangeText={onFirstNameChange}
+            placeholder="Dit fornavn"
             style={styles.input}
-            value={displayName}
+            value={firstName}
+          />
+          <Text style={styles.label}>Efternavn</Text>
+          <TextInput
+            autoCapitalize="words"
+            autoComplete="family-name"
+            onChangeText={onLastNameChange}
+            placeholder="Dit efternavn"
+            style={styles.input}
+            value={lastName}
           />
         </View>
         <PrimaryButton
           label="Gem navn"
           loading={isSaving}
-          disabled={isSaving || displayName.trim().length === 0}
+          disabled={isSaving || firstName.trim().length === 0 || lastName.trim().length === 0}
           onPress={onSaveProfile}
         />
       </Card>
@@ -5153,7 +5190,8 @@ export default function App() {
   const [loginEmail, setLoginEmail] = useState("");
   const [loginMessage, setLoginMessage] = useState<string | null>(null);
   const [devMagicLink, setDevMagicLink] = useState<string | null>(null);
-  const [profileName, setProfileName] = useState("");
+  const [profileFirstName, setProfileFirstName] = useState("");
+  const [profileLastName, setProfileLastName] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
   const [moreView, setMoreView] = useState<MoreView>("menu");
   const [guides, setGuides] = useState<GuideResponse[]>([]);
@@ -5400,7 +5438,8 @@ export default function App() {
     setLoginEmail("");
     setLoginMessage(null);
     setDevMagicLink(null);
-    setProfileName("");
+    setProfileFirstName("");
+    setProfileLastName("");
     setActiveTab("dashboard");
     setMoreView("menu");
     setGuides([]);
@@ -5533,7 +5572,14 @@ export default function App() {
       setGuides(guideResponse.guides);
       setAppCompatibilityState("supported");
       setBootstrap(bootstrapResponse);
-      setProfileName(bootstrapResponse.profile.displayName ?? "");
+      const profileName = bootstrapResponse.profile.firstName && bootstrapResponse.profile.lastName
+        ? {
+            firstName: bootstrapResponse.profile.firstName,
+            lastName: bootstrapResponse.profile.lastName
+          }
+        : splitDisplayName(bootstrapResponse.profile.displayName);
+      setProfileFirstName(profileName.firstName);
+      setProfileLastName(profileName.lastName);
       setHouses(bootstrapResponse.houses);
       setPendingClaimNotice(
         bootstrapResponse.pendingHouseClaims.length > 0
@@ -5890,10 +5936,11 @@ export default function App() {
   }
 
   async function saveProfile() {
-    const trimmedName = profileName.trim();
+    const trimmedFirstName = profileFirstName.trim();
+    const trimmedLastName = profileLastName.trim();
 
-    if (!trimmedName) {
-      setError("Navn må ikke være tomt.");
+    if (!trimmedFirstName || !trimmedLastName) {
+      setError("Både fornavn og efternavn skal udfyldes.");
       return;
     }
 
@@ -5901,7 +5948,11 @@ export default function App() {
     setError(null);
 
     try {
-      await apiClient.updateProfile({ displayName: trimmedName, preferredLocale: "da-DK" });
+      await apiClient.updateProfile({
+        firstName: trimmedFirstName,
+        lastName: trimmedLastName,
+        preferredLocale: "da-DK"
+      });
       await loadApp();
     } catch (caughtError) {
       setError(userFacingError(caughtError));
@@ -7414,11 +7465,16 @@ export default function App() {
         <ProfileScreen
           user={bootstrap?.user ?? null}
           profile={bootstrap?.profile ?? null}
-          displayName={profileName}
+          firstName={profileFirstName}
+          lastName={profileLastName}
           isSaving={loadingAction === "profile"}
           onBack={() => setMoreView("menu")}
-          onNameChange={(value) => {
-            setProfileName(value);
+          onFirstNameChange={(value) => {
+            setProfileFirstName(value);
+            setError(null);
+          }}
+          onLastNameChange={(value) => {
+            setProfileLastName(value);
             setError(null);
           }}
           onSaveProfile={() => void saveProfile()}
@@ -7604,10 +7660,15 @@ export default function App() {
           ) : null}
           <ProfileOnboardingScreen
             user={bootstrap.user}
-            displayName={profileName}
+            firstName={profileFirstName}
+            lastName={profileLastName}
             isSaving={loadingAction === "profile"}
-            onNameChange={(value) => {
-              setProfileName(value);
+            onFirstNameChange={(value) => {
+              setProfileFirstName(value);
+              setError(null);
+            }}
+            onLastNameChange={(value) => {
+              setProfileLastName(value);
               setError(null);
             }}
             onSave={() => void saveProfile()}

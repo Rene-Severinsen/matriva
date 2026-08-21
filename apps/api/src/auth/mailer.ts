@@ -103,21 +103,64 @@ function formatMagicLinkText(email: MagicLinkEmail, expiresAt: string) {
   ].join("\n");
 }
 
+function escapeHtml(value: string) {
+  return value.replace(/[&<>\"']/g, (character) => {
+    const entities: Record<string, string> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    };
+
+    return entities[character] ?? character;
+  });
+}
+
+function formatMagicLinkHtml(email: MagicLinkEmail, expiresAt: string) {
+  const magicLink = escapeHtml(email.magicLink);
+
+  return [
+    "<!doctype html>",
+    '<html lang="da">',
+    "<body>",
+    "<p>Hej,</p>",
+    "<p>Brug knappen herunder til at logge ind i Matriva:</p>",
+    `<p><a href="${magicLink}" style="display:inline-block;padding:12px 18px;background:#0f6656;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;">Åbn Matriva og log ind</a></p>`,
+    `<p>Linket udløber ${escapeHtml(expiresAt)}.</p>`,
+    "<p>Hvis du ikke bad om linket, kan du ignorere denne mail.</p>",
+    "<p>Venlig hilsen<br>Matriva</p>",
+    "</body>",
+    "</html>"
+  ].join("\r\n");
+}
+
 function createMessage(config: SmtpConfig, email: MagicLinkEmail, expiresAt: string) {
   assertSafeAddress(email.to);
   assertSafeAddress(config.from);
 
   const body = formatMagicLinkText(email, expiresAt);
+  const htmlBody = formatMagicLinkHtml(email, expiresAt);
+  const boundary = `matriva_magic_link_${Date.now().toString(36)}`;
 
   return [
     `From: Matriva <${config.from}>`,
     `To: <${email.to}>`,
     `Subject: ${encodeHeader("Dit loginlink til Matriva")}`,
     "MIME-Version: 1.0",
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
     'Content-Type: text/plain; charset="UTF-8"',
     "Content-Transfer-Encoding: 8bit",
     "",
-    body
+    body,
+    `--${boundary}`,
+    'Content-Type: text/html; charset="UTF-8"',
+    "Content-Transfer-Encoding: 8bit",
+    "",
+    htmlBody,
+    `--${boundary}--`
   ].join("\r\n");
 }
 

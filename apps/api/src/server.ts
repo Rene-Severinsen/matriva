@@ -131,7 +131,7 @@ import {
 } from "./admin-recommendations.ts";
 import { getAdminUser, listAdminUsers } from "./admin-users.ts";
 import { loginAdminWithPassword } from "./auth/admin-password.ts";
-import { sendMagicLinkEmail, createMagicLinkUrl, createHouseInvitationUrl, sendHouseInvitationEmail, createHouseClaimApprovalUrl, sendHouseClaimOwnerEmail } from "./auth/mailer.ts";
+import { sendMagicLinkEmail, createMagicLinkUrl, createMagicLinkEmailUrl, createHouseInvitationUrl, sendHouseInvitationEmail, createHouseClaimApprovalUrl, sendHouseClaimOwnerEmail } from "./auth/mailer.ts";
 import { getDatafordelerConfigStatus } from "./config/datafordeler.ts";
 import { storageMode, validateStorageConfiguration } from "./storage-config.ts";
 import {
@@ -1414,6 +1414,7 @@ const server = createServer((request, response) => {
         const delivery = await sendMagicLinkEmail({
           to: created.user.email,
           magicLink: createMagicLinkUrl(created.token),
+          emailMagicLink: createMagicLinkEmailUrl(created.token),
           expiresAt: created.expiresAt
         });
 
@@ -1444,6 +1445,37 @@ const server = createServer((request, response) => {
         writeApiError(response, 503, "magic_link_email_unavailable", "Matriva kunne ikke sende loginlinket lige nu.");
       }
     })();
+    return;
+  }
+
+  if (request.method === "GET" && request.url?.startsWith("/v1/auth/magic-link/open")) {
+    const url = new URL(request.url, `http://${host}:${port}`);
+    const token = url.searchParams.get("token");
+
+    if (!token) {
+      response.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+      response.end("Loginlinket mangler.");
+      return;
+    }
+
+    const deepLink = createMagicLinkUrl(token).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+    response.writeHead(200, {
+      "cache-control": "no-store",
+      "content-type": "text/html; charset=utf-8"
+    });
+    response.end(`<!doctype html>
+<html lang="da">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="refresh" content="0;url=${deepLink}">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Åbn Matriva</title>
+  </head>
+  <body>
+    <p>Åbner Matriva…</p>
+    <p><a href="${deepLink}">Åbn Matriva og log ind</a></p>
+  </body>
+</html>`);
     return;
   }
 

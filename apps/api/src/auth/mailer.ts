@@ -4,6 +4,7 @@ import tls from "node:tls";
 export type MagicLinkEmail = {
   to: string;
   magicLink: string;
+  emailMagicLink?: string;
   expiresAt: Date;
 };
 
@@ -89,11 +90,13 @@ function dotStuff(message: string) {
 }
 
 function formatMagicLinkText(email: MagicLinkEmail, expiresAt: string) {
+  const magicLink = email.emailMagicLink ?? email.magicLink;
+
   return [
     "Hej,",
     "",
     "Brug linket herunder til at logge ind i Matriva:",
-    email.magicLink,
+    magicLink,
     "",
     `Linket udløber ${expiresAt}.`,
     "Hvis du ikke bad om linket, kan du ignorere denne mail.",
@@ -118,7 +121,7 @@ function escapeHtml(value: string) {
 }
 
 function formatMagicLinkHtml(email: MagicLinkEmail, expiresAt: string) {
-  const magicLink = escapeHtml(email.magicLink);
+  const magicLink = escapeHtml(email.emailMagicLink ?? email.magicLink);
 
   return [
     "<!doctype html>",
@@ -318,6 +321,17 @@ export async function sendMagicLinkEmail(
 
 export function createMagicLinkUrl(token: string) {
   const baseUrl = process.env.MATRIVA_MAGIC_LINK_BASE_URL ?? "matriva://auth/magic-link";
+  const url = new URL(baseUrl);
+  url.searchParams.set("token", token);
+  return url.toString();
+}
+
+export function createMagicLinkEmailUrl(token: string) {
+  const baseUrl = process.env.MATRIVA_MAGIC_LINK_EMAIL_BASE_URL;
+  if (!baseUrl) {
+    return createMagicLinkUrl(token);
+  }
+
   const url = new URL(baseUrl);
   url.searchParams.set("token", token);
   return url.toString();

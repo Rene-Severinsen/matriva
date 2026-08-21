@@ -277,6 +277,30 @@ const summary = buildHousePublicDataSummary(target.id, optionalFieldMapped);
 const profile = buildHousePublicDataProfile(target.id, optionalFieldMapped);
 const rawProfile = buildHousePublicDataProfile(target.id, mapped);
 
+assert.equal(
+  rawProfile.topFacts.find((fact) => fact.key === "residential_area")?.value,
+  240,
+  "The profile overview must use the unit's total area, including basement area."
+);
+
+const detachedHouseWithoutBasementInUnitTotal = structuredClone(raw);
+const detachedHouseUnits =
+  detachedHouseWithoutBasementInUnitTotal.unitsByBuildingId[
+    "4600cb6a-4f3c-4cb2-872a-3ecb746cf866"
+  ];
+detachedHouseWithoutBasementInUnitTotal.unitsByBuildingId[
+  "4600cb6a-4f3c-4cb2-872a-3ecb746cf866"
+] = [{ ...detachedHouseUnits[0], enh026EnhedensSamledeAreal: 160 }];
+const detachedHouseProfile = buildHousePublicDataProfile(
+  target.id,
+  mapPublicData(target, detachedHouseWithoutBasementInUnitTotal)
+);
+assert.equal(
+  detachedHouseProfile.topFacts.find((fact) => fact.key === "residential_area")?.value,
+  240,
+  "A detached house must add separately registered basement area when BBR unit total excludes it."
+);
+
 assert.equal(summary.contract, "house_public_data_summary.v1");
 assert.equal(profile.contract, "house_public_data_profile.v1");
 assert.equal(

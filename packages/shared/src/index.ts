@@ -3528,6 +3528,31 @@ function buildingArea(building: PublicBuilding) {
   );
 }
 
+function displayUnitTotalArea(building: PublicBuilding, unit: PublicUnit) {
+  const residentialArea = unit.areas.residentialAreaM2;
+  const basementArea = firstNumber(
+    building.floors.map((floor) => floor.basementAreaM2)
+  );
+  const registeredTotalArea = unit.areas.totalAreaM2;
+
+  // For detached single-family houses BBR can report the dwelling area as
+  // both the residential and total unit area while registering the basement
+  // separately on BBR_Etage. That basement belongs to this one unit and must
+  // be included in the product's displayed total area.
+  if (
+    building.use?.code === "120" &&
+    building.units.length === 1 &&
+    residentialArea !== null &&
+    basementArea !== null &&
+    basementArea > 0 &&
+    (registeredTotalArea === null || registeredTotalArea === residentialArea)
+  ) {
+    return residentialArea + basementArea;
+  }
+
+  return registeredTotalArea ?? residentialArea ?? null;
+}
+
 const minimumPresentedConstructionYear = 1100;
 
 export function presentableConstructionYear(year: number | null | undefined) {
@@ -3830,12 +3855,17 @@ function buildingProfileFacts(building: PublicBuilding) {
   ];
 }
 
-function unitProfileFacts(unit: PublicUnit) {
+function unitProfileFacts(unit: PublicUnit, totalAreaOverride?: number | null) {
   return [
     codeFact("housing_type", "Boligtype", unit.housingType),
     codeFact("use", "Anvendelse", unit.use),
     profileFact("residential_area", "Boligareal", unit.areas.residentialAreaM2, "m2"),
-    profileFact("total_area", "Samlet areal", unit.areas.totalAreaM2, "m2"),
+    profileFact(
+      "total_area",
+      "Samlet areal",
+      totalAreaOverride === undefined ? unit.areas.totalAreaM2 : totalAreaOverride,
+      "m2"
+    ),
     profileFact("commercial_area", "Erhvervsareal", unit.areas.commercialAreaM2, "m2"),
     profileFact(
       "physical_residential_area",
@@ -3916,6 +3946,10 @@ export function buildHousePublicDataProfile(
   const basementArea = displayBuilding
     ? firstNumber(displayBuilding.floors.map((floor) => floor.basementAreaM2))
     : null;
+  const primaryUnitTotalArea =
+    displayBuilding && primaryUnit
+      ? displayUnitTotalArea(displayBuilding, primaryUnit)
+      : null;
 
   const sections: HousePublicDataProfileV1["sections"] = [
     {
@@ -3944,7 +3978,9 @@ export function buildHousePublicDataProfile(
     {
       key: "primaryUnit",
       title: "Boligen",
-      facts: primaryUnit ? unitProfileFacts(primaryUnit) : []
+      facts: primaryUnit
+        ? unitProfileFacts(primaryUnit, primaryUnitTotalArea)
+        : []
     },
     {
       key: "primaryBuilding",
@@ -3989,7 +4025,11 @@ export function buildHousePublicDataProfile(
       key: "areas",
       title: "Arealer",
       facts: [
-        ...(primaryUnit ? unitProfileFacts(primaryUnit).filter((fact) => fact.key.includes("area")) : []),
+        ...(primaryUnit
+          ? unitProfileFacts(primaryUnit, primaryUnitTotalArea).filter((fact) =>
+              fact.key.includes("area")
+            )
+          : []),
         ...(displayBuilding
           ? [
               profileFact("building_total", "Samlet bygningsareal", displayBuilding.areas.totalBuildingAreaM2, "m2"),
@@ -4112,8 +4152,8 @@ export function buildHousePublicDataProfile(
       codeFact("housing_type", "Boligtype", primaryUnit?.housingType ?? displayBuilding?.use ?? null),
       profileFact(
         "residential_area",
-        "Boligareal",
-        primaryUnit?.areas.residentialAreaM2,
+        "Samlet areal",
+        primaryUnitTotalArea,
         "m2"
       ),
       profileFact(

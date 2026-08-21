@@ -288,6 +288,19 @@ function writeJson(response: ServerResponse, status: number, body: unknown) {
   response.end(JSON.stringify(body));
 }
 
+const androidAppLinksAssetLinks = [
+  {
+    relation: ["delegate_permission/common.handle_all_urls"],
+    target: {
+      namespace: "android_app",
+      package_name: "dk.matriva.app",
+      sha256_cert_fingerprints: [
+        "22:83:4A:D9:D1:43:FE:41:F9:20:B4:EC:C8:EF:54:F2:CE:16:25:80:0A:36:CF:3F:1A:E5:E5:67:8E:02:0F:AA"
+      ]
+    }
+  }
+];
+
 function writeBinary(
   response: ServerResponse,
   status: number,
@@ -782,6 +795,15 @@ const server = createServer((request, response) => {
     });
 
     writeJson(response, 200, body);
+    return;
+  }
+
+  if (request.method === "GET" && request.url === "/.well-known/assetlinks.json") {
+    response.writeHead(200, {
+      "cache-control": "public, max-age=300",
+      "content-type": "application/json"
+    });
+    response.end(JSON.stringify(androidAppLinksAssetLinks));
     return;
   }
 

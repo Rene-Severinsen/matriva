@@ -5727,7 +5727,13 @@ export default function App() {
         return;
       }
 
-      if (!token || !url.startsWith("matriva://auth/magic-link")) {
+      const isMagicLinkUrl =
+        url.startsWith("matriva://auth/magic-link") ||
+        (parsedUrl.protocol === "https:" &&
+          parsedUrl.hostname === "api-qa.matriva.dk" &&
+          parsedUrl.pathname === "/v1/auth/magic-link/open");
+
+      if (!token || !isMagicLinkUrl) {
         return;
       }
 

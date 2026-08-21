@@ -28,6 +28,12 @@
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="matriva"/>
       </intent-filter>
+      <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="https" android:host="api-qa.matriva.dk" android:pathPrefix="/v1/auth/magic-link/open"/>
+      </intent-filter>
     </activity>
   </application>
 </manifest>

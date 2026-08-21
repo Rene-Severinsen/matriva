@@ -90,13 +90,22 @@ function dotStuff(message: string) {
 }
 
 function formatMagicLinkText(email: MagicLinkEmail, expiresAt: string) {
-  const magicLink = email.emailMagicLink ?? email.magicLink;
+  const fallbackLink = email.emailMagicLink && email.emailMagicLink !== email.magicLink
+    ? email.emailMagicLink
+    : null;
 
   return [
     "Hej,",
     "",
     "Brug linket herunder til at logge ind i Matriva:",
-    magicLink,
+    email.magicLink,
+    ...(fallbackLink
+      ? [
+          "",
+          "Hvis du åbner mailen på Android og det første link ikke virker, brug dette link:",
+          fallbackLink
+        ]
+      : []),
     "",
     `Linket udløber ${expiresAt}.`,
     "Hvis du ikke bad om linket, kan du ignorere denne mail.",
@@ -121,7 +130,10 @@ function escapeHtml(value: string) {
 }
 
 function formatMagicLinkHtml(email: MagicLinkEmail, expiresAt: string) {
-  const magicLink = escapeHtml(email.emailMagicLink ?? email.magicLink);
+  const magicLink = escapeHtml(email.magicLink);
+  const fallbackLink = email.emailMagicLink && email.emailMagicLink !== email.magicLink
+    ? escapeHtml(email.emailMagicLink)
+    : null;
 
   return [
     "<!doctype html>",
@@ -130,6 +142,9 @@ function formatMagicLinkHtml(email: MagicLinkEmail, expiresAt: string) {
     "<p>Hej,</p>",
     "<p>Brug knappen herunder til at logge ind i Matriva:</p>",
     `<p><a href="${magicLink}" style="display:inline-block;padding:12px 18px;background:#0f6656;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;">Åbn Matriva og log ind</a></p>`,
+    ...(fallbackLink
+      ? [`<p>Hvis du åbner mailen på Android og knappen ikke virker, <a href="${fallbackLink}">åbn Android-linket her</a>.</p>`]
+      : []),
     `<p>Linket udløber ${escapeHtml(expiresAt)}.</p>`,
     "<p>Hvis du ikke bad om linket, kan du ignorere denne mail.</p>",
     "<p>Venlig hilsen<br>Matriva</p>",

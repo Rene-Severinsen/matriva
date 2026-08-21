@@ -28,6 +28,7 @@ import {
   ScrollView,
   StyleSheet,
   Switch,
+  StatusBar as NativeStatusBar,
   Text,
   TextInput as NativeTextInput,
   type TextInputProps,
@@ -7818,7 +7819,8 @@ export default function App() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: theme.background
+    backgroundColor: theme.background,
+    paddingTop: Platform.OS === "android" ? NativeStatusBar.currentHeight ?? 0 : 0
   },
   appFrame: {
     flex: 1

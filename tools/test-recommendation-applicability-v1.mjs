@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { z } from "zod";
 
 import {
   evaluateMaintenanceApplicability,
+  evaluateMaintenanceCatalogApplicability,
   legacyCompatibleApplicabilityRule,
   maintenanceCatalogItems
 } from "../apps/api/src/maintenance-catalog.ts";
+import { deriveMaintenanceHousingType } from "../apps/api/src/maintenance-housing-type.ts";
+import { maintenanceRecommendationRules } from "../apps/api/src/generated/maintenance-recommendation-rules.ts";
 import { guideContentSeeds } from "../apps/api/src/guide-content.ts";
 
 const emptyState = { components: {}, facts: {} };
@@ -15,6 +19,12 @@ const emptyState = { components: {}, facts: {} };
 test("V1 catalog contains 50 unique canonical recommendations", () => {
   assert.equal(maintenanceCatalogItems.length, 50);
   assert.equal(new Set(maintenanceCatalogItems.map((item) => item.catalogKey)).size, 50);
+});
+
+test("generated maintenance rules are validated and current", () => {
+  execFileSync(process.execPath, ["tools/generate-maintenance-rules.mjs", "--check"], { cwd: process.cwd(), stdio: "pipe" });
+  assert.equal(Object.keys(maintenanceRecommendationRules).length, 50);
+  for (const item of maintenanceCatalogItems) assert(maintenanceRecommendationRules[item.catalogKey]);
 });
 
 test("composite applicability remains parseable by legacy mobile clients", () => {
@@ -49,15 +59,17 @@ test("universal recommendations are relevant without house facts", () => {
   assert.equal(evaluateMaintenanceApplicability(smokeAlarm.eligibilityRules, emptyState).status, "relevant");
 });
 
-test("gas boiler recommendation is filtered when a heat pump is known", () => {
+test("gas boiler and heat pump recommendations can coexist", () => {
   const gas = maintenanceCatalogItems.find((item) => item.catalogKey === "gas_boiler_service");
   assert(gas);
   const result = evaluateMaintenanceApplicability(gas.eligibilityRules, {
-    components: { heat_pump: "present", gas_boiler: "absent" },
+    components: { heat_pump: "present", gas_boiler: "present" },
     facts: { "bbr.heating.type": "heat_pump" }
   });
-  assert.equal(result.status, "not_relevant");
-  assert.equal(result.eligible, false);
+  assert.equal(result.status, "relevant");
+  assert.equal(result.eligible, true);
+  assert.equal(gas.eligibilityRules.type, "REQUIRES_COMPONENT");
+  assert.equal("excludesComponentKey" in gas.eligibilityRules, false);
 });
 
 test("component-specific recommendations require positive evidence", () => {
@@ -154,7 +166,129 @@ test("catalog dependency classifications protect installation-specific tasks", (
   assert(chimney);
   assert.deepEqual(chimney.eligibilityRules.requiresAny, ["chimney", "wood_stove", "fireplace"]);
   assert.equal(byKey.get("smoke_alarm_check")?.eligibilityRules.type, "UNIVERSAL");
-  assert.equal(byKey.get("wetroom_joints_check")?.eligibilityRules.type, "UNIVERSAL");
+  assert.equal(byKey.get("wetroom_joints_check")?.eligibilityRules.type, "REQUIRES_COMPONENT");
+});
+
+test("housing type is derived from explicit BBR/public-data codes", () => {
+  const data = (buildingUse, propertyType = null, unitHousingType = null) => ({
+    selection: {
+      primaryBuildingId: "b1",
+      primaryBuildingStatus: "automatic_address_relation",
+      primaryUnitId: unitHousingType ? "u1" : null,
+      primaryUnitStatus: unitHousingType ? "automatic_unambiguous" : "not_found"
+    },
+    property: { propertyType: propertyType ? { code: propertyType } : null },
+    productBuildings: [{
+      bbrBuildingId: "b1",
+      use: { code: buildingUse },
+      units: unitHousingType ? [{ bbrUnitId: "u1", housingType: { code: unitHousingType } }] : []
+    }]
+  });
+
+  assert.equal(deriveMaintenanceHousingType(data("120")), "villa");
+  assert.equal(deriveMaintenanceHousingType(data("120", null, "1")), "villa");
+  assert.equal(deriveMaintenanceHousingType(data("121")), "villa");
+  assert.equal(deriveMaintenanceHousingType(data("122")), "villa");
+  assert.equal(deriveMaintenanceHousingType(data("130")), "row_house");
+  assert.equal(deriveMaintenanceHousingType(data("131")), "row_house");
+  assert.equal(deriveMaintenanceHousingType(data("132")), "row_house");
+  assert.equal(deriveMaintenanceHousingType(data("140")), "apartment");
+  assert.equal(deriveMaintenanceHousingType(data("190", "3")), "apartment");
+  assert.equal(deriveMaintenanceHousingType(data("510")), "summer_house");
+  assert.equal(deriveMaintenanceHousingType(data("999")), "unknown");
+});
+
+test("housing conditional does not override absent component, but preserves possible for present component", () => {
+  const item = maintenanceCatalogItems.find((candidate) => candidate.catalogKey === "heat_pump_service");
+  assert(item);
+  const absent = evaluateMaintenanceCatalogApplicability("heat_pump_service", item.eligibilityRules, {
+    housingType: "apartment",
+    components: { heat_pump: "absent" },
+    facts: {}
+  });
+  assert.equal(absent.status, "not_relevant");
+  assert.equal(absent.eligible, false);
+
+  const present = evaluateMaintenanceCatalogApplicability("heat_pump_service", item.eligibilityRules, {
+    housingType: "apartment",
+    components: { heat_pump: "present" },
+    facts: {}
+  });
+  assert.equal(present.status, "possible");
+  assert.equal(present.eligible, false);
+});
+
+test("apartment housing gate excludes common-building recommendations but keeps unit recommendations", () => {
+  const byKey = new Map(maintenanceCatalogItems.map((item) => [item.catalogKey, item]));
+  const apartment = { housingType: "apartment", components: { roof: "present", wetroom: "present", central_heating: "present" }, facts: {} };
+  for (const catalogKey of [
+    "gutters_clean",
+    "roof_flashings_visual_check",
+    "facade_visual_check",
+    "foundation_crack_check",
+    "terrain_slope_check",
+    "drain_inspection_check",
+    "solar_panel_visual_check",
+    "water_stopcock_check"
+  ]) {
+    const item = byKey.get(catalogKey);
+    assert(item);
+    const result = evaluateMaintenanceCatalogApplicability(catalogKey, item.eligibilityRules, apartment);
+    assert.equal(result.status, "not_relevant", catalogKey);
+    assert.equal(result.eligible, false, catalogKey);
+  }
+  for (const catalogKey of ["smoke_alarm_check", "visible_moisture_check", "wetroom_joints_check", "wetroom_drain_check", "electrical_panel_visual_check", "radiator_valves_check", "indoor_climate_check"]) {
+    const item = byKey.get(catalogKey);
+    assert(item);
+    const result = evaluateMaintenanceCatalogApplicability(catalogKey, item.eligibilityRules, apartment);
+    assert.equal(result.status, "relevant", catalogKey);
+    assert.equal(result.eligible, true, catalogKey);
+  }
+});
+
+test("villa keeps general building recommendations when optional component data is unknown", () => {
+  const byKey = new Map(maintenanceCatalogItems.map((item) => [item.catalogKey, item]));
+  for (const catalogKey of ["gutters_clean", "downpipes_check", "window_door_joints_check", "foundation_crack_check"]) {
+    const item = byKey.get(catalogKey);
+    assert(item);
+    const result = evaluateMaintenanceCatalogApplicability(catalogKey, item.eligibilityRules, { housingType: "villa", components: {}, facts: {} });
+    assert.equal(result.status, "relevant", catalogKey);
+    assert.equal(result.eligible, true, catalogKey);
+  }
+});
+
+test("unknown housing type does not apply an aggressive housing exclusion", () => {
+  const gutters = maintenanceCatalogItems.find((item) => item.catalogKey === "gutters_clean");
+  assert(gutters);
+  const result = evaluateMaintenanceCatalogApplicability("gutters_clean", gutters.eligibilityRules, { housingType: "unknown", components: {}, facts: {} });
+  assert.equal(result.status, "relevant");
+  assert.equal(result.eligible, true);
+  assert.match(result.reason, /Boligtype er ukendt/);
+});
+
+test("all relevant heating sources can coexist without cross-source exclusions", () => {
+  const byKey = new Map(maintenanceCatalogItems.map((item) => [item.catalogKey, item]));
+  const scenarios = [
+    { district_heating: "present", wood_stove: "present" },
+    { heat_pump: "present", gas_boiler: "present" },
+    { heat_pump: "present", wood_stove: "present" },
+    { district_heating: "present", heat_pump: "present" }
+  ];
+  for (const components of scenarios) {
+    for (const [catalogKey, componentKey] of [
+      ["district_heating_unit_check", "district_heating"],
+      ["gas_boiler_service", "gas_boiler"],
+      ["heat_pump_service", "heat_pump"],
+      ["chimney_and_flashing_check", "wood_stove"]
+    ]) {
+      if (components[componentKey] !== "present") continue;
+      const item = byKey.get(catalogKey);
+      assert(item);
+      const result = evaluateMaintenanceCatalogApplicability(catalogKey, item.eligibilityRules, { housingType: "villa", components, facts: {} });
+      assert.equal(result.status, "relevant", `${catalogKey} in ${JSON.stringify(components)}`);
+      assert.equal(result.eligible, true, `${catalogKey} in ${JSON.stringify(components)}`);
+    }
+  }
 });
 
 test("Ringstedgade-like house cannot receive basement or chimney recommendations", () => {

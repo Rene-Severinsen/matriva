@@ -35,6 +35,14 @@ Enrichment is contextual and optional. The app can ask for one relevant fact/com
 
 User answers remain house data. They are never automatically promoted to canonical Matriva recommendations or guides.
 
+## Recommendation rules source and housing gate
+
+The approved V1 recommendation rules are maintained in `docs/product/maintenance-recommendation-rules.xlsx`, sheet `Proposed Rules`. The `Recommendations` sheet is the historical/current-state baseline before V1 and is preserved for comparison; `Proposed Rules` is the approved source-of-truth. The workbook is not read by production runtime. `node tools/generate-maintenance-rules.mjs` validates the sheet and generates the versioned TypeScript ruleset at `apps/api/src/generated/maintenance-recommendation-rules.ts`; `npm run check:maintenance-rules` fails if the generated file is stale. Generated rules must not be edited manually: changes go through workbook → validator/generator → regression tests.
+
+Runtime evaluates the housing-type gate before applicability. The gate uses explicit BBR/public-data signals from `building.use`, the primary unit's `housingType`, and `property.propertyType`: building use 120/110 maps to `villa`, 121/122/130/131/132 to `row_house`, 140 or property type 3 to `apartment`, and unit/building summer-house signals to `summer_house`. Conflicting or incomplete signals map to `unknown`; unknown does not apply housing-type exclusions. A `CONDITIONAL` housing value returns `possible` and is not eligible until the required evidence is available.
+
+The generated catalog applicability rules are then evaluated using the existing component/fact engine. Housing metadata and `responsibility_scope` remain rule metadata; responsibility scope is not inferred from BBR and is not used as an implicit runtime exclusion.
+
 ## Catalog and entitlements
 
 `GET /v1/houses/:houseId/maintenance-catalog?scope=all` exposes the complete active catalog to both Free and Pro. `scope=recommended` returns the currently relevant subset. The UI may label entries `Relevant for dit hus`, `Muligvis relevant` or `Ikke relevant ud fra dine husdata` without hiding the catalog.

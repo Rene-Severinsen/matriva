@@ -61,7 +61,8 @@ import type {
   UpdateDefaultHouseRequest,
   UpdateProfileRequest,
   UserProfile,
-  UserId
+  UserId,
+  HousePublicDataResponseV1
 } from "@matriva/shared";
 import type {
   HouseApplicabilityState,
@@ -93,12 +94,13 @@ import {
 } from "./house-profile-content.ts";
 import {
   maintenanceCatalogItems,
-  evaluateMaintenanceApplicability,
+  evaluateMaintenanceCatalogApplicability,
   legacyCompatibleApplicabilityRule,
   recommendedPeriodLabel,
   type MaintenanceCatalogItem,
   type MaintenanceCatalogPeriod
 } from "./maintenance-catalog.ts";
+import { deriveMaintenanceHousingType } from "./maintenance-housing-type.ts";
 import { ensurePermanentSuperAdminRoleForUser } from "./admin.ts";
 
 const { Pool } = pg;
@@ -1067,7 +1069,8 @@ function evaluateCatalogEligibility(
   item: MaintenanceCatalogItemRow,
   state: HouseApplicabilityState
 ): MaintenanceApplicabilityResult & { snapshot: Record<string, unknown> } {
-  const result = evaluateMaintenanceApplicability(
+  const result = evaluateMaintenanceCatalogApplicability(
+    item.catalog_key,
     normalizeApplicabilityRule(item.eligibility_rules),
     state
   );
@@ -1082,13 +1085,9 @@ function evaluateCatalogEligibility(
   };
 }
 
-type NormalizedHouseData = {
-  selection?: { primaryBuildingId?: string | null };
-  productBuildings?: Array<Record<string, any>>;
-  buildings?: Array<Record<string, any>>;
-};
+type NormalizedHouseData = Pick<HousePublicDataResponseV1, "selection" | "productBuildings" | "buildings" | "property">;
 
-async function syncHouseFactsFromBbr(houseId: string) {
+async function syncHouseFactsFromBbr(houseId: string): Promise<NormalizedHouseData | null> {
   const result = await pool.query<{ normalized_payload: NormalizedHouseData }>(
     `select normalized_payload
      from house_public_data_snapshots
@@ -1105,23 +1104,23 @@ async function syncHouseFactsFromBbr(houseId: string) {
     "delete from house_components where house_id = $1 and source = 'bbr'",
     [houseId]
   );
-  if (!normalized) return;
+  if (!normalized) return null;
 
   const buildings = normalized.productBuildings ?? normalized.buildings ?? [];
   const primary = buildings.find((building) =>
     building.bbrBuildingId === normalized.selection?.primaryBuildingId
   ) ?? buildings[0];
-  const heating = primary?.heating ?? {};
-  const installationCode = heating.installation?.code ?? null;
-  const sourceCode = heating.source?.code ?? null;
-  const supplementaryCode = heating.supplementary?.code ?? null;
+  const heating = primary?.heating;
+  const installationCode = heating?.installation?.code ?? null;
+  const sourceCode = heating?.source?.code ?? null;
+  const supplementaryCode = heating?.supplementary?.code ?? null;
   let heatingType: string | null = null;
 
   if (installationCode === "5" || supplementaryCode === "1") heatingType = "heat_pump";
   else if (installationCode === "1") heatingType = "district_heating";
   else if (installationCode === "2" && sourceCode === "7") heatingType = "gas_boiler";
   else if (installationCode === "2" && sourceCode === "3") heatingType = "oil_boiler";
-  else if (["2", "3", "6"].includes(installationCode)) heatingType = "central_heating";
+  else if (["2", "3", "6"].includes(installationCode ?? "")) heatingType = "central_heating";
   else if (installationCode === "7") heatingType = "electric_heating";
   else if (installationCode === "9") heatingType = "none";
 
@@ -1196,10 +1195,11 @@ async function syncHouseFactsFromBbr(houseId: string) {
       [createOpaqueId("hcomp"), houseId, componentKey, status]
     );
   }
+  return normalized;
 }
 
 async function loadHouseApplicabilityState(houseId: string): Promise<HouseApplicabilityState> {
-  await syncHouseFactsFromBbr(houseId);
+  const normalized = await syncHouseFactsFromBbr(houseId);
   const [factsResult, componentsResult] = await Promise.all([
     pool.query<{ fact_key: string; value: unknown }>(
       "select fact_key, value from house_facts where house_id = $1",
@@ -1212,7 +1212,8 @@ async function loadHouseApplicabilityState(houseId: string): Promise<HouseApplic
   ]);
   return {
     facts: Object.fromEntries(factsResult.rows.map((row) => [row.fact_key, row.value])),
-    components: Object.fromEntries(componentsResult.rows.map((row) => [row.component_key, row.status]))
+    components: Object.fromEntries(componentsResult.rows.map((row) => [row.component_key, row.status])),
+    housingType: deriveMaintenanceHousingType(normalized)
   };
 }
 

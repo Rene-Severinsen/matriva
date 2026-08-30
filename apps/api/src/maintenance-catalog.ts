@@ -1,5 +1,10 @@
 import { LEGACY_COMPOSITE_COMPONENT_KEY } from "@matriva/shared";
 import type { MaintenanceRecurrenceInterval, MaintenanceSeason } from "@matriva/shared";
+import { maintenanceRecommendationRules } from "./generated/maintenance-recommendation-rules.ts";
+import type {
+  MaintenanceHousingType,
+  GeneratedMaintenanceRecommendationRule
+} from "./generated/maintenance-recommendation-rules.ts";
 
 export const MAINTENANCE_CATALOG_VERSION = "2026-07.generic-maintenance-v1";
 
@@ -61,11 +66,15 @@ type CatalogSeed = Omit<MaintenanceCatalogItem, "catalogVersion" | "eligibilityR
 };
 
 function catalogItem(seed: CatalogSeed): MaintenanceCatalogItem {
+  const generatedRule = maintenanceRecommendationRules[seed.catalogKey] as GeneratedMaintenanceRecommendationRule | undefined;
+  if (!generatedRule) {
+    throw new Error(`Missing generated maintenance rule for ${seed.catalogKey}`);
+  }
   return {
     ...seed,
-    catalogVersion: MAINTENANCE_CATALOG_VERSION,
+  catalogVersion: MAINTENANCE_CATALOG_VERSION,
     recommendedPeriod: seed.recommendedPeriod ?? { type: "all_year" },
-    eligibilityRules: seed.applicability ?? { type: "UNIVERSAL" }
+    eligibilityRules: generatedRule.applicability
   };
 }
 
@@ -107,8 +116,8 @@ export const maintenanceCatalogItems: ReadonlyArray<MaintenanceCatalogItem> = [
   catalogItem({ catalogKey: "heating_system_service", title: "Få varmeinstallationen efterset", shortDescription: "Følg producentens serviceinterval og få faglig hjælp ved behov.", season: "autumn", recommendedPeriod: { type: "month_range", startMonth: 9, endMonth: 11 }, defaultRecurrenceInterval: "yearly", priority: "high", applicability: { type: "REQUIRES_COMPONENT", componentKey: "heating_system" }, disclaimerClass: "professional_review", isActive: true }),
   catalogItem({ catalogKey: "radiator_valves_check", title: "Test radiatorventiler", shortDescription: "Kontroller at radiatorventiler kan bevæges og regulere varmen.", season: "autumn", recommendedPeriod: { type: "month_range", startMonth: 9, endMonth: 11 }, defaultRecurrenceInterval: "yearly", priority: "normal", applicability: { type: "REQUIRES_COMPONENT", componentKey: "central_heating" }, disclaimerClass: "general", isActive: true }),
   catalogItem({ catalogKey: "district_heating_unit_check", title: "Kontroller fjernvarmeunit", shortDescription: "Se efter lækager, trykafvigelser og servicebehov på fjernvarmeunit.", season: "autumn", recommendedPeriod: { type: "month_range", startMonth: 9, endMonth: 11 }, defaultRecurrenceInterval: "yearly", priority: "normal", applicability: { type: "REQUIRES_COMPONENT", componentKey: "district_heating" }, disclaimerClass: "professional_review", isActive: true }),
-  catalogItem({ catalogKey: "gas_boiler_service", title: "Service på gasfyr", shortDescription: "Følg serviceintervallet for gasfyr og få arbejdet udført af fagperson.", season: "autumn", recommendedPeriod: { type: "month_range", startMonth: 9, endMonth: 11 }, defaultRecurrenceInterval: "yearly", priority: "high", applicability: { type: "REQUIRES_COMPONENT", componentKey: "gas_boiler", excludesComponentKey: "heat_pump" }, disclaimerClass: "professional_review", isActive: true }),
-  catalogItem({ catalogKey: "oil_boiler_service", title: "Service på oliefyr", shortDescription: "Følg serviceintervallet for oliefyr og få arbejdet udført fagligt.", season: "autumn", recommendedPeriod: { type: "month_range", startMonth: 9, endMonth: 11 }, defaultRecurrenceInterval: "yearly", priority: "high", applicability: { type: "REQUIRES_COMPONENT", componentKey: "oil_boiler", excludesComponentKey: "heat_pump" }, disclaimerClass: "professional_review", isActive: true }),
+  catalogItem({ catalogKey: "gas_boiler_service", title: "Service på gasfyr", shortDescription: "Følg serviceintervallet for gasfyr og få arbejdet udført af fagperson.", season: "autumn", recommendedPeriod: { type: "month_range", startMonth: 9, endMonth: 11 }, defaultRecurrenceInterval: "yearly", priority: "high", applicability: { type: "REQUIRES_COMPONENT", componentKey: "gas_boiler" }, disclaimerClass: "professional_review", isActive: true }),
+  catalogItem({ catalogKey: "oil_boiler_service", title: "Service på oliefyr", shortDescription: "Følg serviceintervallet for oliefyr og få arbejdet udført fagligt.", season: "autumn", recommendedPeriod: { type: "month_range", startMonth: 9, endMonth: 11 }, defaultRecurrenceInterval: "yearly", priority: "high", applicability: { type: "REQUIRES_COMPONENT", componentKey: "oil_boiler" }, disclaimerClass: "professional_review", isActive: true }),
   catalogItem({ catalogKey: "heat_pump_service", title: "Service på varmepumpe", shortDescription: "Følg producentens service- og filterintervaller for varmepumpen.", season: "autumn", recommendedPeriod: { type: "month_range", startMonth: 9, endMonth: 11 }, defaultRecurrenceInterval: "yearly", priority: "high", applicability: { type: "REQUIRES_COMPONENT", componentKey: "heat_pump" }, disclaimerClass: "professional_review", isActive: true }),
   catalogItem({ catalogKey: "heat_pump_filter_check", title: "Kontroller varmepumpens filtre", shortDescription: "Kontroller og rengør filtre efter producentens anvisning.", season: "all_year", defaultRecurrenceInterval: "quarterly", priority: "normal", applicability: { type: "REQUIRES_COMPONENT", componentKey: "heat_pump" }, disclaimerClass: "general", isActive: true }),
   catalogItem({ catalogKey: "ventilation_filter_check", title: "Skift ventilationsfiltre", shortDescription: "Kontroller og skift filtre efter anlæggets interval.", season: "spring", recommendedPeriod: { type: "month_range", startMonth: 3, endMonth: 5 }, defaultRecurrenceInterval: "half_yearly", priority: "normal", applicability: { type: "REQUIRES_COMPONENT", componentKey: "ventilation" }, disclaimerClass: "general", isActive: true }),
@@ -152,6 +161,7 @@ export function recommendedPeriodLabel(period: MaintenanceCatalogPeriod) {
 export type HouseApplicabilityState = {
   components: Readonly<Record<string, "present" | "absent" | "unknown">>;
   facts: Readonly<Record<string, unknown>>;
+  housingType?: MaintenanceHousingType;
 };
 
 export type MaintenanceApplicabilityResult = {
@@ -227,4 +237,51 @@ export function evaluateMaintenanceApplicability(
     return { status: "relevant", eligible: true, reason: `Komponenten ${rule.componentKey} er registreret som fraværende.` };
   }
   return { status: "possible", eligible: false, reason: `Det er endnu ukendt, om komponenten ${rule.componentKey} findes.` };
+}
+
+function evaluateHousingGate(
+  rule: GeneratedMaintenanceRecommendationRule,
+  state: HouseApplicabilityState
+): { terminal: MaintenanceApplicabilityResult | null; conditionalReason: string | null } {
+  const housingType = state.housingType ?? "unknown";
+  if (housingType === "unknown") return { terminal: null, conditionalReason: null };
+
+  const gate = rule.housing[housingType];
+  if (gate === "NO") {
+    return {
+      terminal: { status: "not_relevant", eligible: false, reason: `Boligtype-gaten afviser anbefalingen for ${housingType}.` },
+      conditionalReason: null
+    };
+  }
+  if (gate === "CONDITIONAL") {
+    return {
+      terminal: null,
+      conditionalReason: rule.condition ?? `Anbefalingen kræver yderligere dokumentation for ${housingType}.`
+    };
+  }
+  return { terminal: null, conditionalReason: null };
+}
+
+export function evaluateMaintenanceCatalogApplicability(
+  catalogKey: string,
+  rule: MaintenanceCatalogApplicabilityRule,
+  state: HouseApplicabilityState
+): MaintenanceApplicabilityResult {
+  const generatedRule = maintenanceRecommendationRules[catalogKey] as GeneratedMaintenanceRecommendationRule | undefined;
+  const housingGate = generatedRule
+    ? evaluateHousingGate(generatedRule, state)
+    : { terminal: null, conditionalReason: null };
+  if (housingGate.terminal) return housingGate.terminal;
+
+  const result = evaluateMaintenanceApplicability(rule, state);
+  if (housingGate.conditionalReason && result.status === "relevant" && result.eligible) {
+    return { status: "possible", eligible: false, reason: housingGate.conditionalReason };
+  }
+  if ((state.housingType ?? "unknown") === "unknown") {
+    return {
+      ...result,
+      reason: `Boligtype er ukendt; housing-type exclusions er ikke anvendt. ${result.reason}`
+    };
+  }
+  return result;
 }

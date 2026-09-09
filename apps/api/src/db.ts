@@ -62,7 +62,11 @@ import type {
   UpdateProfileRequest,
   UserProfile,
   UserId,
-  HousePublicDataResponseV1
+  HousePublicDataResponseV1,
+  NotificationCategory,
+  NotificationType,
+  RegisterNotificationDeviceRequest,
+  UpdateNotificationPreferencesRequest
 } from "@matriva/shared";
 import type {
   HouseApplicabilityState,
@@ -102,6 +106,7 @@ import {
 } from "./maintenance-catalog.ts";
 import { deriveMaintenanceHousingType } from "./maintenance-housing-type.ts";
 import { ensurePermanentSuperAdminRoleForUser } from "./admin.ts";
+import { maintenanceDeadlineNotificationType, notificationDeduplicationKey, notificationDeepLink } from "./notification-domain.ts";
 
 const { Pool } = pg;
 
@@ -373,6 +378,20 @@ type EntitlementDetails = {
   storageLimitBytes?: number | null;
   storageBytes?: number;
 };
+
+async function withHouseAdvisoryLock<T>(houseId: string, callback: () => Promise<T>): Promise<T> {
+  const lockClient = await pool.connect();
+  try {
+    await lockClient.query("select pg_advisory_lock(hashtextextended($1, 0))", [houseId]);
+    return await callback();
+  } finally {
+    try {
+      await lockClient.query("select pg_advisory_unlock(hashtextextended($1, 0))", [houseId]);
+    } finally {
+      lockClient.release();
+    }
+  }
+}
 
 const safeFreeFeatures: Record<FeatureKey, EntitlementValue> = {
   "houses.maxActive": { kind: "limit", value: 1 },
@@ -798,6 +817,10 @@ export function createOpaqueId(
     | "hfact"
     | "hcomp"
     | "doc"
+    | "notif"
+    | "ndev"
+    | "nout"
+    | "nat"
 ) {
   return `${prefix}_${randomBytes(12).toString("hex")}`;
 }
@@ -1198,7 +1221,7 @@ async function syncHouseFactsFromBbr(houseId: string): Promise<NormalizedHouseDa
   return normalized;
 }
 
-async function loadHouseApplicabilityState(houseId: string): Promise<HouseApplicabilityState> {
+async function loadHouseApplicabilityStateUnlocked(houseId: string): Promise<HouseApplicabilityState> {
   const normalized = await syncHouseFactsFromBbr(houseId);
   const [factsResult, componentsResult] = await Promise.all([
     pool.query<{ fact_key: string; value: unknown }>(
@@ -1217,23 +1240,29 @@ async function loadHouseApplicabilityState(houseId: string): Promise<HouseApplic
   };
 }
 
+async function loadHouseApplicabilityState(houseId: string): Promise<HouseApplicabilityState> {
+  return withHouseAdvisoryLock(houseId, () => loadHouseApplicabilityStateUnlocked(houseId));
+}
+
 export async function getHouseFactsForHouse(userId: string, houseId: string) {
   const house = await getSavedHouse(userId, houseId);
-  await syncHouseFactsFromBbr(house.id);
-  const [factsResult, componentsResult] = await Promise.all([
-    pool.query<{ fact_key: string; value: unknown; source: string; confidence: string; updated_at: Date }>(
-      "select fact_key, value, source, confidence, updated_at from house_facts where house_id = $1 order by fact_key",
-      [house.id]
-    ),
-    pool.query<{ component_key: string; status: "present" | "absent" | "unknown"; attributes: Record<string, unknown>; source: string; confidence: string; updated_at: Date }>(
-      "select component_key, status, attributes, source, confidence, updated_at from house_components where house_id = $1 order by component_key",
-      [house.id]
-    )
-  ]);
-  return houseFactsResponseSchema.parse({
-    facts: factsResult.rows.map((row) => ({ factKey: row.fact_key, value: row.value, source: row.source, confidence: row.confidence, updatedAt: row.updated_at.toISOString() })),
-    components: componentsResult.rows.map((row) => ({ componentKey: row.component_key, status: row.status, attributes: row.attributes ?? {}, source: row.source, confidence: row.confidence, updatedAt: row.updated_at.toISOString() })),
-    generatedAt: new Date().toISOString()
+  return withHouseAdvisoryLock(house.id, async () => {
+    await syncHouseFactsFromBbr(house.id);
+    const [factsResult, componentsResult] = await Promise.all([
+      pool.query<{ fact_key: string; value: unknown; source: string; confidence: string; updated_at: Date }>(
+        "select fact_key, value, source, confidence, updated_at from house_facts where house_id = $1 order by fact_key",
+        [house.id]
+      ),
+      pool.query<{ component_key: string; status: "present" | "absent" | "unknown"; attributes: Record<string, unknown>; source: string; confidence: string; updated_at: Date }>(
+        "select component_key, status, attributes, source, confidence, updated_at from house_components where house_id = $1 order by component_key",
+        [house.id]
+      )
+    ]);
+    return houseFactsResponseSchema.parse({
+      facts: factsResult.rows.map((row) => ({ factKey: row.fact_key, value: row.value, source: row.source, confidence: row.confidence, updatedAt: row.updated_at.toISOString() })),
+      components: componentsResult.rows.map((row) => ({ componentKey: row.component_key, status: row.status, attributes: row.attributes ?? {}, source: row.source, confidence: row.confidence, updatedAt: row.updated_at.toISOString() })),
+      generatedAt: new Date().toISOString()
+    });
   });
 }
 
@@ -2010,6 +2039,18 @@ export async function createHouseClaim(userId: string, houseId: string, claimTyp
      where c.id = $1`,
     [row.id]
   );
+  for (const owner of notifications.rows) {
+    const ownerUser = await pool.query<{ id: string }>("select id from users where email = $1", [owner.owner_email]);
+    if (!ownerUser.rows[0] || ownerUser.rows[0].id === userId) continue;
+    await createUserNotification(pool, {
+      userId: ownerUser.rows[0].id, houseId, type: "house_access_requested", category: "house_access",
+      title: "Ny adgangsanmodning", body: `${owner.requester_name} anmoder om adgang til ${owner.address_label}.`,
+      entityType: "house_claim", entityId: row.id,
+      deepLink: `matriva://houses/${houseId}/access/claims/${row.id}`,
+      priority: "high",
+      deduplicationKey: `house_access_requested:${row.id}:${ownerUser.rows[0].id}`
+    });
+  }
   return {
     claim: { id: row.id, houseId: row.house_id, userId: row.user_id, claimType: row.claim_type, status: row.status, requestedAt: new Date(row.requested_at).toISOString(), resolvedAt: row.resolved_at ? new Date(row.resolved_at).toISOString() : null, resolutionNote: row.resolution_note },
     ownerActionToken,
@@ -2033,6 +2074,15 @@ export async function approveHouseClaimByOwnerToken(userId: string, token: strin
     if (!owner.rowCount) throw new ApiError(403, "house_owner_required", "Kun en aktiv ejer kan godkende adgang.");
     await client.query("insert into house_memberships (id, house_id, user_id, role, status, invited_by_user_id) values ($1, $2, $3, 'member', 'active', $4) on conflict (house_id, user_id) where status = 'active' do nothing", [createOpaqueId("hm"), claim.house_id, claim.user_id, userId]);
     await client.query("update house_claims set status = 'approved', resolved_at = now(), resolved_by_owner_user_id = $1, resolution_note = 'Godkendt af ejer', owner_action_token_hash = null, owner_action_expires_at = null, updated_at = now() where id = $2", [userId, claim.id]);
+    if (claim.user_id !== userId) {
+      await createUserNotification(client, {
+        userId: claim.user_id, houseId: claim.house_id, type: "house_access_request_approved", category: "house_access",
+        title: "Adgang godkendt", body: `Din adgang til ${claim.address_label} er godkendt.`,
+        entityType: "house_claim", entityId: claim.id,
+        deepLink: `matriva://houses/${claim.house_id}`,
+        deduplicationKey: `house_access_request_approved:${claim.id}:${claim.user_id}`
+      });
+    }
     await client.query("commit");
     return { id: claim.id, status: "approved" as const, houseId: claim.house_id };
   } catch (error) { await client.query("rollback"); throw error; }
@@ -2052,6 +2102,19 @@ export async function resolveHouseClaimByOwner(userId: string, claimId: string, 
       await client.query("insert into house_memberships (id, house_id, user_id, role, status, invited_by_user_id) values ($1, $2, $3, 'member', 'active', $4) on conflict (house_id, user_id) where status = 'active' do nothing", [createOpaqueId("hm"), claim.house_id, claim.user_id, userId]);
     }
     await client.query("update house_claims set status = $1, resolved_at = now(), resolved_by_owner_user_id = $2, resolution_note = $3, owner_action_token_hash = null, owner_action_expires_at = null, updated_at = now() where id = $4", [decision === "approve" ? "approved" : "rejected", userId, decision === "approve" ? "Godkendt af ejer" : "Afvist af ejer", claimId]);
+    if (claim.user_id !== userId) {
+      const house = await client.query<{ address_label: string }>("select address_label from houses where id = $1", [claim.house_id]);
+      const approved = decision === "approve";
+      await createUserNotification(client, {
+        userId: claim.user_id, houseId: claim.house_id,
+        type: approved ? "house_access_request_approved" : "house_access_request_rejected",
+        category: "house_access", title: approved ? "Adgang godkendt" : "Adgang afvist",
+        body: approved ? `Din adgang til ${house.rows[0]?.address_label ?? "boligen"} er godkendt.` : `Din adgangsanmodning til ${house.rows[0]?.address_label ?? "boligen"} blev afvist.`,
+        entityType: "house_claim", entityId: claim.id,
+        deepLink: approved ? `matriva://houses/${claim.house_id}` : "matriva://more/sharing",
+        deduplicationKey: `${approved ? "house_access_request_approved" : "house_access_request_rejected"}:${claim.id}:${claim.user_id}`
+      });
+    }
     await client.query("commit");
     return { id: claimId, status: decision === "approve" ? "approved" as const : "rejected" as const, houseId: claim.house_id };
   } catch (error) { await client.query("rollback"); throw error; }
@@ -2123,6 +2186,17 @@ export async function createHouseInvitation(userId: string, houseId: string, ema
   const existingInvitation = await pool.query("select id, house_id, email, role, status, expires_at from house_invitations where house_id = $1 and email = $2 and status = 'pending' and expires_at > now()", [houseId, normalized]);
   if (existingInvitation.rowCount) {
     const pending = existingInvitation.rows[0];
+    const recipient = await pool.query<{ id: string }>("select id from users where email = $1 and status = 'active'", [normalized]);
+    if (recipient.rows[0]) {
+      const house = await pool.query<{ address_label: string }>("select address_label from houses where id = $1", [houseId]);
+      await createUserNotification(pool, {
+        userId: recipient.rows[0].id, houseId, type: "house_invitation_received", category: "house_access",
+        title: "Invitation til bolig", body: `Du er inviteret til ${house.rows[0]?.address_label ?? "en bolig"}.`,
+        entityType: "house_invitation", entityId: pending.id,
+        deepLink: `matriva://house-invitations/${pending.id}`,
+        deduplicationKey: `house_invitation_received:${pending.id}:${recipient.rows[0].id}`
+      });
+    }
     return {
       alreadyPending: true as const,
       invitation: {
@@ -2138,7 +2212,19 @@ export async function createHouseInvitation(userId: string, houseId: string, ema
   const token = createToken();
   const result = await pool.query(`insert into house_invitations (id, house_id, email, role, token_hash, expires_at, invited_by_user_id)
     values ($1, $2, $3, $4, $5, now() + interval '7 days', $6) returning id, house_id, email, role, status, expires_at`, [createOpaqueId("invite"), houseId, normalized, role, hashSecret(token), userId]);
-  return { ...result.rows[0], token };
+  const created = result.rows[0];
+  const recipient = await pool.query<{ id: string }>("select id from users where email = $1 and status = 'active'", [normalized]);
+  if (recipient.rows[0]) {
+    const house = await pool.query<{ address_label: string }>("select address_label from houses where id = $1", [houseId]);
+    await createUserNotification(pool, {
+      userId: recipient.rows[0].id, houseId, type: "house_invitation_received", category: "house_access",
+      title: "Invitation til bolig", body: `Du er inviteret til ${house.rows[0]?.address_label ?? "en bolig"}.`,
+      entityType: "house_invitation", entityId: created.id,
+      deepLink: `matriva://house-invitations/${created.id}`,
+      deduplicationKey: `house_invitation_received:${created.id}:${recipient.rows[0].id}`
+    });
+  }
+  return { ...created, token };
 }
 
 export async function acceptHouseInvitation(userId: string, token: string) {
@@ -2158,6 +2244,20 @@ export async function acceptHouseInvitation(userId: string, token: string) {
     await client.query(`insert into house_memberships (id, house_id, user_id, role, status, invited_by_user_id) values ($1, $2, $3, $4, 'active', $5)
       on conflict (house_id, user_id) where status = 'active' do nothing`, [createOpaqueId("hm"), invitation.house_id, userId, invitation.role, invitation.invited_by_user_id]);
     await client.query(`update house_invitations set status = 'accepted', accepted_by_user_id = $1, accepted_at = now(), updated_at = now() where id = $2`, [userId, invitation.id]);
+    const acceptanceRecipients = await client.query<{ user_id: string }>(
+      `select user_id from house_memberships where house_id = $1 and status = 'active' and user_id <> $2`,
+      [invitation.house_id, userId]
+    );
+    for (const recipient of acceptanceRecipients.rows) {
+      await createUserNotification(client, {
+        userId: recipient.user_id, houseId: invitation.house_id,
+        type: "house_invitation_accepted", category: "house_access",
+        title: "Invitation accepteret", body: `${invitation.accepting_email} har accepteret invitationen.`,
+        entityType: "house_invitation", entityId: invitation.id,
+        deepLink: `matriva://houses/${invitation.house_id}/access`,
+        deduplicationKey: `house_invitation_accepted:${invitation.id}:${recipient.user_id}`
+      });
+    }
     await client.query("commit");
     return { houseId: invitation.house_id };
   } catch (error) { await client.query("rollback"); throw error; }
@@ -2178,6 +2278,20 @@ export async function acceptHouseInvitationById(userId: string, invitationId: st
     if (normalizeEmail(invitation.email) !== normalizeEmail(invitation.accepting_email)) throw new ApiError(403, "invitation_email_mismatch", "Invitationen er knyttet til en anden e-mailadresse.");
     await client.query("insert into house_memberships (id, house_id, user_id, role, status, invited_by_user_id) values ($1, $2, $3, $4, 'active', $5) on conflict (house_id, user_id) where status = 'active' do nothing", [createOpaqueId("hm"), invitation.house_id, userId, invitation.role, invitation.invited_by_user_id]);
     await client.query("update house_invitations set status = 'accepted', accepted_by_user_id = $1, accepted_at = now(), updated_at = now() where id = $2", [userId, invitation.id]);
+    const acceptanceRecipients = await client.query<{ user_id: string }>(
+      `select user_id from house_memberships where house_id = $1 and status = 'active' and user_id <> $2`,
+      [invitation.house_id, userId]
+    );
+    for (const recipient of acceptanceRecipients.rows) {
+      await createUserNotification(client, {
+        userId: recipient.user_id, houseId: invitation.house_id,
+        type: "house_invitation_accepted", category: "house_access",
+        title: "Invitation accepteret", body: `${invitation.accepting_email} har accepteret invitationen.`,
+        entityType: "house_invitation", entityId: invitation.id,
+        deepLink: `matriva://houses/${invitation.house_id}/access`,
+        deduplicationKey: `house_invitation_accepted:${invitation.id}:${recipient.user_id}`
+      });
+    }
     await client.query("commit");
     return { houseId: invitation.house_id };
   } catch (error) { await client.query("rollback"); throw error; }
@@ -2195,6 +2309,17 @@ export async function resolveHouseClaim(claimId: string, adminUserId: string, de
       await client.query(`insert into house_memberships (id, house_id, user_id, role, status) values ($1, $2, $3, 'member', 'active') on conflict (house_id, user_id) where status = 'active' do nothing`, [createOpaqueId("hm"), claim.house_id, claim.user_id]);
     }
     await client.query(`update house_claims set status = $1, resolved_at = now(), resolved_by_admin_user_id = $2, resolution_note = $3, updated_at = now() where id = $4`, [decision === "approve" ? "approved" : "rejected", adminUserId, note, claimId]);
+    const house = await client.query<{ address_label: string }>("select address_label from houses where id = $1", [claim.house_id]);
+    const approved = decision === "approve";
+    await createUserNotification(client, {
+      userId: claim.user_id, houseId: claim.house_id,
+      type: approved ? "house_access_request_approved" : "house_access_request_rejected",
+      category: "house_access", title: approved ? "Adgang godkendt" : "Adgang afvist",
+      body: approved ? `Din adgang til ${house.rows[0]?.address_label ?? "boligen"} er godkendt.` : `Din adgangsanmodning til ${house.rows[0]?.address_label ?? "boligen"} blev afvist.`,
+      entityType: "house_claim", entityId: claim.id,
+      deepLink: approved ? `matriva://houses/${claim.house_id}` : "matriva://more/sharing",
+      deduplicationKey: `${approved ? "house_access_request_approved" : "house_access_request_rejected"}:${claim.id}:${claim.user_id}`
+    });
     await client.query("commit");
     return { id: claimId, status: decision === "approve" ? "approved" : "rejected" };
   } catch (error) { await client.query("rollback"); throw error; }
@@ -2849,8 +2974,17 @@ async function ensureMaintenanceRecommendationInstancesForHouse(
   userId: string,
   houseId: string
 ) {
+  return withHouseAdvisoryLock(houseId, () =>
+    ensureMaintenanceRecommendationInstancesForHouseUnlocked(userId, houseId)
+  );
+}
+
+async function ensureMaintenanceRecommendationInstancesForHouseUnlocked(
+  userId: string,
+  houseId: string
+) {
   await syncMaintenanceCatalogItems();
-  const applicabilityState = await loadHouseApplicabilityState(houseId);
+  const applicabilityState = await loadHouseApplicabilityStateUnlocked(houseId);
   const result = await pool.query<MaintenanceCatalogItemRow>(
     `
       select
@@ -2960,7 +3094,10 @@ async function ensureMaintenanceRecommendationInstancesForHouse(
       }
     }
 
-    await pool.query(
+    const recommendationClient = await pool.connect();
+    try {
+      await recommendationClient.query("begin");
+      const insertedRecommendation = await recommendationClient.query<{ id: string }>(
       `
         insert into maintenance_recommendations (
           id,
@@ -3023,6 +3160,7 @@ async function ensureMaintenanceRecommendationInstancesForHouse(
         on conflict (house_id, catalog_item_id, period_key)
         where catalog_item_id is not null and period_key is not null
         do nothing
+        returning id
       `,
       [
         createOpaqueId("mrec"),
@@ -3053,6 +3191,28 @@ async function ensureMaintenanceRecommendationInstancesForHouse(
         eligibility.snapshot.reason
       ]
     );
+      const recommendationId = insertedRecommendation.rows[0]?.id;
+      if (recommendationId) {
+        const recipients = await recommendationClient.query<{ user_id: string }>(
+          `select user_id from house_memberships where house_id = $1 and status = 'active'`,
+          [houseId]
+        );
+        for (const recipient of recipients.rows) {
+          await createUserNotification(recommendationClient, {
+            userId: recipient.user_id, houseId,
+            type: "maintenance_recommendation_created", category: "maintenance",
+            title: "Ny vedligeholdelsesanbefaling", body: item.title,
+            entityType: "maintenance_recommendation", entityId: recommendationId,
+            deepLink: `matriva://houses/${houseId}/maintenance/recommendations/${recommendationId}`,
+            deduplicationKey: `maintenance_recommendation_created:${recommendationId}:${recipient.user_id}`
+          });
+        }
+      }
+      await recommendationClient.query("commit");
+    } catch (error) {
+      await recommendationClient.query("rollback");
+      throw error;
+    } finally { recommendationClient.release(); }
   }
 }
 
@@ -4368,6 +4528,307 @@ export async function removeHousePhoto(userId: string, houseId: string) {
     `,
     [house.id]
   );
+}
+
+const notificationCategories: NotificationCategory[] = [
+  "maintenance",
+  "documents",
+  "house_access",
+  "system"
+];
+
+type CreateNotificationInput = {
+  userId: string;
+  houseId?: string | null;
+  type: NotificationType;
+  category: NotificationCategory;
+  title: string;
+  body: string;
+  entityType?: string | null;
+  entityId?: string | null;
+  deepLink?: string | null;
+  priority?: "low" | "normal" | "high";
+  deduplicationKey: string;
+  metadata?: Record<string, unknown>;
+  bypassCategoryPreference?: boolean;
+  targetDeviceId?: string | null;
+};
+
+function toNotification(row: Record<string, unknown>) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    houseId: row.house_id,
+    type: row.notification_type,
+    category: row.category,
+    title: row.title,
+    body: row.body,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    deepLink: row.deep_link,
+    priority: row.priority,
+    createdAt: (row.created_at as Date).toISOString(),
+    readAt: row.read_at ? (row.read_at as Date).toISOString() : null
+  };
+}
+
+export async function createUserNotification(
+  executor: DbExecutor,
+  input: CreateNotificationInput
+) {
+  const preference = await executor.query<{ in_app_enabled: boolean; push_enabled: boolean }>(
+    `select in_app_enabled, push_enabled
+     from notification_preferences where user_id = $1 and category = $2`,
+    [input.userId, input.category]
+  );
+  const inAppEnabled = input.bypassCategoryPreference ? true : preference.rows[0]?.in_app_enabled ?? true;
+  const pushEnabled = input.bypassCategoryPreference ? true : preference.rows[0]?.push_enabled ?? true;
+  const inserted = await executor.query<{ id: string }>(
+    `insert into notifications (
+       id, user_id, house_id, notification_type, category, title, body,
+       entity_type, entity_id, deep_link, priority, metadata,
+       deduplication_key, in_app_visible
+     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14)
+     on conflict (deduplication_key) do nothing returning id`,
+    [
+      createOpaqueId("notif"), input.userId, input.houseId ?? null, input.type,
+      input.category, input.title, input.body, input.entityType ?? null,
+      input.entityId ?? null, input.deepLink ?? null, input.priority ?? "normal",
+      JSON.stringify(input.metadata ?? {}), input.deduplicationKey, inAppEnabled
+    ]
+  );
+  const notificationId = inserted.rows[0]?.id;
+  if (!notificationId) return { created: false, notificationId: null };
+
+  if (pushEnabled) {
+    await executor.query(
+      `insert into notification_push_outbox (id, notification_id, device_id)
+       select 'nout_' || substr(md5($1 || ':' || d.id), 1, 24), $1, d.id
+       from notification_devices d where d.user_id = $2 and d.enabled
+         and ($3::text is null or d.id = $3)
+       on conflict (notification_id, device_id) do nothing`,
+      [notificationId, input.userId, input.targetDeviceId ?? null]
+    );
+  }
+  return { created: true, notificationId };
+}
+
+export async function listNotificationsForUser(
+  userId: string,
+  limit = 30,
+  cursor?: string | null,
+  houseId?: string | null
+) {
+  const boundedLimit = Math.max(1, Math.min(limit, 100));
+  let cursorValue: { createdAt: string; id: string } | null = null;
+  if (cursor) {
+    try {
+      cursorValue = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as { createdAt: string; id: string };
+      if (!cursorValue.id || Number.isNaN(new Date(cursorValue.createdAt).getTime())) throw new Error("invalid");
+    } catch { throw new ApiError(400, "notification_cursor_invalid", "Notification cursor is invalid."); }
+  }
+  const result = await pool.query(
+    `select * from notifications
+     where user_id = $1 and in_app_visible
+       and ($4::text is null or house_id = $4 or house_id is null)
+       and ($2::timestamptz is null or (created_at, id) < ($2::timestamptz, $3::text))
+       order by created_at desc, id desc limit $5`,
+    [userId, cursorValue?.createdAt ?? null, cursorValue?.id ?? null, houseId ?? null, boundedLimit + 1]
+  );
+  const hasMore = result.rows.length > boundedLimit;
+  const rows = result.rows.slice(0, boundedLimit);
+  return {
+    notifications: rows.map(toNotification),
+    nextCursor: hasMore && rows.length
+      ? Buffer.from(JSON.stringify({ createdAt: (rows.at(-1)!.created_at as Date).toISOString(), id: rows.at(-1)!.id })).toString("base64url")
+      : null
+  };
+}
+
+export async function countUnreadNotificationsForUser(userId: string, houseId?: string | null) {
+  const result = await pool.query<{ count: string }>(
+    `select count(*)::text as count from notifications
+     where user_id = $1 and in_app_visible and read_at is null
+       and ($2::text is null or house_id = $2 or house_id is null)`,
+    [userId, houseId ?? null]
+  );
+  return Number(result.rows[0]?.count ?? 0);
+}
+
+export async function markNotificationReadForUser(userId: string, notificationId: string, houseId?: string | null) {
+  const result = await pool.query(
+    `update notifications set read_at = coalesce(read_at, now())
+     where id = $1 and user_id = $2 and in_app_visible
+       and ($3::text is null or house_id = $3 or house_id is null)
+     returning *`,
+    [notificationId, userId, houseId ?? null]
+  );
+  if (!result.rows[0]) throw new ApiError(404, "notification_not_found", "Notifikationen blev ikke fundet.");
+  return toNotification(result.rows[0]);
+}
+
+export async function deleteNotificationForUser(userId: string, notificationId: string, houseId?: string | null) {
+  // Keep the row and its deduplication key, but hide it from the user's feed.
+  // A physical delete would free the key and let the scheduler recreate the
+  // same notification on its next run.
+  const result = await pool.query(
+    `update notifications
+     set in_app_visible = false, read_at = coalesce(read_at, now())
+     where id = $1 and user_id = $2 and in_app_visible
+     returning id`,
+    [notificationId, userId]
+  );
+  return { deleted: Boolean(result.rows[0]) };
+}
+
+export async function markAllNotificationsReadForUser(userId: string, houseId?: string | null) {
+  const result = await pool.query(
+    `update notifications set read_at = now()
+     where user_id = $1 and in_app_visible and read_at is null
+       and ($2::text is null or house_id = $2 or house_id is null)`,
+    [userId, houseId ?? null]
+  );
+  return { updated: result.rowCount ?? 0 };
+}
+
+export async function getNotificationPreferencesForUser(userId: string) {
+  const preferences = await pool.query<{ category: NotificationCategory; in_app_enabled: boolean; push_enabled: boolean }>(
+    `select c.category,
+            coalesce(p.in_app_enabled, true) as in_app_enabled,
+            coalesce(p.push_enabled, true) as push_enabled
+     from unnest($2::text[]) c(category)
+     left join notification_preferences p on p.user_id = $1 and p.category = c.category`,
+    [userId, notificationCategories]
+  );
+  const reminders = await pool.query<{ offset_days: number; enabled: boolean }>(
+    `select o.offset_days, coalesce(s.enabled, true) as enabled
+     from unnest(array[7,0]) o(offset_days)
+     left join notification_reminder_settings s
+       on s.user_id = $1 and s.category = 'maintenance' and s.offset_days = o.offset_days
+     order by o.offset_days desc`,
+    [userId]
+  );
+  return {
+    preferences: preferences.rows.map((row) => ({ category: row.category, inAppEnabled: row.in_app_enabled, pushEnabled: row.push_enabled })),
+    maintenanceReminderOffsets: reminders.rows.map((row) => ({ days: row.offset_days, enabled: row.enabled }))
+  };
+}
+
+export async function updateNotificationPreferencesForUser(userId: string, input: UpdateNotificationPreferencesRequest) {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    for (const preference of input.preferences ?? []) {
+      await client.query(
+        `insert into notification_preferences (user_id, category, in_app_enabled, push_enabled)
+         values ($1,$2,$3,$4)
+         on conflict (user_id, category) do update set
+           in_app_enabled = excluded.in_app_enabled,
+           push_enabled = excluded.push_enabled,
+           updated_at = now()`,
+        [userId, preference.category, preference.inAppEnabled, preference.pushEnabled]
+      );
+    }
+    for (const reminder of input.maintenanceReminderOffsets ?? []) {
+      await client.query(
+        `insert into notification_reminder_settings (user_id, category, offset_days, enabled)
+         values ($1, 'maintenance', $2, $3)
+         on conflict (user_id, category, offset_days) do update set enabled = excluded.enabled, updated_at = now()`,
+        [userId, reminder.days, reminder.enabled]
+      );
+    }
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+  return getNotificationPreferencesForUser(userId);
+}
+
+export async function registerNotificationDeviceForUser(userId: string, input: RegisterNotificationDeviceRequest) {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query(
+      `delete from notification_devices where push_token = $1 and not (user_id = $2 and device_id = $3)`,
+      [input.pushToken, userId, input.deviceId]
+    );
+    const result = await client.query(
+      `insert into notification_devices (id, user_id, device_id, platform, push_token, enabled, app_version, permission_status)
+       values ($1,$2,$3,$4,$5,true,$6,$7)
+       on conflict (user_id, device_id) do update set
+         platform = excluded.platform, push_token = excluded.push_token, enabled = true,
+         app_version = excluded.app_version, permission_status = excluded.permission_status,
+         last_seen_at = now(), updated_at = now()
+       returning id, device_id, platform, enabled, app_version, permission_status, last_seen_at`,
+      [createOpaqueId("ndev"), userId, input.deviceId, input.platform, input.pushToken, input.appVersion ?? null, input.permissionStatus ?? "unknown"]
+    );
+    await client.query("commit");
+    const row = result.rows[0];
+    return { id: row.id, deviceId: row.device_id, platform: row.platform, enabled: row.enabled, appVersion: row.app_version, permissionStatus: row.permission_status, lastSeenAt: row.last_seen_at.toISOString() };
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally { client.release(); }
+}
+
+export async function disableNotificationDeviceForUser(userId: string, deviceId: string) {
+  const result = await pool.query(
+    `update notification_devices set enabled = false, updated_at = now()
+     where user_id = $1 and device_id = $2 returning id`,
+    [userId, deviceId]
+  );
+  if (!result.rowCount) throw new ApiError(404, "notification_device_not_found", "Enheden blev ikke fundet.");
+  return { disabled: true };
+}
+
+export async function generateMaintenanceDeadlineNotifications(today = new Date()) {
+  const schedulerTimeZone = process.env.MATRIVA_NOTIFICATION_TIME_ZONE ?? "Europe/Copenhagen";
+  const date = new Intl.DateTimeFormat("en-CA", {
+    timeZone: schedulerTimeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(today);
+  const result = await pool.query<{
+    task_id: string; house_id: string; user_id: string; title: string; due_date: string; address_label: string;
+  }>(
+    `select t.id as task_id, t.house_id, hm.user_id, t.title, t.due_date::text, h.address_label
+     from maintenance_tasks t
+     join houses h on h.id = t.house_id and h.status = 'saved'
+     join house_memberships hm on hm.house_id = t.house_id and hm.status = 'active'
+     where t.status <> 'done' and t.deleted_at is null and t.archived_at is null
+       and t.due_date is not null and t.due_date <= $1::date + 7`,
+    [date]
+  );
+  let created = 0;
+  for (const row of result.rows) {
+    const days = Math.round((Date.parse(`${row.due_date}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) / 86_400_000);
+    if (days === 7 || days === 0) {
+      const reminder = await pool.query<{ enabled: boolean }>(
+        `select enabled from notification_reminder_settings
+         where user_id = $1 and category = 'maintenance' and offset_days = $2`,
+        [row.user_id, days]
+      );
+      if (reminder.rows[0]?.enabled === false) continue;
+    } else if (days > 0) continue;
+    const type = maintenanceDeadlineNotificationType(days);
+    if (!type) continue;
+    const title = days === 7 ? "Opgave om 7 dage" : days === 0 ? "Opgave i dag" : "Opgave er overskredet";
+    const outcome = await createUserNotification(pool, {
+      userId: row.user_id, houseId: row.house_id, type, category: "maintenance",
+      title, body: `${row.title} · ${row.address_label}`,
+      entityType: "maintenance_task", entityId: row.task_id,
+      deepLink: notificationDeepLink(type, row.house_id, row.task_id),
+      priority: days <= 0 ? "high" : "normal",
+      deduplicationKey: notificationDeduplicationKey(type, row.task_id, row.user_id, row.due_date)
+    });
+    if (outcome.created) created += 1;
+  }
+  console.info(JSON.stringify({ event: "notification_scheduler_complete", date, candidates: result.rows.length, created }));
+  return { candidates: result.rows.length, created };
 }
 
 export async function buildAppBootstrap(userId: string): Promise<AppBootstrapResponse> {

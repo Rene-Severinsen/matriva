@@ -11,6 +11,7 @@ import { DashboardPage } from "./pages/DashboardPage.js";
 import { EntitlementsPage } from "./pages/EntitlementsPage.js";
 import { GuidesPage } from "./pages/GuidesPage.js";
 import { TaskClustersPage } from "./pages/TaskClustersPage.js";
+import { NotificationTestCenterPage } from "./pages/NotificationTestCenterPage.js";
 import { Icon, type IconName } from "./components/Icon.js";
 import {
   adminEnvironmentOptions,
@@ -30,7 +31,7 @@ type AuthState =
   | { status: "unauthorized"; message: string }
   | { status: "error"; message: string };
 
-type ViewKey = "dashboard" | "users" | "houses" | "claims" | "recommendations" | "task-clusters" | "guides" | "settings";
+type ViewKey = "dashboard" | "users" | "houses" | "claims" | "recommendations" | "task-clusters" | "guides" | "notifications" | "settings";
 type DetailRoute =
   | { view: "users"; id: string }
   | { view: "houses"; id: string }
@@ -55,6 +56,7 @@ const navigation: Array<{
   },
   { key: "task-clusters", label: "Brugernes opgavetyper", icon: "activity" },
   { key: "guides", label: "Vejledninger", icon: "guides" },
+  { key: "notifications", label: "Notifications", icon: "bell" },
   { key: "settings", label: "Planer og adgang", icon: "settings" }
 ];
 
@@ -66,6 +68,7 @@ const routePaths: Record<ViewKey, string> = {
   recommendations: "/admin/recommendations",
   "task-clusters": "/admin/task-clusters",
   guides: "/admin/guides",
+  notifications: "/admin/notifications",
   settings: "/admin/settings"
 };
 
@@ -119,6 +122,10 @@ function routeFromLocation(): { view: ViewKey; detail: DetailRoute | null } {
         ? { view: "guides", id: decodeURIComponent(parts[2]) }
         : null
     };
+  }
+
+  if (parts[1] === "notifications") {
+    return { view: "notifications", detail: null };
   }
 
   if (parts[1] === "settings") {
@@ -502,6 +509,8 @@ function AdminShell({
             />
           ) : activeView === "settings" ? (
             <EntitlementsPage client={client} onAuthorizationError={onAuthorizationError} />
+          ) : activeView === "notifications" ? (
+            <NotificationTestCenterPage client={client} onAuthorizationError={onAuthorizationError} />
           ) : activeView === "task-clusters" ? (
             <TaskClustersPage client={client} onAuthorizationError={onAuthorizationError} />
           ) : (

@@ -109,6 +109,17 @@ import {
   maintenanceHistoryQuerySchema,
   reverseMaintenanceCompletionRequestSchema,
   reverseMaintenanceCompletionResponseSchema
+  ,notificationsResponseSchema
+  ,notificationSchema
+  ,notificationUnreadCountResponseSchema
+  ,notificationPreferencesResponseSchema
+  ,updateNotificationPreferencesRequestSchema
+  ,registerNotificationDeviceRequestSchema
+  ,notificationDeviceSchema
+  ,adminNotificationDevicesResponseSchema
+  ,createAdminNotificationTestRequestSchema
+  ,adminNotificationTestSchema
+  ,adminNotificationTestHistoryResponseSchema
 } from "@matriva/shared";
 
 import type { AppCompatibility } from "@matriva/shared";
@@ -130,6 +141,7 @@ import {
   updateAdminRecommendationGuide
 } from "./admin-recommendations.ts";
 import { getAdminUser, listAdminUsers } from "./admin-users.ts";
+import { createAdminNotificationTest, getAdminNotificationTest, listAdminNotificationDevices, listAdminNotificationTestHistory } from "./admin-notifications.ts";
 import { loginAdminWithPassword } from "./auth/admin-password.ts";
 import { sendMagicLinkEmail, createMagicLinkUrl, createMagicLinkEmailUrl, createHouseInvitationUrl, sendHouseInvitationEmail, createHouseClaimApprovalUrl, sendHouseClaimOwnerEmail } from "./auth/mailer.ts";
 import { getDatafordelerConfigStatus } from "./config/datafordeler.ts";
@@ -139,6 +151,7 @@ import {
   readGuideAssetWithFallback
 } from "./guide-asset-delivery.ts";
 import { DatafordelerClient, DatafordelerProviderError } from "./public-data/datafordeler-client.ts";
+import { processNotificationPushOutbox } from "./notification-push-worker.ts";
 import {
   evaluateMobileCompatibility,
   mobileAppBuildHeader,
@@ -218,6 +231,16 @@ import {
   updateMaintenanceTaskForHouse,
   updateMaintenanceTaskStatus,
   updateProfile,
+  listNotificationsForUser,
+  countUnreadNotificationsForUser,
+  markNotificationReadForUser,
+  deleteNotificationForUser,
+  markAllNotificationsReadForUser,
+  getNotificationPreferencesForUser,
+  updateNotificationPreferencesForUser,
+  registerNotificationDeviceForUser,
+  disableNotificationDeviceForUser,
+  generateMaintenanceDeadlineNotifications,
   updateMaintenanceSettings,
   updateDefaultHouse,
   updateAdminUserEntitlement,
@@ -376,6 +399,16 @@ function getBearerToken(request: IncomingMessage) {
 
 async function requireUserId(request: IncomingMessage) {
   return authenticateAccessToken(getBearerToken(request));
+}
+
+function notificationHouseId(url: URL) {
+  const rawHouseId = url.searchParams.get("houseId");
+  if (!rawHouseId) return null;
+  const parsed = houseIdSchema.safeParse(rawHouseId);
+  if (!parsed.success) {
+    throw new ApiError(400, "notification_house_id_invalid", "Notification house filter is invalid.");
+  }
+  return parsed.data;
 }
 
 function guideDraftPreviewEnabled(request: IncomingMessage) {
@@ -1158,6 +1191,56 @@ const server = createServer((request, response) => {
   const adminUserMatch = /^\/v1\/admin\/users\/([^/?]+)$/.exec(
     (request.url ?? "").split("?")[0] ?? ""
   );
+  const adminNotificationDevicesMatch = /^\/v1\/admin\/users\/([^/?]+)\/notification-devices$/.exec((request.url ?? "").split("?")[0] ?? "");
+  if (request.method === "GET" && adminNotificationDevicesMatch) {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        const result = await listAdminNotificationDevices(decodeURIComponent(adminNotificationDevicesMatch[1]!));
+        writeJson(response, 200, adminNotificationDevicesResponseSchema.parse(result));
+      } catch (error) { writeUnknownApiError(response, error); }
+    })();
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/v1/admin/notification-tests") {
+    void (async () => {
+      try {
+        const admin = await requireAdminUser(getBearerToken(request));
+        const parsed = createAdminNotificationTestRequestSchema.safeParse(await readJsonBody(request));
+        if (!parsed.success) {
+          writeApiError(response, 400, "admin_notification_test_invalid", "Testnotifikationen er ugyldig.");
+          return;
+        }
+        const result = await createAdminNotificationTest(admin.userId, parsed.data);
+        writeJson(response, 201, adminNotificationTestSchema.parse(result));
+      } catch (error) { writeUnknownApiError(response, error); }
+    })();
+    return;
+  }
+  const adminNotificationTestMatch = /^\/v1\/admin\/notification-tests\/([^/?]+)$/.exec((request.url ?? "").split("?")[0] ?? "");
+  if (request.method === "GET" && adminNotificationTestMatch && adminNotificationTestMatch[1] !== "history") {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        const result = await getAdminNotificationTest(decodeURIComponent(adminNotificationTestMatch[1]!));
+        writeJson(response, 200, adminNotificationTestSchema.parse(result));
+      } catch (error) { writeUnknownApiError(response, error); }
+    })();
+    return;
+  }
+  if (request.method === "GET" && (request.url === "/v1/admin/notification-tests/history" || request.url?.startsWith("/v1/admin/notification-tests/history?"))) {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        const url = new URL(request.url!, "http://localhost");
+        const limit = Number(url.searchParams.get("limit") ?? "20");
+        const result = await listAdminNotificationTestHistory(Number.isFinite(limit) ? limit : 20);
+        writeJson(response, 200, adminNotificationTestHistoryResponseSchema.parse(result));
+      } catch (error) { writeUnknownApiError(response, error); }
+    })();
+    return;
+  }
   if (request.method === "GET" && adminUserMatch) {
     void (async () => {
       try {
@@ -3775,6 +3858,73 @@ const server = createServer((request, response) => {
     return;
   }
 
+  if (request.method === "GET" && request.url?.startsWith("/v1/notifications?")) {
+    void (async () => {
+      try {
+        const userId = await requireUserId(request);
+        const url = new URL(request.url!, "http://localhost");
+        const limit = Number(url.searchParams.get("limit") ?? "30");
+        const body = await listNotificationsForUser(
+          userId,
+          Number.isFinite(limit) ? limit : 30,
+          url.searchParams.get("cursor"),
+          notificationHouseId(url)
+        );
+        writeJson(response, 200, notificationsResponseSchema.parse(body));
+      } catch (error) { writeUnknownApiError(response, error); }
+    })();
+    return;
+  }
+  if (request.method === "GET" && request.url === "/v1/notifications") {
+    void (async () => { try { const userId = await requireUserId(request); writeJson(response, 200, notificationsResponseSchema.parse(await listNotificationsForUser(userId))); } catch (error) { writeUnknownApiError(response, error); } })();
+    return;
+  }
+  if (request.method === "GET" && (request.url === "/v1/notifications/unread-count" || request.url?.startsWith("/v1/notifications/unread-count?"))) {
+    void (async () => { try { const userId = await requireUserId(request); const url = new URL(request.url!, "http://localhost"); writeJson(response, 200, notificationUnreadCountResponseSchema.parse({ count: await countUnreadNotificationsForUser(userId, notificationHouseId(url)) })); } catch (error) { writeUnknownApiError(response, error); } })();
+    return;
+  }
+  const notificationReadMatch = /^\/v1\/notifications\/([^/?]+)\/read(?:\?.*)?$/.exec(request.url ?? "");
+  if (request.method === "POST" && notificationReadMatch) {
+    void (async () => { try { const userId = await requireUserId(request); const url = new URL(request.url!, "http://localhost"); writeJson(response, 200, notificationSchema.parse(await markNotificationReadForUser(userId, decodeURIComponent(notificationReadMatch[1]!), notificationHouseId(url)))); } catch (error) { writeUnknownApiError(response, error); } })();
+    return;
+  }
+  const notificationDeleteMatch = /^\/v1\/notifications\/([^/?]+)(?:\?.*)?$/.exec(request.url ?? "");
+  if (request.method === "DELETE" && notificationDeleteMatch) {
+    void (async () => {
+      const notificationId = decodeURIComponent(notificationDeleteMatch[1]!);
+      try {
+        const userId = await requireUserId(request);
+        const url = new URL(request.url!, "http://localhost");
+        const result = await deleteNotificationForUser(userId, notificationId, notificationHouseId(url));
+        writeJson(response, 200, result);
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+  if (request.method === "POST" && (request.url === "/v1/notifications/read-all" || request.url?.startsWith("/v1/notifications/read-all?"))) {
+    void (async () => { try { const userId = await requireUserId(request); const url = new URL(request.url!, "http://localhost"); writeJson(response, 200, await markAllNotificationsReadForUser(userId, notificationHouseId(url))); } catch (error) { writeUnknownApiError(response, error); } })();
+    return;
+  }
+  if (request.url === "/v1/notification-preferences" && request.method === "GET") {
+    void (async () => { try { const userId = await requireUserId(request); writeJson(response, 200, notificationPreferencesResponseSchema.parse(await getNotificationPreferencesForUser(userId))); } catch (error) { writeUnknownApiError(response, error); } })();
+    return;
+  }
+  if (request.url === "/v1/notification-preferences" && request.method === "PATCH") {
+    void (async () => { try { const userId = await requireUserId(request); const parsed = updateNotificationPreferencesRequestSchema.safeParse(await readJsonBody(request)); if (!parsed.success) throw new ApiError(400, "notification_preferences_invalid", "Notification preferences are invalid."); writeJson(response, 200, notificationPreferencesResponseSchema.parse(await updateNotificationPreferencesForUser(userId, parsed.data))); } catch (error) { writeUnknownApiError(response, error); } })();
+    return;
+  }
+  if (request.url === "/v1/notification-devices" && request.method === "PUT") {
+    void (async () => { try { const userId = await requireUserId(request); const parsed = registerNotificationDeviceRequestSchema.safeParse(await readJsonBody(request)); if (!parsed.success) throw new ApiError(400, "notification_device_invalid", "Notification device is invalid."); writeJson(response, 200, notificationDeviceSchema.parse(await registerNotificationDeviceForUser(userId, parsed.data))); } catch (error) { writeUnknownApiError(response, error); } })();
+    return;
+  }
+  const notificationDeviceMatch = /^\/v1\/notification-devices\/([^/]+)$/.exec(request.url ?? "");
+  if (request.method === "DELETE" && notificationDeviceMatch) {
+    void (async () => { try { const userId = await requireUserId(request); writeJson(response, 200, await disableNotificationDeviceForUser(userId, decodeURIComponent(notificationDeviceMatch[1]!))); } catch (error) { writeUnknownApiError(response, error); } })();
+    return;
+  }
+
   writeJson(response, 404, { error: "not_found" });
 });
 
@@ -3792,6 +3942,22 @@ try {
     console.log(`Android emulator: ${urls.androidEmulator}`);
     console.log(`Physical device: ${urls.physicalDevice} when HOST=0.0.0.0`);
   });
+
+  const configuredNotificationIntervalMs = Number(process.env.MATRIVA_NOTIFICATION_INTERVAL_MS ?? 300_000);
+  const notificationIntervalMs = Number.isFinite(configuredNotificationIntervalMs)
+    ? Math.max(60_000, configuredNotificationIntervalMs)
+    : 300_000;
+  const runNotificationJobs = async () => {
+    try {
+      await generateMaintenanceDeadlineNotifications();
+      await processNotificationPushOutbox();
+    } catch (error) {
+      console.error(JSON.stringify({ event: "notification_job_failed", error: error instanceof Error ? error.message : "unknown" }));
+    }
+  };
+  void runNotificationJobs();
+  const notificationTimer = setInterval(() => void runNotificationJobs(), notificationIntervalMs);
+  notificationTimer.unref();
 } catch (error) {
   console.error("Matriva API failed to start.");
   console.error(error);

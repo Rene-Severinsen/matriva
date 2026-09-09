@@ -9,7 +9,8 @@ export type IconName =
   | "settings"
   | "logout"
   | "activity"
-  | "check";
+  | "check"
+  | "bell";
 
 export function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, ReactNode> = {
@@ -70,6 +71,12 @@ export function Icon({ name }: { name: IconName }) {
       <>
         <circle cx="12" cy="12" r="9" />
         <path d="m8 12 2.5 2.5L16 9" />
+      </>
+    ),
+    bell: (
+      <>
+        <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" />
+        <path d="M10 21h4" />
       </>
     )
   };

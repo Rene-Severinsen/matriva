@@ -43,6 +43,8 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
+import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
 import { WebView } from "react-native-webview";
 import { createMatrivaApiClient, MatrivaApiError } from "@matriva/api-client";
 import {
@@ -86,16 +88,23 @@ import {
   type TaskId,
   type UserProfile,
   type GuideResponse
+  ,type Notification as MatrivaNotification
+  ,type NotificationPreferencesResponse
+  ,type NotificationCategory
 } from "@matriva/shared";
 import { LEGACY_COMPOSITE_COMPONENT_KEY, guideSectionLabel, guideSectionTitle, houseDocumentCategoryForType, presentGuideSection } from "@matriva/shared";
 
 import { matrivaApiConfig } from "./config/api";
 import { formatAppVersionLabel } from "./config/appIdentity";
 import { clearStoredSession, readStoredSession, writeStoredSession } from "./auth/sessionStorage";
+import { getNotificationDeviceId, getOrCreateNotificationDeviceId } from "./storage/notificationDeviceStorage";
+import { NotificationSwipeableRow } from "./components/NotificationSwipeableRow";
 import { SwipeActionRow } from "./components/SwipeActionRow";
 import {
   markMaintenanceSwipeHintSeen,
-  readMaintenanceSwipeHintSeen
+  readMaintenanceSwipeHintSeen,
+  markNotificationSwipeHintSeen,
+  readNotificationSwipeHintSeen
 } from "./storage/uiPreferencesStorage";
 
 type TabKey = "dashboard" | "house" | "maintenance" | "documents" | "more";
@@ -105,6 +114,15 @@ type MaintenanceView = "main" | "history" | "historyDetail" | "taskDetail" | "ca
 type AuthStatus = "restoring" | "anonymous" | "authenticated";
 type AppCompatibilityState = "unknown" | "supported" | "upgrade_required";
 type MoreView = "menu" | "profile" | "settings" | "sharing" | "subscription" | "guides" | "about";
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true
+  })
+});
 type HouseView = "overview" | "details" | "improvements" | "improvementDetail" | "addImprovement";
 type GuideReturnLocation = "maintenance" | "more";
 type UnauthenticatedStep = "welcome" | "create" | "login";
@@ -5047,7 +5065,14 @@ function SettingsScreen({
   isSaving,
   onBack,
   onChange,
-  onDefaultHouseChange
+  onDefaultHouseChange,
+  notificationPreferences,
+  pushPermissionDenied,
+  pushPermissionGranted,
+  onNotificationPreferenceChange,
+  onReminderChange,
+  onEnablePush,
+  onOpenSystemSettings
 }: {
   houses: SavedHouse[];
   defaultHouseId: HouseId | null;
@@ -5056,7 +5081,20 @@ function SettingsScreen({
   onBack: () => void;
   onChange: (value: boolean) => void;
   onDefaultHouseChange: (houseId: HouseId | null) => void;
+  notificationPreferences: NotificationPreferencesResponse | null;
+  pushPermissionDenied: boolean;
+  pushPermissionGranted: boolean;
+  onNotificationPreferenceChange: (category: NotificationCategory, channel: "inAppEnabled" | "pushEnabled", value: boolean) => void;
+  onReminderChange: (days: 0 | 7, value: boolean) => void;
+  onEnablePush: (category: NotificationCategory) => void;
+  onOpenSystemSettings: () => void;
 }) {
+  const categoryLabels: Record<NotificationCategory, string> = {
+    maintenance: "Vedligeholdelse",
+    documents: "Dokumenter",
+    house_access: "Bolig og adgang",
+    system: "System"
+  };
   return (
     <View style={styles.stack}>
       <View style={styles.screenTitleRow}>
@@ -5086,8 +5124,128 @@ function SettingsScreen({
           />
         </View>
       </Card>
+      <Card>
+        <Text style={styles.cardTitle}>Notifikationer</Text>
+        <Text style={styles.compactBodyText}>Vælg hvilke beskeder du vil se i Matriva og modtage på telefonen.</Text>
+        {notificationPreferences?.preferences.map((preference) => (
+          <View key={preference.category} style={styles.notificationPreferenceGroup}>
+            <Text style={styles.menuText}>{categoryLabels[preference.category]}</Text>
+            <View style={styles.settingsRow}><Text style={styles.compactBodyText}>In-app</Text><Switch value={preference.inAppEnabled} onValueChange={(value) => onNotificationPreferenceChange(preference.category, "inAppEnabled", value)} trackColor={{ false: theme.border, true: theme.primarySoft }} thumbColor={preference.inAppEnabled ? theme.primary : theme.muted} /></View>
+            <View style={styles.settingsRow}><Text style={styles.compactBodyText}>Push</Text><Switch value={preference.pushEnabled} onValueChange={(value) => value ? onEnablePush(preference.category) : onNotificationPreferenceChange(preference.category, "pushEnabled", false)} trackColor={{ false: theme.border, true: theme.primarySoft }} thumbColor={preference.pushEnabled ? theme.primary : theme.muted} /></View>
+          </View>
+        ))}
+        <Text style={styles.menuText}>Påmindelser om vedligeholdelse</Text>
+        {notificationPreferences?.maintenanceReminderOffsets.map((reminder) => (
+          <View key={reminder.days} style={styles.settingsRow}><Text style={styles.compactBodyText}>{reminder.days === 7 ? "7 dage før" : "På dagen"}</Text><Switch value={reminder.enabled} onValueChange={(value) => onReminderChange(reminder.days as 0 | 7, value)} trackColor={{ false: theme.border, true: theme.primarySoft }} thumbColor={reminder.enabled ? theme.primary : theme.muted} /></View>
+        ))}
+        {!pushPermissionGranted && !pushPermissionDenied ? <SecondaryButton compact label="Aktivér push på denne telefon" onPress={() => onEnablePush("maintenance")} /> : null}
+        {pushPermissionDenied ? <><Text style={styles.warningText}>Push-notifikationer er slået fra på denne telefon.</Text><SecondaryButton compact label="Åbn telefonens indstillinger" onPress={onOpenSystemSettings} /></> : null}
+      </Card>
     </View>
   );
+}
+
+function NotificationCenterModal({ visible, notifications, loading, onClose, onOpen, onDelete, onReadAll, swipeHintSeen, onDismissSwipeHint }: {
+  visible: boolean;
+  notifications: MatrivaNotification[];
+  loading: boolean;
+  onClose: () => void;
+  onOpen: (notification: MatrivaNotification) => void;
+  onDelete: (notification: MatrivaNotification) => void;
+  onReadAll: () => void;
+  swipeHintSeen: boolean | null;
+  onDismissSwipeHint: () => void;
+}) {
+  const [openRowId, setOpenRowId] = useState<string | null>(null);
+  const suppressNextOpenRef = useRef<{ id: string; expiresAt: number } | null>(null);
+
+  useEffect(() => {
+    if (!visible) setOpenRowId(null);
+  }, [visible]);
+
+  function suppressNextOpen(notification: MatrivaNotification) {
+    suppressNextOpenRef.current = {
+      id: notification.id,
+      expiresAt: Date.now() + 1_500
+    };
+  }
+
+  function openNotification(notification: MatrivaNotification) {
+    const pending = suppressNextOpenRef.current;
+    if (pending) {
+      if (pending.id === notification.id && pending.expiresAt > Date.now()) {
+        suppressNextOpenRef.current = null;
+        return;
+      }
+      if (pending.expiresAt <= Date.now()) suppressNextOpenRef.current = null;
+    }
+    onOpen(notification);
+  }
+
+  function deleteImmediately(notification: MatrivaNotification) {
+    suppressNextOpen(notification);
+    onDismissSwipeHint();
+    onDelete(notification);
+  }
+
+  function confirmDelete(notification: MatrivaNotification) {
+    suppressNextOpen(notification);
+    Alert.alert(
+      "Slet notifikation?",
+      notification.title,
+      [
+        {
+          text: "Annuller",
+          style: "cancel",
+          onPress: () => {
+            if (suppressNextOpenRef.current?.id === notification.id) {
+              suppressNextOpenRef.current = null;
+            }
+          }
+        },
+        {
+          text: "Slet",
+          style: "destructive",
+          onPress: () => deleteImmediately(notification)
+        }
+      ],
+      {
+        cancelable: true,
+        onDismiss: () => {
+          if (suppressNextOpenRef.current?.id === notification.id) {
+            suppressNextOpenRef.current = null;
+          }
+        }
+      }
+    );
+  }
+
+  return <Modal animationType="slide" visible={visible} onRequestClose={onClose}>
+    <SafeAreaView style={styles.screen}>
+      <View style={styles.notificationCenterHeader}><Text style={styles.sectionTitle}>Notifikationer</Text><Pressable accessibilityRole="button" onPress={onClose}><Text style={styles.cancelText}>Luk</Text></Pressable></View>
+      <ScrollView contentContainerStyle={styles.content}>
+        {swipeHintSeen === false ? <Pressable accessibilityRole="button" onPress={onDismissSwipeHint} style={styles.notificationSwipeHint}>
+          <Text style={styles.notificationSwipeHintIcon}>←</Text>
+          <Text style={styles.notificationSwipeHintText}>Stryg en notifikation mod venstre for at slette den · langt tryk virker også</Text>
+          <Text style={styles.notificationSwipeHintClose}>×</Text>
+        </Pressable> : null}
+        {notifications.some((item) => item.readAt === null) ? <SecondaryButton compact label="Markér alle som læst" onPress={onReadAll} /> : null}
+        {loading ? <ActivityIndicator color={theme.primary} /> : notifications.length === 0 ? <Card><Text style={styles.compactBodyText}>Du har ingen notifikationer endnu.</Text></Card> : notifications.map((item) => <NotificationSwipeableRow
+          key={item.id}
+          onOpened={(rowId) => { setOpenRowId(rowId); onDismissSwipeHint(); }}
+          onDelete={() => deleteImmediately(item)}
+          openRowId={openRowId}
+          rowId={`notification:${item.id}`}
+        >
+          <Pressable accessibilityRole="button" onLongPress={() => confirmDelete(item)} delayLongPress={600} onPress={() => openNotification(item)} style={[styles.notificationCard, item.readAt === null ? styles.notificationCardUnread : null]}>
+            <View style={styles.notificationTitleRow}><Text style={styles.menuText}>{item.title}</Text>{item.readAt === null ? <View style={styles.unreadDot} /> : null}</View>
+            <Text style={styles.compactBodyText}>{item.body}</Text>
+            <Text style={styles.menuMeta}>{new Date(item.createdAt).toLocaleString("da-DK")}</Text>
+          </Pressable>
+          </NotificationSwipeableRow>)}
+      </ScrollView>
+    </SafeAreaView>
+  </Modal>;
 }
 
 function ProfileScreen({
@@ -5157,6 +5315,9 @@ export default function App() {
   const consumedMagicLinkTokensRef = useRef<Set<string>>(new Set());
   const pendingHouseInvitationTokenRef = useRef<string | null>(null);
   const pendingOwnerClaimApprovalTokenRef = useRef<string | null>(null);
+  const pendingNotificationDeepLinkRef = useRef<string | null>(null);
+  const notificationDeviceIdRef = useRef<string | null>(null);
+  const pushRegistrationAttemptedRef = useRef(false);
   const isConsumingMagicLinkRef = useRef(false);
   const apiClient = useMemo(
     () =>
@@ -5217,6 +5378,7 @@ export default function App() {
   const [maintenanceCatalog, setMaintenanceCatalog] = useState<MaintenanceCatalogItem[]>([]);
   const [houseFacts, setHouseFacts] = useState<HouseFactsResponse | null>(null);
   const [maintenanceSwipeHintSeen, setMaintenanceSwipeHintSeen] = useState<boolean | null>(null);
+  const [notificationSwipeHintSeen, setNotificationSwipeHintSeen] = useState<boolean | null>(null);
   const [houseDocuments, setHouseDocuments] = useState<HouseDocument[]>([]);
   const [documentPreview, setDocumentPreview] = useState<{
     uri: string;
@@ -5258,6 +5420,14 @@ export default function App() {
   const [pendingHouseInvitations, setPendingHouseInvitations] = useState<AppBootstrapResponse["pendingHouseInvitations"]>([]);
   const [deferredOwnerClaimIds, setDeferredOwnerClaimIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<MatrivaNotification[]>([]);
+  const deletingNotificationIdsRef = useRef<Set<string>>(new Set());
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferencesResponse | null>(null);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
+  const [notificationCenterVisible, setNotificationCenterVisible] = useState(false);
+  const [notificationLoading, setNotificationLoading] = useState(false);
+  const [pushPermissionDenied, setPushPermissionDenied] = useState(false);
+  const [pushPermissionGranted, setPushPermissionGranted] = useState(false);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [showDeadlinePicker, setShowDeadlinePicker] = useState(false);
   const [completingTaskId, setCompletingTaskId] = useState<TaskId | null>(null);
@@ -5300,9 +5470,10 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
 
-    void readMaintenanceSwipeHintSeen().then((seen) => {
+    void Promise.all([readMaintenanceSwipeHintSeen(), readNotificationSwipeHintSeen()]).then(([maintenanceSeen, notificationSeen]) => {
       if (isMounted) {
-        setMaintenanceSwipeHintSeen(seen);
+        setMaintenanceSwipeHintSeen(maintenanceSeen);
+        setNotificationSwipeHintSeen(notificationSeen);
       }
     });
 
@@ -5314,6 +5485,11 @@ export default function App() {
   function dismissMaintenanceSwipeHint() {
     setMaintenanceSwipeHintSeen(true);
     void markMaintenanceSwipeHintSeen();
+  }
+
+  function dismissNotificationSwipeHint() {
+    setNotificationSwipeHintSeen(true);
+    void markNotificationSwipeHintSeen();
   }
 
   const selectedHouse = houses.find((house) => house.id === selectedHouseId) ?? houses[0] ?? null;
@@ -5432,6 +5608,7 @@ export default function App() {
     isConsumingMagicLinkRef.current = false;
     consumedMagicLinkTokensRef.current.clear();
     pendingOwnerClaimApprovalTokenRef.current = null;
+    pushRegistrationAttemptedRef.current = false;
     setSession(null);
     setBootstrap(null);
     setAppCompatibilityState("unknown");
@@ -5475,6 +5652,10 @@ export default function App() {
     setPendingClaimNotice(null);
     setOwnerPendingClaims([]);
     setPendingHouseInvitations([]);
+    setNotifications([]);
+    setNotificationPreferences(null);
+    setNotificationUnreadCount(0);
+    setNotificationCenterVisible(false);
     setDeferredOwnerClaimIds(new Set());
     setError(null);
     setShowTaskForm(false);
@@ -5561,6 +5742,73 @@ export default function App() {
     await writeStoredSession(tokens);
   }
 
+  const loadNotificationState = useCallback(async (houseId: HouseId | null = selectedHouseId) => {
+    if (!accessTokenRef.current) return;
+    const [feed, unread, preferences, permissions] = await Promise.all([
+      apiClient.listNotifications({ limit: 50, houseId }),
+      apiClient.getNotificationUnreadCount(houseId),
+      apiClient.getNotificationPreferences(),
+      Notifications.getPermissionsAsync()
+    ]);
+    setNotifications(feed.notifications);
+    setNotificationUnreadCount(unread.count);
+    setNotificationPreferences(preferences);
+    setPushPermissionDenied(permissions.status === Notifications.PermissionStatus.DENIED);
+    setPushPermissionGranted(permissions.status === Notifications.PermissionStatus.GRANTED);
+    await Notifications.setBadgeCountAsync(unread.count).catch(() => false);
+  }, [apiClient, selectedHouseId]);
+
+  const registerPushDevice = useCallback(async () => {
+    if (Platform.OS !== "ios" && Platform.OS !== "android") return false;
+    if (Platform.OS === "android") {
+      await Notifications.setNotificationChannelAsync("default", {
+        name: "Matriva",
+        importance: Notifications.AndroidImportance.DEFAULT,
+        sound: "default"
+      });
+    }
+    let permission = await Notifications.getPermissionsAsync();
+    if (permission.status !== Notifications.PermissionStatus.GRANTED) permission = await Notifications.requestPermissionsAsync();
+    setPushPermissionDenied(permission.status === Notifications.PermissionStatus.DENIED);
+    setPushPermissionGranted(permission.status === Notifications.PermissionStatus.GRANTED);
+    if (permission.status !== Notifications.PermissionStatus.GRANTED) return false;
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+    if (!projectId) throw new Error("Expo project ID mangler i app-konfigurationen.");
+    const token = await Notifications.getExpoPushTokenAsync({ projectId });
+    const deviceId = notificationDeviceIdRef.current ?? await getOrCreateNotificationDeviceId();
+    notificationDeviceIdRef.current = deviceId;
+    await apiClient.registerNotificationDevice({
+      deviceId,
+      platform: Platform.OS as "ios" | "android",
+      pushToken: token.data,
+      appVersion: Constants.expoConfig?.version ?? null,
+      permissionStatus: permission.status === Notifications.PermissionStatus.GRANTED ? "granted" : permission.status === Notifications.PermissionStatus.DENIED ? "denied" : "unknown"
+    });
+    return true;
+  }, [apiClient]);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated" || !pushPermissionGranted || pushRegistrationAttemptedRef.current) return;
+    if (!notificationPreferences?.preferences.some((preference) => preference.pushEnabled)) return;
+    pushRegistrationAttemptedRef.current = true;
+    void registerPushDevice().catch(() => { pushRegistrationAttemptedRef.current = false; });
+  }, [authStatus, notificationPreferences, pushPermissionGranted, registerPushDevice]);
+
+  const explainAndEnablePush = useCallback((category: NotificationCategory) => {
+    Alert.alert(
+      "Få relevante påmindelser",
+      "Få besked, når dine vedligeholdelsesopgaver nærmer sig.",
+      [
+        { text: "Ikke nu", style: "cancel" },
+        { text: "Fortsæt", onPress: () => void registerPushDevice().then((enabled) => {
+          if (!enabled) return;
+          const next = notificationPreferences?.preferences.map((preference) => preference.category === category ? { ...preference, pushEnabled: true } : preference) ?? [];
+          return apiClient.updateNotificationPreferences({ preferences: next }).then(setNotificationPreferences);
+        }).catch((caughtError) => setError(userFacingError(caughtError))) }
+      ]
+    );
+  }, [apiClient, notificationPreferences, registerPushDevice]);
+
   const loadApp = useCallback(async (options?: { showGlobalLoading?: boolean }) => {
     if (options?.showGlobalLoading !== false) {
       setLoadingAction("app");
@@ -5602,6 +5850,7 @@ export default function App() {
         (bootstrapResponse.houses.length === 1 ? bootstrapResponse.houses[0] : null);
       setSelectedHouseId(nextHouse?.id ?? null);
       setShowHouseSelectionModal(bootstrapResponse.houses.length > 1 && !nextHouse);
+      await loadNotificationState(nextHouse?.id ?? null);
 
       if (bootstrapResponse.onboarding.state === "complete" && nextHouse) {
         await Promise.all([
@@ -5646,7 +5895,7 @@ export default function App() {
         setLoadingAction(null);
       }
     }
-  }, [apiClient, loadHouseDocuments, loadHouseImprovements, loadHousePhoto, loadMaintenanceV1, selectedHouseId]);
+  }, [apiClient, loadHouseDocuments, loadHouseImprovements, loadHousePhoto, loadMaintenanceV1, loadNotificationState, selectedHouseId]);
 
   useEffect(() => {
     if (!selectedHouse || authStatus !== "authenticated") {
@@ -5686,6 +5935,52 @@ export default function App() {
       try {
         parsedUrl = new URL(url);
       } catch {
+        return;
+      }
+
+      const notificationPath = `${parsedUrl.hostname}${parsedUrl.pathname}`;
+      const taskLink = /^houses\/([^/]+)\/maintenance\/tasks\/([^/]+)$/.exec(notificationPath);
+      const recommendationLink = /^houses\/([^/]+)\/maintenance\/recommendations\/([^/]+)$/.exec(notificationPath);
+      if (taskLink) {
+        const targetHouseId = taskLink[1] as HouseId;
+        if (authStatus === "authenticated") await loadMaintenanceV1(targetHouseId).catch(() => undefined);
+        setSelectedHouseId(targetHouseId);
+        setSelectedTaskId(taskLink[2] as TaskId);
+        setActiveTab("maintenance");
+        setMaintenanceView("taskDetail");
+        setNotificationCenterVisible(false);
+        return;
+      }
+      if (recommendationLink) {
+        const targetHouseId = recommendationLink[1] as HouseId;
+        let recommendation = maintenanceRecommendations.find((item) => item.id === recommendationLink[2]);
+        if (authStatus === "authenticated") {
+          const response = await apiClient.listMaintenanceRecommendations(targetHouseId, "pending").catch(() => null);
+          if (response) {
+            setMaintenanceRecommendations(response.recommendations);
+            recommendation = response.recommendations.find((item) => item.id === recommendationLink[2]);
+          }
+          await loadMaintenanceV1(targetHouseId).catch(() => undefined);
+        }
+        setSelectedHouseId(targetHouseId);
+        setSelectedRecommendation(recommendation ?? null);
+        setActiveTab("maintenance");
+        setMaintenanceView("recommendationDetail");
+        setNotificationCenterVisible(false);
+        return;
+      }
+      if (notificationPath.includes("/access") || parsedUrl.hostname === "house-invitations" || notificationPath === "more/sharing") {
+        setActiveTab("more");
+        setMoreView("sharing");
+        setNotificationCenterVisible(false);
+        return;
+      }
+      const houseLink = /^houses\/([^/]+)$/.exec(notificationPath);
+      if (houseLink) {
+        setSelectedHouseId(houseLink[1] as HouseId);
+        setActiveTab("house");
+        setHouseView("overview");
+        setNotificationCenterVisible(false);
         return;
       }
 
@@ -5786,7 +6081,7 @@ export default function App() {
         setLoadingAction(null);
       }
     },
-    [apiClient, authStatus, loadApp]
+    [apiClient, authStatus, loadApp, loadMaintenanceV1, maintenanceRecommendations]
   );
 
   useEffect(() => {
@@ -5826,6 +6121,29 @@ export default function App() {
 
     return () => subscription.remove();
   }, [consumeMagicLinkUrl]);
+
+  useEffect(() => {
+    const received = Notifications.addNotificationReceivedListener(() => void loadNotificationState().catch(() => undefined));
+    const openResponse = (response: Notifications.NotificationResponse | null) => {
+      const deepLink = response?.notification.request.content.data?.deepLink;
+      if (typeof deepLink !== "string") return;
+      if (authStatus !== "authenticated") {
+        pendingNotificationDeepLinkRef.current = deepLink;
+        return;
+      }
+      void consumeMagicLinkUrl(deepLink);
+    };
+    const responded = Notifications.addNotificationResponseReceivedListener(openResponse);
+    void Notifications.getLastNotificationResponseAsync().then(openResponse);
+    return () => { received.remove(); responded.remove(); };
+  }, [authStatus, consumeMagicLinkUrl, loadNotificationState]);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated" || !pendingNotificationDeepLinkRef.current) return;
+    const deepLink = pendingNotificationDeepLinkRef.current;
+    pendingNotificationDeepLinkRef.current = null;
+    void consumeMagicLinkUrl(deepLink);
+  }, [authStatus, consumeMagicLinkUrl]);
 
   useEffect(() => {
     const token = pendingHouseInvitationTokenRef.current;
@@ -5999,11 +6317,70 @@ export default function App() {
     }
   }
 
+  async function changeNotificationPreference(category: NotificationCategory, channel: "inAppEnabled" | "pushEnabled", value: boolean) {
+    if (!notificationPreferences) return;
+    const preferences = notificationPreferences.preferences.map((preference) => preference.category === category ? { ...preference, [channel]: value } : preference);
+    setNotificationPreferences({ ...notificationPreferences, preferences });
+    try {
+      setNotificationPreferences(await apiClient.updateNotificationPreferences({ preferences }));
+    } catch (caughtError) {
+      setError(userFacingError(caughtError));
+      await loadNotificationState().catch(() => undefined);
+    }
+  }
+
+  async function changeMaintenanceReminder(days: 0 | 7, enabled: boolean) {
+    if (!notificationPreferences) return;
+    const maintenanceReminderOffsets = notificationPreferences.maintenanceReminderOffsets.map((reminder) => reminder.days === days ? { ...reminder, enabled } : reminder);
+    setNotificationPreferences({ ...notificationPreferences, maintenanceReminderOffsets });
+    try {
+      setNotificationPreferences(await apiClient.updateNotificationPreferences({ maintenanceReminderOffsets: [{ days, enabled }] }));
+    } catch (caughtError) {
+      setError(userFacingError(caughtError));
+      await loadNotificationState().catch(() => undefined);
+    }
+  }
+
+  function deleteNotification(notification: MatrivaNotification) {
+    if (deletingNotificationIdsRef.current.has(notification.id)) return;
+    deletingNotificationIdsRef.current.add(notification.id);
+    // Remove immediately so the native swipe interaction completes visually
+    // even while the network request is in flight. The server remains the
+    // source of truth and the feed is refreshed on an actual transport error.
+    setNotifications((current) => current.filter((item) => item.id !== notification.id));
+    if (notification.readAt === null) {
+      setNotificationUnreadCount((current) => Math.max(0, current - 1));
+    }
+    void apiClient.deleteNotification(notification.id, selectedHouseId)
+      .then((result) => {
+        if (result.deleted) return;
+        setError("Notifikationen blev ikke ændret på serveren. Prøv igen.");
+        void loadNotificationState(selectedHouseId).catch(() => undefined);
+      })
+      .catch((caughtError) => {
+        // A second gesture or an already-cleaned notification is safe to
+        // treat as an idempotent delete. Refresh the scoped feed/count so the
+        // UI cannot surface a stale "not found" error to the user.
+        if (caughtError instanceof MatrivaApiError && caughtError.code === "notification_not_found") {
+          setNotifications((current) => current.filter((item) => item.id !== notification.id));
+          void loadNotificationState(selectedHouseId).catch(() => undefined);
+          return;
+        }
+        void loadNotificationState(selectedHouseId).catch(() => undefined);
+        setError(userFacingError(caughtError));
+      })
+      .finally(() => {
+        deletingNotificationIdsRef.current.delete(notification.id);
+      });
+  }
+
   async function logout() {
     setLoadingAction("logout");
     setError(null);
 
     try {
+      const notificationDeviceId = notificationDeviceIdRef.current ?? await getNotificationDeviceId();
+      if (notificationDeviceId) await apiClient.disableNotificationDevice(notificationDeviceId).catch(() => undefined);
       if (session) {
         await apiClient.logout({ refreshToken: session.refreshToken });
       }
@@ -6011,6 +6388,7 @@ export default function App() {
       // Local credentials are still removed so a user can leave the device safely if the API is unavailable.
     } finally {
       await clearStoredSession();
+      pendingNotificationDeepLinkRef.current = null;
       resetUnauthenticatedFlowState();
       setAuthStatus("anonymous");
     }
@@ -6237,6 +6615,7 @@ export default function App() {
     setLoadingAction("house");
     void Promise.all([
       loadMaintenanceV1(nextHouse.id),
+      loadNotificationState(nextHouse.id),
       loadHouseImprovements(nextHouse.id),
       loadHousePhoto(nextHouse.id),
       loadHouseDocuments(nextHouse.id)
@@ -6251,7 +6630,7 @@ export default function App() {
     setPublicDataProfile(null);
     if (useAsDefault) void updateDefaultHouse(nextHouse.id);
     setLoadingAction("house");
-    void Promise.all([loadMaintenanceV1(nextHouse.id), loadHouseImprovements(nextHouse.id), loadHousePhoto(nextHouse.id), loadHouseDocuments(nextHouse.id)])
+    void Promise.all([loadMaintenanceV1(nextHouse.id), loadNotificationState(nextHouse.id), loadHouseImprovements(nextHouse.id), loadHousePhoto(nextHouse.id), loadHouseDocuments(nextHouse.id)])
       .catch((caughtError) => setError(userFacingError(caughtError)))
       .finally(() => setLoadingAction(null));
   }
@@ -7511,6 +7890,13 @@ export default function App() {
           onChange={(value) => void updateCompletionNotePrompt(value)}
           onDefaultHouseChange={(houseId) => void updateDefaultHouse(houseId)}
           promptForCompletionNote={bootstrap?.profile.promptForCompletionNote ?? true}
+          notificationPreferences={notificationPreferences}
+          pushPermissionDenied={pushPermissionDenied}
+          pushPermissionGranted={pushPermissionGranted}
+          onNotificationPreferenceChange={(category, channel, value) => void changeNotificationPreference(category, channel, value)}
+          onReminderChange={(days, value) => void changeMaintenanceReminder(days, value)}
+          onEnablePush={explainAndEnablePush}
+          onOpenSystemSettings={() => void Linking.openSettings()}
         />
       );
     }
@@ -7711,6 +8097,13 @@ export default function App() {
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
       <View style={styles.appFrame}>
+        <View style={styles.globalHeader}>
+          <View />
+          <Pressable accessibilityRole="button" accessibilityLabel="Åbn notifikationer" onPress={() => { setNotificationCenterVisible(true); setNotificationLoading(true); void loadNotificationState(selectedHouseId).finally(() => setNotificationLoading(false)); }} style={styles.notificationBell}>
+            <MaterialCommunityIcons name="bell-outline" color={theme.primary} size={25} />
+            {notificationUnreadCount > 0 ? <View style={styles.notificationBadge}><Text style={styles.notificationBadgeText}>{notificationUnreadCount > 99 ? "99+" : notificationUnreadCount}</Text></View> : null}
+          </Pressable>
+        </View>
         {activeTab === "documents" ? null : <NumericKeyboardAccessory />}
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -7774,6 +8167,30 @@ export default function App() {
             ) : null}
           </SafeAreaView>
         </Modal>
+        <NotificationCenterModal
+          visible={notificationCenterVisible}
+          notifications={notifications}
+          loading={notificationLoading}
+          onClose={() => setNotificationCenterVisible(false)}
+          onDelete={deleteNotification}
+          onOpen={(notification) => {
+            if (notification.readAt === null) {
+              void apiClient.markNotificationRead(notification.id, selectedHouseId).then((updated) => {
+                setNotifications((current) => current.map((item) => item.id === updated.id ? updated : item));
+                setNotificationUnreadCount((current) => Math.max(0, current - 1));
+              }).catch(() => undefined);
+            }
+            if (notification.deepLink) void consumeMagicLinkUrl(notification.deepLink);
+          }}
+          onReadAll={() => void apiClient.markAllNotificationsRead(selectedHouseId).then(() => {
+            const readAt = new Date().toISOString();
+            setNotifications((current) => current.map((item) => item.readAt ? item : { ...item, readAt }));
+            setNotificationUnreadCount(0);
+            return Notifications.setBadgeCountAsync(0);
+          }).catch((caughtError) => setError(userFacingError(caughtError)))}
+          swipeHintSeen={notificationSwipeHintSeen}
+          onDismissSwipeHint={dismissNotificationSwipeHint}
+        />
         <OwnerClaimModal
           claims={ownerPendingClaims.filter((claim) => !deferredOwnerClaimIds.has(claim.id))}
           onResolve={resolveOwnerClaim}
@@ -7831,6 +8248,40 @@ const styles = StyleSheet.create({
   appFrame: {
     flex: 1
   },
+  globalHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 42,
+    paddingHorizontal: 18
+  },
+  notificationBell: {
+    alignItems: "center",
+    height: 40,
+    justifyContent: "center",
+    width: 44
+  },
+  notificationBadge: {
+    alignItems: "center",
+    backgroundColor: theme.warning,
+    borderRadius: 9,
+    minWidth: 18,
+    paddingHorizontal: 4,
+    position: "absolute",
+    right: 1,
+    top: 1
+  },
+  notificationBadgeText: { color: theme.surface, fontSize: 10, fontWeight: "900" },
+  notificationCenterHeader: { alignItems: "center", borderBottomColor: theme.border, borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", padding: 18 },
+  notificationSwipeHint: { alignItems: "center", backgroundColor: theme.primaryFaint, borderColor: theme.primarySoft, borderRadius: 12, borderWidth: 1, flexDirection: "row", gap: 8, paddingHorizontal: 12, paddingVertical: 10 },
+  notificationSwipeHintIcon: { color: theme.primary, fontSize: 24, fontWeight: "800" },
+  notificationSwipeHintText: { color: theme.text, flex: 1, fontSize: 13, fontWeight: "600", lineHeight: 18 },
+  notificationSwipeHintClose: { color: theme.muted, fontSize: 20, paddingHorizontal: 4 },
+  notificationCard: { backgroundColor: theme.surface, borderColor: theme.border, borderRadius: 14, borderWidth: 1, padding: 14, rowGap: 6 },
+  notificationCardUnread: { backgroundColor: theme.primaryFaint, borderColor: theme.primarySoft },
+  notificationTitleRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  unreadDot: { backgroundColor: theme.primary, borderRadius: 5, height: 10, width: 10 },
+  notificationPreferenceGroup: { borderBottomColor: theme.border, borderBottomWidth: 1, paddingVertical: 10, rowGap: 6 },
   keyboardFrame: {
     flex: 1
   },

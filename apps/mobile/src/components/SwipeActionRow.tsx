@@ -23,6 +23,7 @@ type SwipeActionRowProps = {
   rowId: string;
   swipeRightAction: SwipeAction;
   swipeLeftActions: SwipeAction[];
+  onFullSwipeLeft?: () => void;
   onLongSwipeRight?: () => void;
   onLongSwipeLeft?: () => void;
   openRowId: string | null;
@@ -33,7 +34,8 @@ type SwipeActionRowProps = {
 
 const HORIZONTAL_ACTIVATION_DISTANCE = 10;
 const OPEN_THRESHOLD = 34;
-const LONG_SWIPE_DISTANCE = 120;
+const FULL_SWIPE_DISTANCE = 96;
+const FULL_SWIPE_TRACKING_WIDTH = 220;
 
 type GestureAxis = "horizontal" | "vertical";
 
@@ -63,6 +65,7 @@ export function SwipeActionRow({
   rowId,
   swipeRightAction,
   swipeLeftActions,
+  onFullSwipeLeft,
   onLongSwipeRight,
   onLongSwipeLeft,
   openRowId,
@@ -75,6 +78,13 @@ export function SwipeActionRow({
   const gestureAxis = useRef<"horizontal" | "vertical" | null>(null);
   const openOffset = useRef(0);
   const leftActionsWidth = actionWidth * swipeLeftActions.length;
+  // A full-swipe row still needs room to follow the finger even when it has
+  // no trailing action button. The action is committed once the user has
+  // dragged far enough, like the native Mail interaction.
+  const leftSwipeTrackingWidth = Math.max(
+    leftActionsWidth,
+    onFullSwipeLeft ? FULL_SWIPE_TRACKING_WIDTH : 1
+  );
 
   const positiveActionTranslateX = translateX.interpolate({
     inputRange: [0, actionWidth],
@@ -82,7 +92,7 @@ export function SwipeActionRow({
     extrapolate: "clamp"
   });
   const negativeActionsTranslateX = translateX.interpolate({
-    inputRange: [-leftActionsWidth, 0],
+    inputRange: [-leftSwipeTrackingWidth, 0],
     outputRange: [0, leftActionsWidth],
     extrapolate: "clamp"
   });
@@ -143,7 +153,7 @@ export function SwipeActionRow({
           }
 
           const nextX = Math.max(
-            -leftActionsWidth,
+            -leftSwipeTrackingWidth,
             Math.min(actionWidth, startX.current + gestureState.dx)
           );
           translateX.setValue(nextX);
@@ -155,11 +165,24 @@ export function SwipeActionRow({
           }
 
           const finalX = Math.max(
-            -leftActionsWidth,
+            -leftSwipeTrackingWidth,
             Math.min(actionWidth, startX.current + gestureState.dx)
           );
+          const fullSwipeLeft = gestureState.dx <= -FULL_SWIPE_DISTANCE ? onFullSwipeLeft : undefined;
+          if (fullSwipeLeft) {
+            gestureAxis.current = null;
+            Animated.timing(translateX, {
+              toValue: -500,
+              duration: 160,
+              useNativeDriver: true
+            }).start(({ finished }) => {
+              if (finished) fullSwipeLeft();
+            });
+            return;
+          }
+
           const longSwipeAction =
-            Math.abs(gestureState.dx) >= LONG_SWIPE_DISTANCE
+            Math.abs(gestureState.dx) >= FULL_SWIPE_DISTANCE
               ? gestureState.dx > 0
                 ? onLongSwipeRight
                 : onLongSwipeLeft
@@ -172,7 +195,9 @@ export function SwipeActionRow({
             return;
           }
 
-          const shouldOpen = Math.abs(finalX) >= OPEN_THRESHOLD;
+          const shouldOpen = finalX > 0
+            ? finalX >= OPEN_THRESHOLD
+            : swipeLeftActions.length > 0 && Math.abs(finalX) >= OPEN_THRESHOLD;
           const target = shouldOpen ? (finalX > 0 ? actionWidth : -leftActionsWidth) : 0;
 
           if (shouldOpen) {
@@ -201,6 +226,8 @@ export function SwipeActionRow({
       close,
       disabled,
       leftActionsWidth,
+      leftSwipeTrackingWidth,
+      onFullSwipeLeft,
       onLongSwipeLeft,
       onLongSwipeRight,
       onOpened,

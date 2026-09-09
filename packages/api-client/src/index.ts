@@ -58,6 +58,15 @@ import {
   houseMembershipSchema,
   houseInvitationSchema,
   healthResponseSchema,
+  notificationsResponseSchema,
+  notificationUnreadCountResponseSchema,
+  notificationPreferencesResponseSchema,
+  notificationSchema,
+  notificationDeviceSchema,
+  adminNotificationDevicesResponseSchema,
+  adminNotificationTestSchema,
+  adminNotificationTestHistoryResponseSchema,
+  createAdminNotificationTestRequestSchema,
   houseDraftOverviewPreviewResponseSchema,
   houseDraftResponseSchema,
   homeBootstrapResponseSchema,
@@ -167,6 +176,16 @@ import {
   type UpdateMaintenanceSettingsResponse,
   type UpdateDefaultHouseRequest,
   type UpdateDefaultHouseResponse
+  ,type NotificationsResponse
+  ,type NotificationPreferencesResponse
+  ,type UpdateNotificationPreferencesRequest
+  ,type RegisterNotificationDeviceRequest
+  ,type NotificationDevice
+  ,type Notification
+  ,type CreateAdminNotificationTestRequest
+  ,type AdminNotificationDevicesResponse
+  ,type AdminNotificationTest
+  ,type AdminNotificationTestHistoryResponse
 } from "@matriva/shared";
 
 export type MatrivaApiClientOptions = {
@@ -351,6 +370,15 @@ export type MatrivaApiClient = {
     input: UpdateMaintenanceSettingsRequest
   ) => Promise<UpdateMaintenanceSettingsResponse>;
   updateDefaultHouse: (input: UpdateDefaultHouseRequest) => Promise<UpdateDefaultHouseResponse>;
+  listNotifications: (input?: { limit?: number; cursor?: string | null; houseId?: HouseId | null }) => Promise<NotificationsResponse>;
+  getNotificationUnreadCount: (houseId?: HouseId | null) => Promise<{ count: number }>;
+  markNotificationRead: (notificationId: string, houseId?: HouseId | null) => Promise<Notification>;
+  deleteNotification: (notificationId: string, houseId?: HouseId | null) => Promise<{ deleted: boolean }>;
+  markAllNotificationsRead: (houseId?: HouseId | null) => Promise<{ updated: number }>;
+  getNotificationPreferences: () => Promise<NotificationPreferencesResponse>;
+  updateNotificationPreferences: (input: UpdateNotificationPreferencesRequest) => Promise<NotificationPreferencesResponse>;
+  registerNotificationDevice: (input: RegisterNotificationDeviceRequest) => Promise<NotificationDevice>;
+  disableNotificationDevice: (deviceId: string) => Promise<{ disabled: boolean }>;
   getAppBootstrap: () => Promise<AppBootstrapResponse>;
   searchAddresses: (query: string) => Promise<AddressSearchResponse>;
   createHouseDraft: (input: SelectedAddressInput) => Promise<HouseDraftResponse>;
@@ -521,7 +549,12 @@ export type MatrivaAdminApiClient = Pick<
   | "getAdminGuide"
   | "updateAdminGuideStatus"
   | "getGuideAsset"
->;
+> & {
+  getAdminNotificationDevices: (userId: string, input?: { signal?: AbortSignal }) => Promise<AdminNotificationDevicesResponse>;
+  createAdminNotificationTest: (input: CreateAdminNotificationTestRequest) => Promise<AdminNotificationTest>;
+  getAdminNotificationTest: (notificationId: string) => Promise<AdminNotificationTest>;
+  getAdminNotificationTestHistory: (input?: { limit?: number; signal?: AbortSignal }) => Promise<AdminNotificationTestHistoryResponse>;
+};
 
 export function createMatrivaAdminApiClient(
   options: MatrivaApiClientOptions
@@ -625,6 +658,24 @@ export function createMatrivaAdminApiClient(
       return adminUserResponseSchema.parse(
         await parseApiResponse(response, "Could not load admin user.")
       );
+    },
+    async getAdminNotificationDevices(userId, input = {}) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/users/${encodeURIComponent(userId)}/notification-devices`, { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) });
+      return adminNotificationDevicesResponseSchema.parse(await parseApiResponse(response, "Kunne ikke indlæse brugerens notification-devices."));
+    },
+    async createAdminNotificationTest(input) {
+      createAdminNotificationTestRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/notification-tests`, { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) });
+      return adminNotificationTestSchema.parse(await parseApiResponse(response, "Testnotifikationen kunne ikke oprettes."));
+    },
+    async getAdminNotificationTest(notificationId) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/notification-tests/${encodeURIComponent(notificationId)}`, { headers: authHeaders() });
+      return adminNotificationTestSchema.parse(await parseApiResponse(response, "Teststatus kunne ikke indlæses."));
+    },
+    async getAdminNotificationTestHistory(input = {}) {
+      const params = input.limit ? `?limit=${encodeURIComponent(String(input.limit))}` : "";
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/notification-tests/history${params}`, { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) });
+      return adminNotificationTestHistoryResponseSchema.parse(await parseApiResponse(response, "Testhistorikken kunne ikke indlæses."));
     },
     async getAdminUserEntitlements(userId, input = {}) {
       const response = await fetcher(
@@ -1350,6 +1401,54 @@ export function createMatrivaApiClient(
       return updateDefaultHouseResponseSchema.parse(
         await parseApiResponse(response, "Could not save default house.")
       );
+    },
+    async listNotifications(input = {}) {
+      const params = new URLSearchParams();
+      if (input.limit) params.set("limit", String(input.limit));
+      if (input.cursor) params.set("cursor", input.cursor);
+      if (input.houseId) params.set("houseId", input.houseId);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/notifications${params.size ? `?${params}` : ""}`, { headers: authHeaders() });
+      return notificationsResponseSchema.parse(await parseApiResponse(response, "Could not load notifications."));
+    },
+    async getNotificationUnreadCount(houseId) {
+      const params = new URLSearchParams();
+      if (houseId) params.set("houseId", houseId);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/notifications/unread-count${params.size ? `?${params}` : ""}`, { headers: authHeaders() });
+      return notificationUnreadCountResponseSchema.parse(await parseApiResponse(response, "Could not load unread notifications."));
+    },
+    async markNotificationRead(notificationId, houseId) {
+      const params = new URLSearchParams();
+      if (houseId) params.set("houseId", houseId);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/notifications/${encodeURIComponent(notificationId)}/read${params.size ? `?${params}` : ""}`, { method: "POST", headers: authHeaders() });
+      return notificationSchema.parse(await parseApiResponse(response, "Could not mark notification as read."));
+    },
+    async deleteNotification(notificationId, houseId) {
+      const params = new URLSearchParams();
+      if (houseId) params.set("houseId", houseId);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/notifications/${encodeURIComponent(notificationId)}${params.size ? `?${params}` : ""}`, { method: "DELETE", headers: authHeaders() });
+      return await parseApiResponse(response, "Could not delete notification.") as { deleted: boolean };
+    },
+    async markAllNotificationsRead(houseId) {
+      const params = new URLSearchParams();
+      if (houseId) params.set("houseId", houseId);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/notifications/read-all${params.size ? `?${params}` : ""}`, { method: "POST", headers: authHeaders() });
+      return await parseApiResponse(response, "Could not mark notifications as read.") as { updated: number };
+    },
+    async getNotificationPreferences() {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/notification-preferences`, { headers: authHeaders() });
+      return notificationPreferencesResponseSchema.parse(await parseApiResponse(response, "Could not load notification preferences."));
+    },
+    async updateNotificationPreferences(input) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/notification-preferences`, { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) });
+      return notificationPreferencesResponseSchema.parse(await parseApiResponse(response, "Could not save notification preferences."));
+    },
+    async registerNotificationDevice(input) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/notification-devices`, { method: "PUT", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) });
+      return notificationDeviceSchema.parse(await parseApiResponse(response, "Could not register notification device."));
+    },
+    async disableNotificationDevice(deviceId) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/notification-devices/${encodeURIComponent(deviceId)}`, { method: "DELETE", headers: authHeaders() });
+      return await parseApiResponse(response, "Could not disable notification device.") as { disabled: boolean };
     },
     async getAppBootstrap() {
       const response = await fetcher(`${normalizedBaseUrl}/v1/app-bootstrap`, {

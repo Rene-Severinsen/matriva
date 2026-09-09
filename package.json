@@ -41,6 +41,7 @@
     "check": "npm run check:no-firebase && npm run check:secrets && npm run check:bbr-codebooks && npm run check:bbr-public-data-parity && npm run check:maintenance-rules && npm run typecheck && npm run lint",
     "test:entitlements-contract": "npm run build -w @matriva/shared && node --test tools/test-entitlements-contract.mjs",
     "test:recommendation-applicability": "node --experimental-strip-types --test tools/test-recommendation-applicability-v1.mjs",
+    "test:notifications-v1": "npm run build -w @matriva/shared && node --experimental-strip-types --test tools/test-notifications-v1.mjs",
     "test:mobile-app-identity": "node --experimental-strip-types --test tools/test-mobile-app-identity.mjs",
     "test:mobile-api-compatibility": "npm run build:packages && node --experimental-strip-types --test tools/test-mobile-api-compatibility.mjs",
     "smoke:auth": "node tools/smoke-auth.mjs",
@@ -87,6 +88,7 @@
     "node": ">=22"
   },
   "devDependencies": {
+    "node-gyp": "^11.5.0",
     "sharp": "^0.34.5",
     "typescript": "6.0.3"
   },

@@ -4415,4 +4415,143 @@ export const healthResponseSchema = z.object({
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
+export const notificationCategorySchema = z.enum([
+  "maintenance",
+  "documents",
+  "house_access",
+  "system"
+]);
+export const notificationTypeSchema = z.enum([
+  "maintenance_task_due_soon",
+  "maintenance_task_due_today",
+  "maintenance_task_overdue",
+  "maintenance_recommendation_created",
+  "admin_test_push",
+  "house_invitation_received",
+  "house_invitation_accepted",
+  "house_access_requested",
+  "house_access_request_approved",
+  "house_access_request_rejected"
+]);
+export const notificationPrioritySchema = z.enum(["low", "normal", "high"]);
+export const notificationSchema = z.object({
+  id: z.string().regex(/^notif_[a-z0-9][a-z0-9_-]{7,63}$/),
+  userId: userIdSchema,
+  houseId: houseIdSchema.nullable(),
+  type: notificationTypeSchema,
+  category: notificationCategorySchema,
+  title: z.string().min(1),
+  body: z.string().min(1),
+  entityType: z.string().nullable(),
+  entityId: z.string().nullable(),
+  deepLink: z.string().nullable(),
+  priority: notificationPrioritySchema,
+  createdAt: z.string().datetime(),
+  readAt: z.string().datetime().nullable()
+}).strip();
+export const notificationsResponseSchema = z.object({
+  notifications: z.array(notificationSchema),
+  nextCursor: z.string().nullable()
+}).strip();
+export const notificationUnreadCountResponseSchema = z.object({ count: z.number().int().nonnegative() }).strip();
+export const notificationPreferenceSchema = z.object({
+  category: notificationCategorySchema,
+  inAppEnabled: z.boolean(),
+  pushEnabled: z.boolean()
+}).strip();
+export const notificationPreferencesResponseSchema = z.object({
+  preferences: z.array(notificationPreferenceSchema),
+  maintenanceReminderOffsets: z.array(z.object({ days: z.number().int().nonnegative(), enabled: z.boolean() }).strip())
+}).strip();
+export const updateNotificationPreferencesRequestSchema = z.object({
+  preferences: z.array(notificationPreferenceSchema).optional(),
+  maintenanceReminderOffsets: z.array(z.object({ days: z.union([z.literal(0), z.literal(7)]), enabled: z.boolean() }).strip()).optional()
+}).strip();
+export const registerNotificationDeviceRequestSchema = z.object({
+  deviceId: z.string().trim().min(1).max(200),
+  platform: z.enum(["ios", "android"]),
+  pushToken: z.string().trim().min(1).max(500),
+  appVersion: z.string().trim().max(100).nullable().optional(),
+  permissionStatus: z.enum(["granted", "denied", "unknown"]).optional().default("unknown")
+}).strip();
+export const notificationDeviceSchema = z.object({
+  id: z.string(),
+  deviceId: z.string(),
+  platform: z.enum(["ios", "android"]),
+  enabled: z.boolean(),
+  appVersion: z.string().nullable(),
+  permissionStatus: z.enum(["granted", "denied", "unknown"]),
+  lastSeenAt: z.string().datetime()
+}).strip();
+
+export const adminNotificationDestinationSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("none") }).strip(),
+  z.object({ kind: z.literal("notification_center") }).strip(),
+  z.object({ kind: z.literal("sharing") }).strip(),
+  z.object({ kind: z.literal("house"), houseId: houseIdSchema }).strip(),
+  z.object({ kind: z.literal("maintenance_task"), houseId: houseIdSchema, taskId: taskIdSchema }).strip(),
+  z.object({ kind: z.literal("recommendation"), houseId: houseIdSchema, recommendationId: maintenanceRecommendationIdSchema }).strip(),
+  z.object({ kind: z.literal("invitation"), invitationId: z.string().min(1) }).strip()
+]);
+export const createAdminNotificationTestRequestSchema = z.object({
+  targetUserId: userIdSchema,
+  targetDeviceId: z.string().nullable().optional(),
+  title: z.string().trim().min(1).max(120),
+  body: z.string().trim().min(1).max(500),
+  destination: adminNotificationDestinationSchema
+}).strip();
+export const adminNotificationDeviceSchema = notificationDeviceSchema.extend({
+  pushTokenMasked: z.string(),
+  latestDeliveryStatus: z.string().nullable()
+}).strip();
+export const adminNotificationDevicesResponseSchema = z.object({
+  user: z.object({ id: userIdSchema, displayName: z.string().nullable(), email: z.string() }).strip(),
+  devices: z.array(adminNotificationDeviceSchema)
+}).strip();
+export const adminNotificationDeliverySchema = z.object({
+  id: z.string(),
+  deviceId: z.string(),
+  platform: z.enum(["ios", "android"]),
+  status: z.enum(["pending", "sending", "sent", "receipt_ok", "failed", "invalid_token"]),
+  attempts: z.number().int().nonnegative(),
+  providerTicketId: z.string().nullable(),
+  lastError: z.string().nullable(),
+  lastAttemptAt: z.string().datetime().nullable(),
+  receiptCheckedAt: z.string().datetime().nullable()
+}).strip();
+export const adminNotificationTestSchema = z.object({
+  notificationId: z.string(),
+  createdAt: z.string().datetime(),
+  title: z.string(),
+  body: z.string(),
+  targetUserId: userIdSchema,
+  targetDeviceId: z.string().nullable(),
+  deliveries: z.array(adminNotificationDeliverySchema),
+  status: z.enum(["created", "queued", "sending", "sent", "receipt_ok", "failed", "invalid_token"])
+}).strip();
+export const adminNotificationTestHistoryItemSchema = adminNotificationTestSchema.extend({
+  adminUserId: userIdSchema,
+  adminDisplayName: z.string().nullable(),
+  targetUserDisplayName: z.string().nullable(),
+  targetUserEmail: z.string(),
+  platform: z.enum(["ios", "android"]).nullable()
+}).strip();
+export const adminNotificationTestHistoryResponseSchema = z.object({
+  tests: z.array(adminNotificationTestHistoryItemSchema)
+}).strip();
+
+export type NotificationCategory = z.infer<typeof notificationCategorySchema>;
+export type NotificationType = z.infer<typeof notificationTypeSchema>;
+export type Notification = z.infer<typeof notificationSchema>;
+export type NotificationsResponse = z.infer<typeof notificationsResponseSchema>;
+export type NotificationPreferencesResponse = z.infer<typeof notificationPreferencesResponseSchema>;
+export type UpdateNotificationPreferencesRequest = z.infer<typeof updateNotificationPreferencesRequestSchema>;
+export type RegisterNotificationDeviceRequest = z.infer<typeof registerNotificationDeviceRequestSchema>;
+export type NotificationDevice = z.infer<typeof notificationDeviceSchema>;
+export type AdminNotificationDestination = z.infer<typeof adminNotificationDestinationSchema>;
+export type CreateAdminNotificationTestRequest = z.infer<typeof createAdminNotificationTestRequestSchema>;
+export type AdminNotificationDevicesResponse = z.infer<typeof adminNotificationDevicesResponseSchema>;
+export type AdminNotificationTest = z.infer<typeof adminNotificationTestSchema>;
+export type AdminNotificationTestHistoryResponse = z.infer<typeof adminNotificationTestHistoryResponseSchema>;
+
 export * from "./guide-presentation.js";

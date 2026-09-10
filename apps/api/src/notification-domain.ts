@@ -1,5 +1,11 @@
 import type { NotificationType } from "@matriva/shared";
 
+const maintenanceDeadlineNotificationTypes = new Set<NotificationType>([
+  "maintenance_task_due_soon",
+  "maintenance_task_due_today",
+  "maintenance_task_overdue"
+]);
+
 export function notificationDeduplicationKey(
   type: NotificationType,
   entityId: string,
@@ -14,6 +20,22 @@ export function maintenanceDeadlineNotificationType(daysUntilDue: number): Notif
   if (daysUntilDue === 0) return "maintenance_task_due_today";
   if (daysUntilDue < 0) return "maintenance_task_overdue";
   return null;
+}
+
+export function isMaintenanceDeadlineNotificationType(type: NotificationType) {
+  return maintenanceDeadlineNotificationTypes.has(type);
+}
+
+export function isMaintenanceDeadlinePushWindowOpen(
+  now = new Date(),
+  timeZone = "Europe/Copenhagen"
+) {
+  const hourPart = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(now).find((part) => part.type === "hour")?.value;
+  return Number(hourPart ?? 0) >= 8;
 }
 
 export function resolveHouseNotificationRecipients(

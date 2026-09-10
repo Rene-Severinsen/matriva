@@ -4,6 +4,8 @@ import test from "node:test";
 
 import {
   maintenanceDeadlineNotificationType,
+  isMaintenanceDeadlineNotificationType,
+  isMaintenanceDeadlinePushWindowOpen,
   notificationDeduplicationKey,
   notificationDeepLink,
   resolveHouseNotificationRecipients
@@ -15,6 +17,15 @@ test("deadline windows map only to V1 notification types", () => {
   assert.equal(maintenanceDeadlineNotificationType(-1), "maintenance_task_overdue");
   assert.equal(maintenanceDeadlineNotificationType(-300), "maintenance_task_overdue");
   assert.equal(maintenanceDeadlineNotificationType(4), null);
+});
+
+test("maintenance deadline pushes stay quiet until 08:00 Copenhagen time", () => {
+  assert.equal(isMaintenanceDeadlineNotificationType("maintenance_task_due_today"), true);
+  assert.equal(isMaintenanceDeadlineNotificationType("admin_test_push"), false);
+  assert.equal(isMaintenanceDeadlinePushWindowOpen(new Date("2026-09-10T05:59:59.000Z")), false);
+  assert.equal(isMaintenanceDeadlinePushWindowOpen(new Date("2026-09-10T06:00:00.000Z")), true);
+  assert.equal(isMaintenanceDeadlinePushWindowOpen(new Date("2026-01-10T06:59:59.000Z")), false);
+  assert.equal(isMaintenanceDeadlinePushWindowOpen(new Date("2026-01-10T07:00:00.000Z")), true);
 });
 
 test("due and overdue deduplication stays stable across retries and days", () => {

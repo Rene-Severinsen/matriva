@@ -1,4 +1,5 @@
 import { pool } from "./db.ts";
+import { isMaintenanceDeadlinePushWindowOpen } from "./notification-domain.ts";
 
 const expoPushEndpoint = "https://exp.host/--/api/v2/push/send";
 const expoReceiptEndpoint = "https://exp.host/--/api/v2/push/getReceipts";
@@ -37,6 +38,10 @@ export async function processNotificationPushOutbox(batchSize = 50) {
      where status = 'sending' and updated_at < now() - interval '5 minutes'`
   );
   await processExpoReceipts();
+  const maintenanceDeadlinePushWindowOpen = isMaintenanceDeadlinePushWindowOpen(
+    new Date(),
+    process.env.MATRIVA_NOTIFICATION_TIME_ZONE ?? "Europe/Copenhagen"
+  );
   const client = await pool.connect();
   let rows: OutboxRow[] = [];
   try {
@@ -48,9 +53,10 @@ export async function processNotificationPushOutbox(batchSize = 50) {
        join notification_devices d on d.id = o.device_id and d.enabled
        join notifications n on n.id = o.notification_id
        where o.status in ('pending', 'failed') and o.next_attempt_at <= now() and o.attempts < $1
+         and ($3::boolean or n.notification_type not in ('maintenance_task_due_soon', 'maintenance_task_due_today', 'maintenance_task_overdue'))
        order by o.created_at
        for update of o skip locked limit $2`,
-      [maximumAttempts, Math.max(1, Math.min(batchSize, 100))]
+      [maximumAttempts, Math.max(1, Math.min(batchSize, 100)), maintenanceDeadlinePushWindowOpen]
     );
     rows = claimed.rows;
     if (rows.length) {

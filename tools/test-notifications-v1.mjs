@@ -63,6 +63,15 @@ test("notification deletion preserves deduplication keys", async () => {
   assert.doesNotMatch(deleteSource, /delete from notifications/);
 });
 
+test("house advisory locks cannot exhaust the API pool while waiting", async () => {
+  const dbSource = await readFile(new URL("../apps/api/src/db.ts", import.meta.url), "utf8");
+  assert.match(dbSource, /pg_try_advisory_lock\(hashtextextended/);
+  assert.match(dbSource, /house_lock_timeout/);
+  assert.match(dbSource, /setTimeout\(resolve, HOUSE_ADVISORY_LOCK_RETRY_MS\)/);
+  assert.match(dbSource, /lockClient\.release\(destroyClient\)/);
+  assert.doesNotMatch(dbSource, /pg_advisory_lock\(hashtextextended/);
+});
+
 test("notification item routes keep query parameters out of the id", async () => {
   const routes = await readFile(new URL("../apps/api/src/server.ts", import.meta.url), "utf8");
   assert.ok(routes.includes("([^/?]+)\\/read"));

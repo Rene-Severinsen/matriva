@@ -379,17 +379,48 @@ type EntitlementDetails = {
   storageBytes?: number;
 };
 
+const HOUSE_ADVISORY_LOCK_TIMEOUT_MS = 5_000;
+const HOUSE_ADVISORY_LOCK_RETRY_MS = 100;
+
 async function withHouseAdvisoryLock<T>(houseId: string, callback: () => Promise<T>): Promise<T> {
-  const lockClient = await pool.connect();
-  try {
-    await lockClient.query("select pg_advisory_lock(hashtextextended($1, 0))", [houseId]);
-    return await callback();
-  } finally {
+  const deadline = Date.now() + HOUSE_ADVISORY_LOCK_TIMEOUT_MS;
+
+  // Never wait on a blocking advisory-lock query while holding a pool
+  // connection. The old implementation did exactly that, so concurrent
+  // bootstrap requests could consume the whole pool while the lock holder
+  // waited for another connection in its callback.
+  while (true) {
+    const lockClient = await pool.connect();
+    let acquired = false;
+    let destroyClient = false;
     try {
-      await lockClient.query("select pg_advisory_unlock(hashtextextended($1, 0))", [houseId]);
+      const result = await lockClient.query<{ locked: boolean }>(
+        "select pg_try_advisory_lock(hashtextextended($1, 0)) as locked",
+        [houseId]
+      );
+      acquired = result.rows[0]?.locked === true;
+
+      if (acquired) {
+        try {
+          return await callback();
+        } finally {
+          try {
+            await lockClient.query("select pg_advisory_unlock(hashtextextended($1, 0))", [houseId]);
+          } catch {
+            // Do not return a possibly still-locked session to the pool.
+            destroyClient = true;
+          }
+        }
+      }
     } finally {
-      lockClient.release();
+      lockClient.release(destroyClient);
     }
+
+    if (Date.now() >= deadline) {
+      throw new ApiError(503, "house_lock_timeout", "House data is busy. Please retry shortly.");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, HOUSE_ADVISORY_LOCK_RETRY_MS));
   }
 }
 

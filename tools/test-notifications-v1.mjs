@@ -28,6 +28,16 @@ test("maintenance deadline pushes stay quiet until 08:00 Copenhagen time", () =>
   assert.equal(isMaintenanceDeadlinePushWindowOpen(new Date("2026-01-10T07:00:00.000Z")), true);
 });
 
+test("mobile retries native push registration when permission is missing", async () => {
+  const appSource = await readFile(new URL("../apps/mobile/src/App.tsx", import.meta.url), "utf8");
+  const registrationEffect = appSource.slice(
+    appSource.indexOf("useEffect(() => {\n    // Server preferences can remain enabled"),
+    appSource.indexOf("  const explainAndEnablePush", appSource.indexOf("useEffect(() => {\n    // Server preferences can remain enabled"))
+  );
+  assert.match(registrationEffect, /authStatus !== "authenticated" \|\| pushRegistrationAttemptedRef\.current/);
+  assert.doesNotMatch(registrationEffect, /!pushPermissionGranted/);
+});
+
 test("due and overdue deduplication stays stable across retries and days", () => {
   const due = notificationDeduplicationKey("maintenance_task_due_today", "task_12345678", "usr_12345678", "2026-09-07");
   assert.equal(due, notificationDeduplicationKey("maintenance_task_due_today", "task_12345678", "usr_12345678", "2026-09-07"));

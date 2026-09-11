@@ -5788,7 +5788,10 @@ export default function App() {
   }, [apiClient]);
 
   useEffect(() => {
-    if (authStatus !== "authenticated" || !pushPermissionGranted || pushRegistrationAttemptedRef.current) return;
+    // Server preferences can remain enabled after an app reinstall while iOS
+    // has reset the native permission/token. Attempt registration once per app
+    // launch so an undetermined permission triggers the native prompt again.
+    if (authStatus !== "authenticated" || pushRegistrationAttemptedRef.current) return;
     if (!notificationPreferences?.preferences.some((preference) => preference.pushEnabled)) return;
     pushRegistrationAttemptedRef.current = true;
     void registerPushDevice().catch(() => { pushRegistrationAttemptedRef.current = false; });

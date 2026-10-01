@@ -35,7 +35,8 @@ The canonical QA deployment entrypoint is:
 npm run deploy:qa
 ```
 
-Run it from a clean local `main` checkout. The command refuses to deploy when
+Run it from a clean local `main` checkout (or a clean detached checkout at the
+same commit as `origin/main`). The command refuses to deploy when
 the branch differs from `origin/main`, when the working tree is dirty, when
 the required S3/QA variables are missing, or when `RESET_CONFIRM` is present.
 

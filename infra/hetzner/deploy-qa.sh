@@ -31,8 +31,9 @@ if [ -n "$(git status --porcelain)" ]; then
   echo "ABORT: Working tree must be clean." >&2
   exit 1
 fi
-if [ "$(git branch --show-current)" != "main" ]; then
-  echo "ABORT: Current branch must be main." >&2
+current_branch="$(git branch --show-current)"
+if [ -n "$current_branch" ] && [ "$current_branch" != "main" ]; then
+  echo "ABORT: Current branch must be main or a detached checkout." >&2
   exit 1
 fi
 

@@ -3,7 +3,6 @@ import {
   adminBootstrapResponseSchema,
   adminEntitlementConfigResponseSchema,
   adminUserEntitlementResponseSchema,
-  updateAdminUserEntitlementRequestSchema,
   adminDashboardPeriodKeySchema,
   adminDashboardResponseSchema,
   adminHouseResponseSchema,
@@ -71,11 +70,12 @@ import {
   houseDraftResponseSchema,
   homeBootstrapResponseSchema,
   housePublicDataWithProfileResponseV1Schema,
+  applePurchaseSyncRequestSchema,
+  billingSyncResponseSchema,
   type AddressSearchResponse,
   type AdminBootstrapResponse,
   type AdminEntitlementConfigResponse,
   type AdminUserEntitlementResponse,
-  type UpdateAdminUserEntitlementRequest,
   type AdminDashboardPeriodKey,
   type AdminDashboardResponse,
   type AdminHousePublicDataStatusFilter,
@@ -176,6 +176,8 @@ import {
   type UpdateMaintenanceSettingsResponse,
   type UpdateDefaultHouseRequest,
   type UpdateDefaultHouseResponse
+  ,type ApplePurchaseSyncRequest
+  ,type BillingSyncResponse
   ,type NotificationsResponse
   ,type NotificationPreferencesResponse
   ,type UpdateNotificationPreferencesRequest
@@ -294,6 +296,7 @@ export type MatrivaApiClient = {
   getHealth: () => Promise<HealthResponse>;
   health: () => Promise<HealthResponse>;
   getBootstrap: () => Promise<HomeBootstrapResponse>;
+  syncApplePurchase: (input: ApplePurchaseSyncRequest) => Promise<BillingSyncResponse>;
   adminLogin: (input: AdminPasswordLoginRequest) => Promise<AuthSessionResponse>;
   requestMagicLink: (input: RequestMagicLinkRequest) => Promise<RequestMagicLinkResponse>;
   consumeMagicLink: (input: ConsumeMagicLinkRequest) => Promise<AuthSessionResponse>;
@@ -317,10 +320,6 @@ export type MatrivaApiClient = {
   getAdminUserEntitlements: (
     userId: string,
     input?: { signal?: AbortSignal }
-  ) => Promise<AdminUserEntitlementResponse>;
-  updateAdminUserEntitlement: (
-    userId: string,
-    input: UpdateAdminUserEntitlementRequest
   ) => Promise<AdminUserEntitlementResponse>;
   getAdminEntitlementConfig: () => Promise<AdminEntitlementConfigResponse>;
   updateAdminEntitlementConfig: (
@@ -528,7 +527,6 @@ export type MatrivaAdminApiClient = Pick<
   | "getAdminUsers"
   | "getAdminUser"
   | "getAdminUserEntitlements"
-  | "updateAdminUserEntitlement"
   | "getAdminEntitlementConfig"
   | "updateAdminEntitlementConfig"
   | "getAdminHouses"
@@ -684,20 +682,6 @@ export function createMatrivaAdminApiClient(
       );
       return adminUserEntitlementResponseSchema.parse(
         await parseApiResponse(response, "Kunne ikke indlæse brugerens entitlements.")
-      );
-    },
-    async updateAdminUserEntitlement(userId, input) {
-      updateAdminUserEntitlementRequestSchema.parse(input);
-      const response = await fetcher(
-        `${normalizedBaseUrl}/v1/admin/users/${encodeURIComponent(userId)}/entitlements`,
-        {
-          method: "PUT",
-          headers: authHeaders({ "content-type": "application/json" }),
-          body: JSON.stringify(input)
-        }
-      );
-      return adminUserEntitlementResponseSchema.parse(
-        await parseApiResponse(response, "Kunne ikke opdatere brugerens abonnement.")
       );
     },
     async getAdminEntitlementConfig() {
@@ -1063,6 +1047,15 @@ export function createMatrivaApiClient(
         await parseApiResponse(response, "Could not load home data.")
       );
     },
+    async syncApplePurchase(input) {
+      applePurchaseSyncRequestSchema.parse(input);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/billing/apple/transactions`, {
+        method: "POST",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify(input)
+      });
+      return billingSyncResponseSchema.parse(await parseApiResponse(response, "Apple-abonnementet kunne ikke synkroniseres."));
+    },
     async adminLogin(input) {
       adminPasswordLoginRequestSchema.parse(input);
       const response = await fetcher(`${normalizedBaseUrl}/v1/admin/auth/login`, {
@@ -1185,20 +1178,6 @@ export function createMatrivaApiClient(
       );
       return adminUserEntitlementResponseSchema.parse(
         await parseApiResponse(response, "Kunne ikke indlæse brugerens entitlements.")
-      );
-    },
-    async updateAdminUserEntitlement(userId, input) {
-      updateAdminUserEntitlementRequestSchema.parse(input);
-      const response = await fetcher(
-        `${normalizedBaseUrl}/v1/admin/users/${encodeURIComponent(userId)}/entitlements`,
-        {
-          method: "PUT",
-          headers: authHeaders({ "content-type": "application/json" }),
-          body: JSON.stringify(input)
-        }
-      );
-      return adminUserEntitlementResponseSchema.parse(
-        await parseApiResponse(response, "Kunne ikke opdatere brugerens abonnement.")
       );
     },
     async getAdminEntitlementConfig() {

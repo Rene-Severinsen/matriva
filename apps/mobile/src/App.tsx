@@ -100,6 +100,7 @@ import { clearStoredSession, readStoredSession, writeStoredSession } from "./aut
 import { getNotificationDeviceId, getOrCreateNotificationDeviceId } from "./storage/notificationDeviceStorage";
 import { NotificationSwipeableRow } from "./components/NotificationSwipeableRow";
 import { SwipeActionRow } from "./components/SwipeActionRow";
+import { AppleSubscriptionScreen } from "./screens/AppleSubscriptionScreen";
 import {
   markMaintenanceSwipeHintSeen,
   readMaintenanceSwipeHintSeen,
@@ -1982,18 +1983,14 @@ function EntitlementSummaryCard({ entitlements }: { entitlements: AppBootstrapRe
   );
 }
 
-function SubscriptionScreen({ entitlements, onBack }: { entitlements: AppBootstrapResponse["entitlements"]; onBack: () => void }) {
+function SubscriptionScreen({ entitlements, apiClient, onBack }: { entitlements: AppBootstrapResponse["entitlements"]; apiClient: ReturnType<typeof createMatrivaApiClient>; onBack: () => void }) {
   return (
     <View style={styles.stack}>
-      <View style={styles.screenTitleRow}>
-        <SectionHeader title="Abonnement" subtitle="Se din adgang og dit forbrug." />
-        <SecondaryButton label="Tilbage" onPress={onBack} />
-      </View>
       <EntitlementSummaryCard entitlements={entitlements} />
+      <AppleSubscriptionScreen apiClient={apiClient} onBack={onBack} />
       <Card>
         <Text style={styles.cardTitle}>Betaling</Text>
-        <Text style={styles.compactBodyText}>Her håndterer du senere køb, betalingsoplysninger og dit abonnement.</Text>
-        <Text style={styles.metaText}>Betaling og opgradering bliver tilgængeligt senere.</Text>
+        <Text style={styles.compactBodyText}>Køb og gendannelse håndteres via Apples App Store på iOS.</Text>
       </Card>
     </View>
   );
@@ -7872,7 +7869,7 @@ export default function App() {
     }
 
     if (moreView === "subscription" && bootstrap) {
-      return <SubscriptionScreen entitlements={bootstrap.entitlements} onBack={() => setMoreView("menu")} />;
+      return <SubscriptionScreen entitlements={bootstrap.entitlements} apiClient={apiClient} onBack={() => setMoreView("menu")} />;
     }
 
     if (moreView === "guides") {

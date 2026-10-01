@@ -179,7 +179,6 @@ async function assertApiClientContract() {
             accessPlan: "free",
             status: "free",
             source: "default",
-            complimentaryProGrant: null,
             features: {
               "documents.maxCount": { kind: "limit", value: 0 },
               "documents.maxStorageMb": { kind: "limit", value: 0 },

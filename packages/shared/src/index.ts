@@ -533,7 +533,7 @@ export const adminUserListItemSchema = z.object({
   taskCount: adminListCountSchema,
   completionCount: adminListCountSchema,
   subscriptionPlan: z.enum(["free", "pro"]),
-  subscriptionSource: z.enum(["default", "admin", "subscription", "complimentary", "billing"]),
+  subscriptionSource: z.enum(["default", "subscription", "billing"]),
   subscriptionExpiresAt: z.string().datetime().nullable(),
   roles: z.array(adminRoleSchema),
   onboardingState: onboardingStateSchema
@@ -4235,15 +4235,8 @@ export const entitlementStatusSchema = z.enum([
 ]);
 export type EntitlementStatus = z.infer<typeof entitlementStatusSchema>;
 
-export const entitlementSourceSchema = z.enum(["default", "admin", "subscription", "complimentary", "billing"]);
+export const entitlementSourceSchema = z.enum(["default", "subscription", "billing"]);
 export type EntitlementSource = z.infer<typeof entitlementSourceSchema>;
-
-export const complimentaryProGrantSchema = z.object({
-  grantedByUserId: userIdSchema.nullable(),
-  grantedAt: z.string().datetime(),
-  reason: z.string().min(1)
-}).strip();
-export type ComplimentaryProGrant = z.infer<typeof complimentaryProGrantSchema>;
 
 export const entitlementUsageSchema = z.object({
   houses: z.object({ active: z.number().int().nonnegative(), limit: z.number().int().nonnegative().nullable() }).strip(),
@@ -4258,7 +4251,6 @@ export const entitlementsSchema = z.object({
   accessPlan: entitlementPlanSchema,
   status: entitlementStatusSchema,
   source: entitlementSourceSchema,
-  complimentaryProGrant: complimentaryProGrantSchema.nullable(),
   features: entitlementFeatureMapSchema,
   usage: entitlementUsageSchema,
   evaluatedAt: z.string().datetime(),
@@ -4297,23 +4289,68 @@ export const adminUserEntitlementResponseSchema = z.object({
 });
 export type AdminUserEntitlementResponse = z.infer<typeof adminUserEntitlementResponseSchema>;
 
-export const updateAdminUserEntitlementRequestSchema = z.discriminatedUnion("action", [
-  z.object({
-    action: z.literal("set_plan"),
-    plan: entitlementPlanSchema
-  }),
-  z.object({
-    action: z.literal("grant_complimentary_pro"),
-    expiresAt: z.string().datetime().nullable(),
-    reason: z.string().trim().min(1).max(500)
-  }),
-  z.object({
-    action: z.literal("remove_complimentary_pro")
-  })
+export const billingProviderSchema = z.enum(["apple", "google"]);
+export type BillingProvider = z.infer<typeof billingProviderSchema>;
+
+export const billingSubscriptionStatusSchema = z.enum([
+  "trial",
+  "active",
+  "grace_period",
+  "billing_issue",
+  "expired",
+  "cancelled",
+  "refunded_revoked"
 ]);
-export type UpdateAdminUserEntitlementRequest = z.infer<
-  typeof updateAdminUserEntitlementRequestSchema
->;
+export type BillingSubscriptionStatus = z.infer<typeof billingSubscriptionStatusSchema>;
+
+export const billingSubscriptionSchema = z.object({
+  id: z.string().min(1),
+  userId: userIdSchema,
+  provider: billingProviderSchema,
+  providerSubscriptionId: z.string().min(1),
+  productId: z.string().min(1),
+  plan: entitlementPlanSchema,
+  status: billingSubscriptionStatusSchema,
+  environment: z.enum(["sandbox", "production"]),
+  originalTransactionId: z.string().min(1).nullable(),
+  currentPeriodStartsAt: z.string().datetime().nullable(),
+  currentPeriodEndsAt: z.string().datetime().nullable(),
+  autoRenew: z.boolean().nullable(),
+  lastVerifiedAt: z.string().datetime().nullable(),
+  updatedAt: z.string().datetime()
+}).strip();
+export type BillingSubscription = z.infer<typeof billingSubscriptionSchema>;
+
+export const billingEventSchema = z.object({
+  provider: billingProviderSchema,
+  environment: z.enum(["sandbox", "production"]),
+  providerEventId: z.string().min(1),
+  eventType: z.string().min(1),
+  providerSubscriptionId: z.string().min(1).nullable(),
+  occurredAt: z.string().datetime().nullable(),
+  payload: z.record(z.string(), z.unknown())
+}).strip();
+export type BillingEvent = z.infer<typeof billingEventSchema>;
+
+export const applePurchaseSyncRequestSchema = z.object({
+  signedTransactionInfo: z.string().min(32),
+  eventId: z.string().min(1).optional()
+}).strip();
+export type ApplePurchaseSyncRequest = z.infer<typeof applePurchaseSyncRequestSchema>;
+
+export const appleNotificationRequestSchema = z.object({
+  signedPayload: z.string().min(32)
+}).strip();
+export type AppleNotificationRequest = z.infer<typeof appleNotificationRequestSchema>;
+
+export const billingSyncResponseSchema = z.object({
+  accepted: z.boolean(),
+  duplicate: z.boolean(),
+  provider: billingProviderSchema,
+  providerSubscriptionId: z.string().min(1),
+  entitlement: entitlementsSchema
+}).strip();
+export type BillingSyncResponse = z.infer<typeof billingSyncResponseSchema>;
 
 export const appCompatibilitySchema = z.object({
   status: z.enum(["supported", "upgrade_required"]),

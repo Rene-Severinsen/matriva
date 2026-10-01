@@ -104,10 +104,18 @@ const pool = new pg.Pool({ connectionString: databaseUrl });
 try {
   const migrationResult = await pool.query(
     "select name from schema_migrations where name = any($1::text[])",
-    [["0030_guide_open_events_v1.sql", "0031_user_task_cluster_analytics_v1.sql"]]
+    [[
+      "0030_guide_open_events_v1.sql",
+      "0031_user_task_cluster_analytics_v1.sql",
+      "0037_apple_billing_v1.sql"
+    ]]
   );
   const appliedMigrations = new Set(migrationResult.rows.map((row) => row.name));
-  for (const migration of ["0030_guide_open_events_v1.sql", "0031_user_task_cluster_analytics_v1.sql"]) {
+  for (const migration of [
+    "0030_guide_open_events_v1.sql",
+    "0031_user_task_cluster_analytics_v1.sql",
+    "0037_apple_billing_v1.sql"
+  ]) {
     assert.ok(appliedMigrations.has(migration), `QA migration is not applied: ${migration}.`);
   }
 } finally {
@@ -123,5 +131,9 @@ console.log(JSON.stringify({
   },
   guideAssets: assetResults,
   taskClusters: taskClusters?.clusters.length ?? null,
-  migrations: ["0030_guide_open_events_v1.sql", "0031_user_task_cluster_analytics_v1.sql"]
+  migrations: [
+    "0030_guide_open_events_v1.sql",
+    "0031_user_task_cluster_analytics_v1.sql",
+    "0037_apple_billing_v1.sql"
+  ]
 }, null, 2));

@@ -58,6 +58,7 @@ test -f apps/api/dist/server.js
 test -d apps/api/dist/migrations
 test -f apps/api/dist/migrations/0030_guide_open_events_v1.sql
 test -f apps/api/dist/migrations/0031_user_task_cluster_analytics_v1.sql
+test -f apps/api/dist/migrations/0037_apple_billing_v1.sql
 
 echo "=== QA S3 asset sync and delivery variants ==="
 remote_qa_api_pid() {
@@ -118,7 +119,7 @@ if [ "$local_api_sha" != "$remote_api_sha" ]; then
   exit 1
 fi
 
-ssh "$remote_host" "set -eu; test -f '$remote_root/packages/shared/dist/index.js'; test -f '$remote_root/packages/api-client/dist/index.js'; test -f '$remote_root/apps/api/dist/server.js'; test -f '$remote_root/apps/api/dist/migrations/0030_guide_open_events_v1.sql'; test -f '$remote_root/apps/api/dist/migrations/0031_user_task_cluster_analytics_v1.sql'"
+ssh "$remote_host" "set -eu; test -f '$remote_root/packages/shared/dist/index.js'; test -f '$remote_root/packages/api-client/dist/index.js'; test -f '$remote_root/apps/api/dist/server.js'; test -f '$remote_root/apps/api/dist/migrations/0030_guide_open_events_v1.sql'; test -f '$remote_root/apps/api/dist/migrations/0031_user_task_cluster_analytics_v1.sql'; test -f '$remote_root/apps/api/dist/migrations/0037_apple_billing_v1.sql'"
 
 echo "=== Graceful restart QA API via host supervisor ==="
 old_pid="$(remote_qa_api_pid)"

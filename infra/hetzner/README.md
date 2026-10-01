@@ -42,8 +42,8 @@ the required S3/QA variables are missing, or when `RESET_CONFIRM` is present.
 The deploy performs these operations in order:
 
 1. Run the repository checks and build the shared, API-client and API runtime.
-2. Verify that the API build contains migrations `0030_guide_open_events_v1.sql`
-   and `0031_user_task_cluster_analytics_v1.sql`.
+2. Verify that the API build contains migrations `0030_guide_open_events_v1.sql`,
+   `0031_user_task_cluster_analytics_v1.sql`, and `0037_apple_billing_v1.sql`.
 3. Idempotently ingest repository-managed guide originals into the QA S3
    prefix and backfill the content-addressed WebP delivery variants. The
    source files and database checksums are verified before a variant is made.
@@ -52,7 +52,7 @@ The deploy performs these operations in order:
 5. Gracefully terminate the exact QA API process. The Hetzner host supervisor
    starts the replacement process automatically; `systemctl` access is not
    required from the SSH shell.
-6. Verify `/health`, supervisor replacement, applied migrations 0030/0031,
+6. Verify `/health`, supervisor replacement, applied migrations 0030/0031/0037,
    and—when a temporary Admin token is supplied—guide analytics, every guide
    asset exposed by the Admin API, optimized WebP delivery, and task-cluster
    API responses.

@@ -12,7 +12,6 @@ import {
   adminEntitlementConfigResponseSchema,
   adminUserEntitlementResponseSchema,
   updateAdminEntitlementPlanConfigRequestSchema,
-  updateAdminUserEntitlementRequestSchema,
   adminDashboardPeriodKeySchema,
   adminDashboardResponseSchema,
   adminHouseResponseSchema,
@@ -120,9 +119,12 @@ import {
   ,createAdminNotificationTestRequestSchema
   ,adminNotificationTestSchema
   ,adminNotificationTestHistoryResponseSchema
+  ,applePurchaseSyncRequestSchema
+  ,appleNotificationRequestSchema
+  ,billingSyncResponseSchema
 } from "@matriva/shared";
 
-import type { AppCompatibility } from "@matriva/shared";
+import type { AppCompatibility, UserId } from "@matriva/shared";
 
 import { requireAdminUser, toAdminBootstrapResponse } from "./admin.ts";
 import { getAdminDashboard } from "./admin-dashboard.ts";
@@ -165,6 +167,11 @@ import {
   authPublicResponse,
   buildAppBootstrap,
   getAdminUserEntitlements,
+  getEntitlementsForUser,
+  applyBillingSubscription,
+  createOpaqueId,
+  findBillingUserId,
+  recordBillingEvent,
   getAdminGuide,
   getGuideAsset,
   getPublishedGuide,
@@ -243,11 +250,11 @@ import {
   generateMaintenanceDeadlineNotifications,
   updateMaintenanceSettings,
   updateDefaultHouse,
-  updateAdminUserEntitlement,
   updateGuideStatus,
   pool,
   validateAuthRuntimeConfig
 } from "./db.ts";
+import { appleSubscriptionStatus, verifiedAppleTransactionFromJws, verifyAppleJws } from "./billing-apple.ts";
 import {
   getHousePublicData,
   getHousePublicDataProfile,
@@ -523,6 +530,26 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   }
 
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+function appleSubscriptionRecord(transaction: ReturnType<typeof verifiedAppleTransactionFromJws>, userId: string) {
+  const status = appleSubscriptionStatus(transaction);
+  return {
+    id: createOpaqueId("bsub"),
+    userId: userId as UserId,
+    provider: "apple" as const,
+    providerSubscriptionId: transaction.transactionId,
+    productId: transaction.productId,
+    plan: "pro" as const,
+    status,
+    environment: transaction.environment,
+    originalTransactionId: transaction.originalTransactionId,
+    currentPeriodStartsAt: transaction.purchaseDate?.toISOString() ?? null,
+    currentPeriodEndsAt: transaction.expiresDate?.toISOString() ?? null,
+    autoRenew: null,
+    lastVerifiedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
 }
 
 function mediaExtension(mimeType: string) {
@@ -837,6 +864,79 @@ const server = createServer((request, response) => {
       "content-type": "application/json"
     });
     response.end(JSON.stringify(androidAppLinksAssetLinks));
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/v1/billing/apple/transactions") {
+    void (async () => {
+      try {
+        const userId = await requireUserId(request);
+        const parsed = applePurchaseSyncRequestSchema.safeParse(await readJsonBody(request));
+        if (!parsed.success) {
+          writeApiError(response, 400, "apple_purchase_invalid", "Apple-købet mangler den signerede transaktion.");
+          return;
+        }
+        const transaction = verifiedAppleTransactionFromJws(parsed.data.signedTransactionInfo);
+        const event = await recordBillingEvent({
+          provider: "apple",
+          environment: transaction.environment,
+          providerEventId: parsed.data.eventId ?? transaction.transactionId,
+          eventType: "PURCHASE_SYNC",
+          providerSubscriptionId: transaction.transactionId,
+          occurredAt: transaction.purchaseDate?.toISOString() ?? null,
+          payload: transaction.rawPayload
+        }, userId);
+        await applyBillingSubscription(appleSubscriptionRecord(transaction, userId));
+        writeJson(response, 200, billingSyncResponseSchema.parse({
+          accepted: true,
+          duplicate: event.duplicate,
+          provider: "apple",
+          providerSubscriptionId: transaction.transactionId,
+          entitlement: await getEntitlementsForUser(userId)
+        }));
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/v1/billing/apple/notifications") {
+    void (async () => {
+      try {
+        const parsed = appleNotificationRequestSchema.safeParse(await readJsonBody(request));
+        if (!parsed.success) {
+          writeApiError(response, 400, "apple_notification_invalid", "Apple-notifikationen mangler signedPayload.");
+          return;
+        }
+        const notification = verifyAppleJws(parsed.data.signedPayload);
+        const data = notification.data && typeof notification.data === "object" && !Array.isArray(notification.data)
+          ? notification.data as Record<string, unknown>
+          : null;
+        const signedTransactionInfo = typeof data?.signedTransactionInfo === "string" ? data.signedTransactionInfo : null;
+        if (!signedTransactionInfo) {
+          writeApiError(response, 400, "apple_notification_invalid", "Apple-notifikationen mangler signedTransactionInfo.");
+          return;
+        }
+        const transaction = verifiedAppleTransactionFromJws(signedTransactionInfo);
+        const userId = await findBillingUserId("apple", transaction.transactionId, transaction.originalTransactionId);
+        const event = await recordBillingEvent({
+          provider: "apple",
+          environment: transaction.environment,
+          providerEventId: typeof notification.notificationUUID === "string" ? notification.notificationUUID : transaction.transactionId,
+          eventType: typeof notification.notificationType === "string" ? notification.notificationType : "UNKNOWN",
+          providerSubscriptionId: transaction.transactionId,
+          occurredAt: transaction.purchaseDate?.toISOString() ?? null,
+          payload: notification
+        }, userId);
+        if (userId) {
+          await applyBillingSubscription(appleSubscriptionRecord(transaction, userId));
+        }
+        writeJson(response, userId ? 200 : 202, { accepted: Boolean(userId), duplicate: event.duplicate });
+      } catch (error) {
+        writeUnknownApiError(response, error);
+      }
+    })();
     return;
   }
 
@@ -1263,39 +1363,6 @@ const server = createServer((request, response) => {
         await requireAdminUser(getBearerToken(request));
         const entitlement = await getAdminUserEntitlements(decodeURIComponent(adminUserEntitlementMatch[1]!));
         writeJson(response, 200, adminUserEntitlementResponseSchema.parse(entitlement));
-      } catch (error) {
-        writeUnknownApiError(response, error);
-      }
-    })();
-    return;
-  }
-
-  if (request.method === "PUT" && adminUserEntitlementMatch) {
-    void (async () => {
-      try {
-        const admin = await requireAdminUser(getBearerToken(request));
-        const parsed = updateAdminUserEntitlementRequestSchema.safeParse(
-          await readJsonBody(request)
-        );
-        if (!parsed.success) {
-          writeApiError(
-            response,
-            400,
-            "admin_user_entitlement_invalid",
-            "Brugerens abonnement er ugyldigt."
-          );
-          return;
-        }
-        const entitlement = await updateAdminUserEntitlement(
-          admin.userId,
-          decodeURIComponent(adminUserEntitlementMatch[1]!),
-          parsed.data
-        );
-        writeJson(
-          response,
-          200,
-          adminUserEntitlementResponseSchema.parse(entitlement)
-        );
       } catch (error) {
         writeUnknownApiError(response, error);
       }
@@ -1808,7 +1875,6 @@ const server = createServer((request, response) => {
         accessPlan: "free",
         status: "free",
         source: "default",
-        complimentaryProGrant: null,
         features: {
           "houses.maxActive": { kind: "limit", value: 1 },
           "documents.maxCount": { kind: "limit", value: 2 },

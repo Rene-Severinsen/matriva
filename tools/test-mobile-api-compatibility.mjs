@@ -44,7 +44,6 @@ function entitlements() {
     accessPlan: "free",
     status: "free",
     source: "default",
-    complimentaryProGrant: null,
     features,
     usage: {
       houses: { active: 0, limit: 1 },
@@ -94,6 +93,8 @@ function appBootstrapPayload() {
     },
     profile: {
       displayName: "Test user",
+      firstName: "Test",
+      lastName: "User",
       preferredLocale: "da-DK",
       promptForCompletionNote: true,
       defaultHouseId: null

@@ -45,6 +45,7 @@
     "plugins": [
       "@react-native-community/datetimepicker",
       "expo-notifications",
+      "expo-iap",
       "expo-secure-store",
       "expo-status-bar"
     ],

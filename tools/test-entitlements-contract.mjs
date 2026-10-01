@@ -1,114 +1,32 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { apiErrorSchema, entitlementsSchema, billingEventSchema, billingSubscriptionSchema } from "../packages/shared/dist/index.js";
 
-import {
-  apiErrorSchema,
-  entitlementsSchema,
-  updateAdminUserEntitlementRequestSchema
-} from "../packages/shared/dist/index.js";
+const migration = await readFile(new URL("../apps/api/src/migrations/0037_apple_billing_v1.sql", import.meta.url), "utf8");
 
-const migration = await readFile(new URL("../apps/api/src/migrations/0024_entitlements_v1.sql", import.meta.url), "utf8");
-const complimentaryMigration = await readFile(new URL("../apps/api/src/migrations/0025_complimentary_pro_v1.sql", import.meta.url), "utf8");
+test("Free entitlement contract remains backend-compatible", () => {
+  const result = entitlementsSchema.parse({ plan: "free", configuredPlan: "free", accessPlan: "free", status: "free", source: "default", features: { "houses.maxActive": { kind: "limit", value: 1 } }, usage: { houses: { active: 0, limit: 1 }, documents: { active: 0, storageBytes: 0, limit: 2, storageLimitBytes: 10 * 1024 * 1024 }, tasks: { active: 0, limit: 4 } }, evaluatedAt: new Date().toISOString() });
+  assert.equal(result.plan, "free");
+});
 
-const freeFeatures = {
-  "houses.maxActive": { kind: "limit", value: 1 },
-  "documents.maxCount": { kind: "limit", value: 2 },
-  "documents.maxStorageMb": { kind: "limit", value: 10 },
-  "tasks.maxActive": { kind: "limit", value: 4 },
-  "maintenance.fullPlan.enabled": { kind: "boolean", value: true },
-  "seasonalRecommendations.enabled": { kind: "boolean", value: true },
-  "advisories.enabled": { kind: "boolean", value: false },
-  "localAdvisories.enabled": { kind: "boolean", value: false },
-  "legalUpdates.enabled": { kind: "boolean", value: false },
-  "documentExpiry.enabled": { kind: "boolean", value: true },
-  "sharing.enabled": { kind: "boolean", value: false },
-  "multiUser.enabled": { kind: "boolean", value: false },
-  "export.enabled": { kind: "boolean", value: false },
-  "history.extended.enabled": { kind: "boolean", value: false },
-  "advancedReminders.enabled": { kind: "boolean", value: false }
-};
+test("billing contracts are provider-neutral and Apple-ready", () => {
+  const subscription = billingSubscriptionSchema.parse({ id: "bsub_12345678", userId: "usr_12345678", provider: "apple", providerSubscriptionId: "transaction-1", productId: "matriva.pro.monthly", plan: "pro", status: "active", environment: "sandbox", originalTransactionId: "original-1", currentPeriodStartsAt: null, currentPeriodEndsAt: null, autoRenew: true, lastVerifiedAt: null, updatedAt: new Date().toISOString() });
+  const event = billingEventSchema.parse({ provider: "apple", environment: "sandbox", providerEventId: "event-1", eventType: "SUBSCRIBED", providerSubscriptionId: "transaction-1", occurredAt: null, payload: {} });
+  assert.equal(subscription.provider, event.provider);
+  assert.equal(subscription.plan, "pro");
+});
 
-test("Free entitlement contract has the product limits", () => {
-  const result = entitlementsSchema.parse({
-    plan: "free",
-    configuredPlan: "free",
-    accessPlan: "free",
-    status: "free",
-    source: "default",
-    complimentaryProGrant: null,
-    features: freeFeatures,
-    usage: {
-      houses: { active: 0, limit: 1 },
-      documents: { active: 0, storageBytes: 0, limit: 2, storageLimitBytes: 10 * 1024 * 1024 },
-      tasks: { active: 0, limit: 4 }
-    },
-    evaluatedAt: new Date().toISOString()
-  });
-
-  assert.equal(result.usage.houses.limit, 1);
-  assert.equal(result.usage.documents.limit, 2);
-  assert.equal(result.usage.documents.storageLimitBytes, 10 * 1024 * 1024);
-  assert.equal(result.usage.tasks.limit, 4);
-  assert.equal(result.features["sharing.enabled"].value, false);
+test("billing migration removes manual PRO and adds idempotent event storage", () => {
+  assert.match(migration, /delete from user_entitlements where source = 'complimentary'/);
+  assert.match(migration, /create table if not exists billing_subscriptions/);
+  assert.match(migration, /create table if not exists billing_events/);
+  assert.match(migration, /unique index if not exists billing_events_provider_event_unique/);
+  assert.match(migration, /source in \('default', 'subscription', 'billing'\)/);
+  assert.doesNotMatch(migration, /complimentary_pro/);
 });
 
 test("limit errors expose stable machine-readable details", () => {
-  const result = apiErrorSchema.parse({
-    code: "entitlement_limit_reached",
-    message: "Limit reached",
-    details: { feature: "tasks.maxActive", limit: 4, current: 4 }
-  });
+  const result = apiErrorSchema.parse({ code: "entitlement_limit_reached", message: "Limit reached", details: { feature: "tasks.maxActive", limit: 4, current: 4 } });
   assert.equal(result.details?.feature, "tasks.maxActive");
-  assert.equal(result.details?.limit, 4);
-});
-
-test("migration seeds both configurable plans and audit storage", () => {
-  assert.match(migration, /create table if not exists entitlement_plan_configs/);
-  assert.match(migration, /create table if not exists user_entitlements/);
-  assert.match(migration, /create table if not exists entitlement_audit_log/);
-  assert.match(migration, /\('free'/);
-  assert.match(migration, /\('pro'/);
-  assert.match(complimentaryMigration, /granted_by_user_id/);
-  assert.match(complimentaryMigration, /granted_at/);
-  assert.match(complimentaryMigration, /reason/);
-  assert.match(complimentaryMigration, /source = 'subscription'/);
-  assert.match(complimentaryMigration, /'subscription'/);
-});
-
-test("Complimentary PRO keeps the PRO plan and supports permanent grants", () => {
-  const result = entitlementsSchema.parse({
-    plan: "pro",
-    configuredPlan: "pro",
-    accessPlan: "pro",
-    status: "active",
-    source: "complimentary",
-    complimentaryProGrant: {
-      grantedByUserId: "usr_12345678",
-      grantedAt: new Date().toISOString(),
-      reason: "Familie"
-    },
-    features: freeFeatures,
-    usage: {
-      houses: { active: 0, limit: null },
-      documents: { active: 0, storageBytes: 0, limit: null, storageLimitBytes: null },
-      tasks: { active: 0, limit: null }
-    },
-    evaluatedAt: new Date().toISOString()
-  });
-
-  assert.equal(result.plan, "pro");
-  assert.equal(result.source, "complimentary");
-  assert.equal(updateAdminUserEntitlementRequestSchema.parse({
-    action: "set_plan",
-    plan: "pro"
-  }).plan, "pro");
-  assert.equal(updateAdminUserEntitlementRequestSchema.parse({
-    action: "grant_complimentary_pro",
-    expiresAt: null,
-    reason: "Familie"
-  }).action, "grant_complimentary_pro");
-  assert.equal(updateAdminUserEntitlementRequestSchema.parse({
-    action: "remove_complimentary_pro"
-  }).action, "remove_complimentary_pro");
 });

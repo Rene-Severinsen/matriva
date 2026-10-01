@@ -4,9 +4,10 @@ import test from "node:test";
 import { apiErrorSchema, entitlementsSchema, billingEventSchema, billingSubscriptionSchema } from "../packages/shared/dist/index.js";
 
 const migration = await readFile(new URL("../apps/api/src/migrations/0037_apple_billing_v1.sql", import.meta.url), "utf8");
+const complimentaryMigration = await readFile(new URL("../apps/api/src/migrations/0038_complimentary_pro_grants_v1.sql", import.meta.url), "utf8");
 
 test("Free entitlement contract remains backend-compatible", () => {
-  const result = entitlementsSchema.parse({ plan: "free", configuredPlan: "free", accessPlan: "free", status: "free", source: "default", features: { "houses.maxActive": { kind: "limit", value: 1 } }, usage: { houses: { active: 0, limit: 1 }, documents: { active: 0, storageBytes: 0, limit: 2, storageLimitBytes: 10 * 1024 * 1024 }, tasks: { active: 0, limit: 4 } }, evaluatedAt: new Date().toISOString() });
+  const result = entitlementsSchema.parse({ plan: "free", configuredPlan: "free", accessPlan: "free", status: "free", source: "default", complimentaryProGrant: null, features: { "houses.maxActive": { kind: "limit", value: 1 } }, usage: { houses: { active: 0, limit: 1 }, documents: { active: 0, storageBytes: 0, limit: 2, storageLimitBytes: 10 * 1024 * 1024 }, tasks: { active: 0, limit: 4 } }, evaluatedAt: new Date().toISOString() });
   assert.equal(result.plan, "free");
 });
 
@@ -17,13 +18,14 @@ test("billing contracts are provider-neutral and Apple-ready", () => {
   assert.equal(subscription.plan, "pro");
 });
 
-test("billing migration removes manual PRO and adds idempotent event storage", () => {
+test("billing migration adds provider storage and complimentary grants remain separate", () => {
   assert.match(migration, /delete from user_entitlements where source = 'complimentary'/);
   assert.match(migration, /create table if not exists billing_subscriptions/);
   assert.match(migration, /create table if not exists billing_events/);
   assert.match(migration, /unique index if not exists billing_events_provider_event_unique/);
   assert.match(migration, /source in \('default', 'subscription', 'billing'\)/);
-  assert.doesNotMatch(migration, /complimentary_pro/);
+  assert.ok(complimentaryMigration.includes("source in ('default', 'complimentary', 'subscription', 'billing')"));
+  assert.ok(complimentaryMigration.includes("granted_by_user_id"));
 });
 
 test("limit errors expose stable machine-readable details", () => {

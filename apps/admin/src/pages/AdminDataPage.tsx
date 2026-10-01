@@ -543,21 +543,56 @@ function RecommendationGuidePanel({ client, item, onAuthorizationError }: { clie
 }
 
 function UserEntitlementPanel({ client, userId, onAuthorizationError }: { client: MatrivaAdminApiClient; userId: string; onAuthorizationError: (error: unknown) => Promise<boolean> }) {
-  const { state } = useListState<AdminUserEntitlementResponse>(() => client.getAdminUserEntitlements(userId), onAuthorizationError, "Entitlement-status kunne ikke indlæses.", [client, userId]);
+  const { state, retry } = useListState<AdminUserEntitlementResponse>(() => client.getAdminUserEntitlements(userId), onAuthorizationError, "Entitlement-status kunne ikke indlæses.", [client, userId]);
+  const [grantMode, setGrantMode] = useState<"none" | "permanent" | "until">("none");
+  const [expiryDate, setExpiryDate] = useState("");
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  useEffect(() => {
+    if (state.status !== "ready") return;
+    const { entitlements } = state.data.entitlement;
+    setGrantMode(entitlements.complimentaryProGrant ? entitlements.expiresAt ? "until" : "permanent" : "none");
+    setExpiryDate(entitlements.expiresAt ? entitlements.expiresAt.slice(0, 10) : "");
+    setReason(entitlements.complimentaryProGrant?.reason ?? "");
+  }, [state.status, state.status === "ready" ? state.data.entitlement.entitlements.evaluatedAt : null]);
   if (state.status === "loading") return <section className="detail-panel"><p>Indlæser entitlement-status...</p></section>;
   if (state.status === "error") return <section className="detail-panel"><p>{state.message}</p></section>;
   const { entitlements, overLimit } = state.data.entitlement;
-  return <DetailGrid title="Entitlement-status" subtitle="Backend-evalueret adgang og forbrug" rows={[
+  const isComplimentaryPro = entitlements.configuredPlan === "pro" && entitlements.source === "complimentary";
+  const grant = entitlements.complimentaryProGrant;
+  async function saveGrant() {
+    setSaving(true); setMessage(null);
+    try {
+      if (grantMode === "none") { setMessage("Vælg permanent eller tidsbegrænset Gratis PRO."); return; }
+      if (grantMode === "until" && !expiryDate) { setMessage("Vælg en udløbsdato."); return; }
+      await client.updateAdminUserEntitlement(userId, {
+        action: "grant_complimentary_pro",
+        expiresAt: grantMode === "permanent" ? null : new Date(`${expiryDate}T23:59:59.999Z`).toISOString(),
+        reason: reason.trim()
+      });
+      setMessage(isComplimentaryPro ? "Gratis PRO er ændret." : "Gratis PRO er tildelt."); retry();
+    } catch (error) { if (!(await onAuthorizationError(error))) setMessage(errorMessage(error, "Gratis PRO kunne ikke gemmes.")); }
+    finally { setSaving(false); }
+  }
+  async function removeGrant() {
+    setSaving(true); setMessage(null);
+    try { await client.updateAdminUserEntitlement(userId, { action: "remove_complimentary_pro" }); setMessage("Gratis PRO er fjernet."); retry(); }
+    catch (error) { if (!(await onAuthorizationError(error))) setMessage(errorMessage(error, "Gratis PRO kunne ikke fjernes.")); }
+    finally { setSaving(false); }
+  }
+  return <><DetailGrid title="Entitlement-status" subtitle="Backend-evalueret adgang og forbrug" rows={[
     ["Plan", `${entitlements.plan} (konfigureret: ${entitlements.configuredPlan})`],
     ["Status", entitlements.status],
-    ["Adgangskilde", entitlements.source === "billing" ? "Apple billing" : entitlements.source === "subscription" ? "Abonnement" : "Free"],
-    ["Udløber", entitlements.expiresAt ? formatDate(entitlements.expiresAt) : "Ikke relevant"],
+    ["Adgangskilde", entitlements.source === "billing" ? "Apple billing" : entitlements.source === "subscription" ? "Abonnement" : entitlements.source === "complimentary" ? "Gratis PRO" : "Free"],
+    ["Udløber", entitlements.expiresAt ? formatDate(entitlements.expiresAt) : isComplimentaryPro ? "Permanent" : "Ikke relevant"],
+    ...(grant ? [["Givet", `${formatDate(grant.grantedAt)} · ${grant.grantedByUserId ?? "ukendt admin"}`] as [string, string], ["Intern årsag", grant.reason] as [string, string]] : []),
     ["Boliger", `${entitlements.usage.houses.active}/${entitlements.usage.houses.limit ?? "∞"}`],
     ["Dokumenter", `${entitlements.usage.documents.active}/${entitlements.usage.documents.limit ?? "∞"}`],
     ["Dokumentlager", `${Math.round(entitlements.usage.documents.storageBytes / 1024 / 1024 * 10) / 10}/${entitlements.usage.documents.storageLimitBytes === null ? "∞" : Math.round(entitlements.usage.documents.storageLimitBytes / 1024 / 1024)} MB`],
     ["Egne aktive opgaver", `${entitlements.usage.tasks.active}/${entitlements.usage.tasks.limit ?? "∞"}`],
     ["Over limit efter udløb", overLimit.length ? overLimit.join(", ") : "Nej"]
-  ]} />;
+  ]} /><section className="detail-panel subscription-panel complimentary-panel"><header><h3>Gratis PRO</h3><span>Administrativ, gratis adgang</span></header><div className="subscription-controls"><label>Gratis adgang<select value={grantMode} onChange={(event) => setGrantMode(event.target.value as "none" | "permanent" | "until")}><option value="none">Ingen tildeling</option><option value="permanent">Permanent</option><option value="until">Tidsbegrænset</option></select></label>{grantMode === "until" ? <label>Udløbsdato<input type="date" value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} /></label> : null}<label className="subscription-reason">Intern årsag<input maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Fx familie eller nær ven" /></label><button className="primary-action" disabled={saving || grantMode === "none" || reason.trim().length === 0} onClick={() => void saveGrant()} type="button">{saving ? "Gemmer..." : isComplimentaryPro ? "Gem Gratis PRO" : "Giv Gratis PRO"}</button>{isComplimentaryPro ? <button className="secondary-action" disabled={saving} onClick={() => void removeGrant()} type="button">Fjern Gratis PRO</button> : null}</div>{message ? <p className="state-message">{message}</p> : null}</section></>;
 }
 
 function DetailGrid({ title, subtitle, rows, extra = [] }: { title: string; subtitle: string; rows: Array<[string, string]>; extra?: ReactNode[] }) {

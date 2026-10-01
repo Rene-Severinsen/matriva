@@ -3,6 +3,7 @@ import {
   adminBootstrapResponseSchema,
   adminEntitlementConfigResponseSchema,
   adminUserEntitlementResponseSchema,
+  updateAdminUserEntitlementRequestSchema,
   adminDashboardPeriodKeySchema,
   adminDashboardResponseSchema,
   adminHouseResponseSchema,
@@ -76,6 +77,7 @@ import {
   type AdminBootstrapResponse,
   type AdminEntitlementConfigResponse,
   type AdminUserEntitlementResponse,
+  type UpdateAdminUserEntitlementRequest,
   type AdminDashboardPeriodKey,
   type AdminDashboardResponse,
   type AdminHousePublicDataStatusFilter,
@@ -321,6 +323,10 @@ export type MatrivaApiClient = {
     userId: string,
     input?: { signal?: AbortSignal }
   ) => Promise<AdminUserEntitlementResponse>;
+  updateAdminUserEntitlement: (
+    userId: string,
+    input: UpdateAdminUserEntitlementRequest
+  ) => Promise<AdminUserEntitlementResponse>;
   getAdminEntitlementConfig: () => Promise<AdminEntitlementConfigResponse>;
   updateAdminEntitlementConfig: (
     plan: "free" | "pro",
@@ -527,6 +533,7 @@ export type MatrivaAdminApiClient = Pick<
   | "getAdminUsers"
   | "getAdminUser"
   | "getAdminUserEntitlements"
+  | "updateAdminUserEntitlement"
   | "getAdminEntitlementConfig"
   | "updateAdminEntitlementConfig"
   | "getAdminHouses"
@@ -683,6 +690,14 @@ export function createMatrivaAdminApiClient(
       return adminUserEntitlementResponseSchema.parse(
         await parseApiResponse(response, "Kunne ikke indlæse brugerens entitlements.")
       );
+    },
+    async updateAdminUserEntitlement(userId, input) {
+      updateAdminUserEntitlementRequestSchema.parse(input);
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/admin/users/${encodeURIComponent(userId)}/entitlements`,
+        { method: "PUT", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) }
+      );
+      return adminUserEntitlementResponseSchema.parse(await parseApiResponse(response, "Kunne ikke opdatere Gratis PRO."));
     },
     async getAdminEntitlementConfig() {
       const response = await fetcher(`${normalizedBaseUrl}/v1/admin/entitlements/config`, { headers: authHeaders() });
@@ -1179,6 +1194,14 @@ export function createMatrivaApiClient(
       return adminUserEntitlementResponseSchema.parse(
         await parseApiResponse(response, "Kunne ikke indlæse brugerens entitlements.")
       );
+    },
+    async updateAdminUserEntitlement(userId, input) {
+      updateAdminUserEntitlementRequestSchema.parse(input);
+      const response = await fetcher(
+        `${normalizedBaseUrl}/v1/admin/users/${encodeURIComponent(userId)}/entitlements`,
+        { method: "PUT", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(input) }
+      );
+      return adminUserEntitlementResponseSchema.parse(await parseApiResponse(response, "Kunne ikke opdatere Gratis PRO."));
     },
     async getAdminEntitlementConfig() {
       const response = await fetcher(`${normalizedBaseUrl}/v1/admin/entitlements/config`, { headers: authHeaders() });

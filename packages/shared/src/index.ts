@@ -4235,8 +4235,15 @@ export const entitlementStatusSchema = z.enum([
 ]);
 export type EntitlementStatus = z.infer<typeof entitlementStatusSchema>;
 
-export const entitlementSourceSchema = z.enum(["default", "subscription", "billing"]);
+export const entitlementSourceSchema = z.enum(["default", "complimentary", "subscription", "billing"]);
 export type EntitlementSource = z.infer<typeof entitlementSourceSchema>;
+
+export const complimentaryProGrantSchema = z.object({
+  grantedByUserId: userIdSchema.nullable(),
+  grantedAt: z.string().datetime(),
+  reason: z.string().min(1)
+}).strip();
+export type ComplimentaryProGrant = z.infer<typeof complimentaryProGrantSchema>;
 
 export const entitlementUsageSchema = z.object({
   houses: z.object({ active: z.number().int().nonnegative(), limit: z.number().int().nonnegative().nullable() }).strip(),
@@ -4251,6 +4258,7 @@ export const entitlementsSchema = z.object({
   accessPlan: entitlementPlanSchema,
   status: entitlementStatusSchema,
   source: entitlementSourceSchema,
+  complimentaryProGrant: complimentaryProGrantSchema.nullable(),
   features: entitlementFeatureMapSchema,
   usage: entitlementUsageSchema,
   evaluatedAt: z.string().datetime(),
@@ -4288,6 +4296,20 @@ export const adminUserEntitlementResponseSchema = z.object({
   generatedAt: z.string().datetime()
 });
 export type AdminUserEntitlementResponse = z.infer<typeof adminUserEntitlementResponseSchema>;
+
+export const updateAdminUserEntitlementRequestSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("grant_complimentary_pro"),
+    expiresAt: z.string().datetime().nullable(),
+    reason: z.string().trim().min(1).max(500)
+  }),
+  z.object({
+    action: z.literal("remove_complimentary_pro")
+  })
+]);
+export type UpdateAdminUserEntitlementRequest = z.infer<
+  typeof updateAdminUserEntitlementRequestSchema
+>;
 
 export const billingProviderSchema = z.enum(["apple", "google"]);
 export type BillingProvider = z.infer<typeof billingProviderSchema>;

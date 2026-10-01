@@ -107,14 +107,16 @@ try {
     [[
       "0030_guide_open_events_v1.sql",
       "0031_user_task_cluster_analytics_v1.sql",
-      "0037_apple_billing_v1.sql"
+      "0037_apple_billing_v1.sql",
+      "0038_complimentary_pro_grants_v1.sql"
     ]]
   );
   const appliedMigrations = new Set(migrationResult.rows.map((row) => row.name));
   for (const migration of [
     "0030_guide_open_events_v1.sql",
     "0031_user_task_cluster_analytics_v1.sql",
-    "0037_apple_billing_v1.sql"
+    "0037_apple_billing_v1.sql",
+    "0038_complimentary_pro_grants_v1.sql"
   ]) {
     assert.ok(appliedMigrations.has(migration), `QA migration is not applied: ${migration}.`);
   }
@@ -134,6 +136,7 @@ console.log(JSON.stringify({
   migrations: [
     "0030_guide_open_events_v1.sql",
     "0031_user_task_cluster_analytics_v1.sql",
-    "0037_apple_billing_v1.sql"
+    "0037_apple_billing_v1.sql",
+    "0038_complimentary_pro_grants_v1.sql"
   ]
 }, null, 2));

@@ -582,7 +582,7 @@ export async function recordBillingEvent(input: BillingEvent, userId: string | n
     const result = await client.query<{ id: string }>(
       `insert into billing_events
         (provider, environment, provider_event_id, event_type, provider_subscription_id, user_id, occurred_at, payload)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+       values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
        on conflict (provider, environment, provider_event_id) do nothing
        returning id`,
       [

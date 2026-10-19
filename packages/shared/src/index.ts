@@ -4286,10 +4286,29 @@ export const updateAdminEntitlementPlanConfigRequestSchema = z.object({
 });
 export type UpdateAdminEntitlementPlanConfigRequest = z.infer<typeof updateAdminEntitlementPlanConfigRequestSchema>;
 
+export const adminBillingAuditSchema = z.object({
+  subscriptions: z.array(z.object({
+    id: z.string(), provider: z.enum(["apple", "google"]), environment: z.enum(["sandbox", "production"]),
+    productId: z.string(), status: z.string(), originalTransactionId: z.string().nullable(),
+    transactionId: z.string().nullable(), periodStartsAt: z.string().datetime().nullable(),
+    periodEndsAt: z.string().datetime().nullable(), autoRenew: z.boolean().nullable(),
+    lastVerifiedAt: z.string().datetime().nullable(), createdAt: z.string().datetime(), updatedAt: z.string().datetime()
+  })),
+  events: z.array(z.object({
+    id: z.string(), provider: z.enum(["apple", "google"]), environment: z.enum(["sandbox", "production"]),
+    eventId: z.string(), eventType: z.string(), transactionId: z.string().nullable(),
+    occurredAt: z.string().datetime().nullable(), receivedAt: z.string().datetime(),
+    processedAt: z.string().datetime().nullable(), processingError: z.string().nullable()
+  })),
+  eventLimit: z.number().int().positive()
+});
+export type AdminBillingAudit = z.infer<typeof adminBillingAuditSchema>;
+
 export const adminUserEntitlementSchema = z.object({
   userId: userIdSchema,
   entitlements: entitlementsSchema,
-  overLimit: z.array(z.enum(["houses", "documents", "storage", "tasks"]))
+  overLimit: z.array(z.enum(["houses", "documents", "storage", "tasks"])),
+  billing: adminBillingAuditSchema.optional()
 });
 export const adminUserEntitlementResponseSchema = z.object({
   entitlement: adminUserEntitlementSchema,

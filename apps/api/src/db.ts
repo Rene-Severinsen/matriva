@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import pg from "pg";
+import { getAdminBillingAudit } from "./admin-billing.ts";
 import type { PoolClient } from "pg";
 
 import {
@@ -773,7 +774,8 @@ export async function getAdminUserEntitlements(userId: string): Promise<AdminUse
   if (entitlements.usage.documents.limit !== null && entitlements.usage.documents.active > entitlements.usage.documents.limit) overLimit.push("documents");
   if (entitlements.usage.documents.storageLimitBytes !== null && entitlements.usage.documents.storageBytes > entitlements.usage.documents.storageLimitBytes) overLimit.push("storage");
   if (entitlements.usage.tasks.limit !== null && entitlements.usage.tasks.active > entitlements.usage.tasks.limit) overLimit.push("tasks");
-  return { entitlement: { userId: userId as UserId, entitlements, overLimit }, generatedAt: new Date().toISOString() };
+  const billing = await getAdminBillingAudit(userId);
+  return { entitlement: { userId: userId as UserId, entitlements, overLimit, billing }, generatedAt: new Date().toISOString() };
 }
 
 export async function updateAdminUserEntitlement(

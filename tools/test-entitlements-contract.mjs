@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { apiErrorSchema, entitlementsSchema, billingEventSchema, billingSubscriptionSchema } from "../packages/shared/dist/index.js";
+import { adminUserListItemSchema, apiErrorSchema, entitlementsSchema, billingEventSchema, billingSubscriptionSchema } from "../packages/shared/dist/index.js";
 
 const migration = await readFile(new URL("../apps/api/src/migrations/0037_apple_billing_v1.sql", import.meta.url), "utf8");
 const complimentaryMigration = await readFile(new URL("../apps/api/src/migrations/0038_complimentary_pro_grants_v1.sql", import.meta.url), "utf8");
@@ -9,6 +9,28 @@ const complimentaryMigration = await readFile(new URL("../apps/api/src/migration
 test("Free entitlement contract remains backend-compatible", () => {
   const result = entitlementsSchema.parse({ plan: "free", configuredPlan: "free", accessPlan: "free", status: "free", source: "default", complimentaryProGrant: null, features: { "houses.maxActive": { kind: "limit", value: 1 } }, usage: { houses: { active: 0, limit: 1 }, documents: { active: 0, storageBytes: 0, limit: 2, storageLimitBytes: 10 * 1024 * 1024 }, tasks: { active: 0, limit: 4 } }, evaluatedAt: new Date().toISOString() });
   assert.equal(result.plan, "free");
+});
+
+test("Admin user list accepts complimentary PRO users", () => {
+  const result = adminUserListItemSchema.parse({
+    id: "usr_12345678",
+    displayName: "Test bruger",
+    email: "test@example.com",
+    status: "active",
+    createdAt: new Date().toISOString(),
+    lastLoginAt: null,
+    latestSessionActivityAt: null,
+    houseCount: 0,
+    pendingClaimCount: 0,
+    taskCount: 0,
+    completionCount: 0,
+    subscriptionPlan: "pro",
+    subscriptionSource: "complimentary",
+    subscriptionExpiresAt: null,
+    roles: [],
+    onboardingState: "profile_required"
+  });
+  assert.equal(result.subscriptionSource, "complimentary");
 });
 
 test("billing contracts are provider-neutral and Apple-ready", () => {

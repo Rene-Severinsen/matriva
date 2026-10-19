@@ -533,7 +533,7 @@ export const adminUserListItemSchema = z.object({
   taskCount: adminListCountSchema,
   completionCount: adminListCountSchema,
   subscriptionPlan: z.enum(["free", "pro"]),
-  subscriptionSource: z.enum(["default", "subscription", "billing"]),
+  subscriptionSource: z.enum(["default", "complimentary", "subscription", "billing"]),
   subscriptionExpiresAt: z.string().datetime().nullable(),
   roles: z.array(adminRoleSchema),
   onboardingState: onboardingStateSchema

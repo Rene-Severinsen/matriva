@@ -1958,40 +1958,11 @@ function DashboardScreen({
   );
 }
 
-function EntitlementSummaryCard({ entitlements }: { entitlements: AppBootstrapResponse["entitlements"] }) {
-  const formatLimit = (value: number | null) => value === null ? "∞" : String(value);
-  const statusLabel = entitlements.status === "free"
-    ? "Free"
-    : entitlements.status === "billing_issue" || entitlements.status === "expired" || entitlements.status === "refunded_revoked"
-      ? "Begrænset adgang"
-      : entitlements.plan === "pro" ? "Pro" : "Free";
-  return (
-    <Card variant="soft">
-      <View style={styles.cardHeaderRow}>
-        <View style={styles.taskTitleGroup}>
-          <Text style={styles.eyebrow}>DIN ADGANG</Text>
-          <Text style={styles.cardTitle}>{statusLabel}</Text>
-        </View>
-        {entitlements.status !== "free" && entitlements.status !== "active" ? <Pill>{entitlements.status.replaceAll("_", " ")}</Pill> : null}
-      </View>
-      <Text style={styles.compactBodyText}>
-        {entitlements.usage.houses.active}/{formatLimit(entitlements.usage.houses.limit)} boliger · {entitlements.usage.documents.active}/{formatLimit(entitlements.usage.documents.limit)} dokumenter · {entitlements.usage.tasks.active}/{formatLimit(entitlements.usage.tasks.limit)} egne aktive opgaver
-      </Text>
-      {entitlements.usage.documents.storageLimitBytes !== null ? <Text style={styles.metaText}>{Math.round(entitlements.usage.documents.storageBytes / 1024 / 1024 * 10) / 10}/{Math.round(entitlements.usage.documents.storageLimitBytes / 1024 / 1024)} MB dokumentlager</Text> : null}
-      {entitlements.status !== "free" && entitlements.plan !== "pro" ? <Text style={styles.metaText}>Nogle funktioner er midlertidigt begrænsede. Dine eksisterende data er bevaret.</Text> : null}
-    </Card>
-  );
-}
 
-function SubscriptionScreen({ entitlements, apiClient, onBack }: { entitlements: AppBootstrapResponse["entitlements"]; apiClient: ReturnType<typeof createMatrivaApiClient>; onBack: () => void }) {
+function SubscriptionScreen({ entitlements, apiClient, onBack, onEntitlementsChanged }: { entitlements: AppBootstrapResponse["entitlements"]; apiClient: ReturnType<typeof createMatrivaApiClient>; onBack: () => void; onEntitlementsChanged: (value: AppBootstrapResponse["entitlements"]) => void }) {
   return (
     <View style={styles.stack}>
-      <EntitlementSummaryCard entitlements={entitlements} />
-      <AppleSubscriptionScreen apiClient={apiClient} onBack={onBack} />
-      <Card>
-        <Text style={styles.cardTitle}>Betaling</Text>
-        <Text style={styles.compactBodyText}>Køb og gendannelse håndteres via Apples App Store på iOS.</Text>
-      </Card>
+      <AppleSubscriptionScreen entitlements={entitlements} apiClient={apiClient} onBack={onBack} onEntitlementsChanged={onEntitlementsChanged} />
     </View>
   );
 }
@@ -7869,7 +7840,7 @@ export default function App() {
     }
 
     if (moreView === "subscription" && bootstrap) {
-      return <SubscriptionScreen entitlements={bootstrap.entitlements} apiClient={apiClient} onBack={() => setMoreView("menu")} />;
+      return <SubscriptionScreen entitlements={bootstrap.entitlements} apiClient={apiClient} onBack={() => setMoreView("menu")} onEntitlementsChanged={entitlements => setBootstrap(current => current ? { ...current, entitlements } : current)} />;
     }
 
     if (moreView === "guides") {

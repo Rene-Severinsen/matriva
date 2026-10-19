@@ -4258,7 +4258,7 @@ export const entitlementsSchema = z.object({
   accessPlan: entitlementPlanSchema,
   status: entitlementStatusSchema,
   source: entitlementSourceSchema,
-  complimentaryProGrant: complimentaryProGrantSchema.nullable(),
+  complimentaryProGrant: complimentaryProGrantSchema.nullable().default(null),
   features: entitlementFeatureMapSchema,
   usage: entitlementUsageSchema,
   evaluatedAt: z.string().datetime(),

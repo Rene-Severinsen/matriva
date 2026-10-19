@@ -1,101 +1,127 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
-import { useIAP, type Purchase } from "expo-iap";
-
+import { useEffect, useRef, useState } from "react";
+import { AppState, Platform } from "react-native";
+import { deepLinkToSubscriptions, getAvailablePurchases as getStorePurchases, useIAP, type Purchase } from "expo-iap";
 import type { MatrivaApiClient } from "@matriva/api-client";
+import type { Entitlements } from "@matriva/shared";
+import { SubscriptionView } from "./SubscriptionView";
+import { subscriptionPresentation } from "./subscriptionPresentation";
 
 const productId = process.env.EXPO_PUBLIC_MATRIVA_APPLE_PRO_PRODUCT_ID?.trim() || "matriva.pro.monthly";
 
-export function AppleSubscriptionScreen({ apiClient, onBack }: { apiClient: MatrivaApiClient; onBack: () => void }) {
-  const [message, setMessage] = useState<string | null>(null);
+export function AppleSubscriptionScreen({ apiClient, entitlements, onEntitlementsChanged, onBack }: {
+  apiClient: MatrivaApiClient; entitlements: Entitlements; onEntitlementsChanged: (value: Entitlements) => void; onBack: () => void;
+}) {
+  const [current, setCurrent] = useState(entitlements);
+  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [restorePending, setRestorePending] = useState(false);
-  const syncAndFinish = useCallback(async (purchase: Purchase) => {
-    if (Platform.OS !== "ios") return;
-    if (!purchase.purchaseToken) {
-      setMessage("Apple returnerede ingen signerede transaktionsdata.");
-      return;
-    }
-    setBusy(true);
-    try {
-      const result = await apiClient.syncApplePurchase({ signedTransactionInfo: purchase.purchaseToken, eventId: purchase.id });
-      await finishTransaction({ purchase, isConsumable: false });
-      setMessage(result.entitlement.plan === "pro" ? "PRO-adgangen er aktiveret." : "Købet er modtaget og behandles.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Apple-købet kunne ikke synkroniseres.");
-    } finally {
+  const [checking, setChecking] = useState(true);
+  const [verified, setVerified] = useState(false);
+  const mounted = useRef(true);
+  const revision = useRef(0);
+  const onChanged = useRef(onEntitlementsChanged);
+  onChanged.current = onEntitlementsChanged;
+  const pending = useRef(new Map<string, Promise<Entitlements>>());
+  const { connected, subscriptions, fetchProducts, requestPurchase, restorePurchases, finishTransaction, reconnect } = useIAP({
+    onPurchaseSuccess: purchase => {
+      if (purchase.productId !== productId) return;
+      setBusy(true);
+      void sync(purchase).catch(() => {
+        if (mounted.current) setMessage({ text: "Vi kunne ikke bekræfte købet lige nu. Hvis Apple har gennemført det, kan du trykke Gendan køb. Du skal ikke købe igen.", error: true });
+      }).finally(() => { if (mounted.current) setBusy(false); });
+    },
+    onPurchaseError: () => {
+      if (!mounted.current) return;
       setBusy(false);
+      setMessage({ text: "Købet blev ikke gennemført. Du kan prøve igen, når du er klar.", error: true });
     }
-  }, [apiClient]);
-  const { connected, subscriptions, availablePurchases, fetchProducts, requestPurchase, restorePurchases, getAvailablePurchases, finishTransaction } = useIAP({
-    onPurchaseSuccess: (purchase) => { void syncAndFinish(purchase); },
-    onPurchaseError: (error) => setMessage(error.message || "Apple-købet blev ikke gennemført.")
   });
-  const subscription = useMemo(() => subscriptions.find((item) => item.id === productId), [subscriptions]);
 
+  function apply(value: Entitlements) {
+    if (!mounted.current) return;
+    revision.current += 1;
+    setCurrent(value); setVerified(true); setChecking(false); onChanged.current(value);
+  }
+  async function sync(purchase: Purchase): Promise<Entitlements> {
+    const existing = pending.current.get(purchase.id);
+    if (existing) return existing;
+    const operation = (async () => {
+      if (!purchase.purchaseToken) throw new Error("Missing transaction");
+      const result = await apiClient.syncApplePurchase({ signedTransactionInfo: purchase.purchaseToken, eventId: purchase.id });
+      apply(result.entitlement);
+      try { await finishTransaction({ purchase, isConsumable: false }); }
+      catch {
+        if (mounted.current) setMessage({ text: "Din adgang er opdateret, men App Store kunne ikke afslutte synkroniseringen. Prøv Gendan køb igen senere.", error: true });
+        return result.entitlement;
+      }
+      if (mounted.current) setMessage({ text: result.entitlement.accessPlan === "pro" ? "Du har nu PRO. Alle dine fordele er klar." : "Købet er kontrolleret. Det giver ikke aktiv PRO-adgang lige nu.", error: result.entitlement.accessPlan !== "pro" });
+      return result.entitlement;
+    })();
+    pending.current.set(purchase.id, operation);
+    try { return await operation; } finally { pending.current.delete(purchase.id); }
+  }
+  async function refresh() {
+    const requestRevision = ++revision.current;
+    setChecking(true);
+    try {
+      const result = await apiClient.getAppBootstrap();
+      if (mounted.current && revision.current === requestRevision) { apply(result.entitlements); setMessage(null); }
+    } catch {
+      if (mounted.current && revision.current === requestRevision) {
+        setVerified(false);
+        setMessage({ text: "Vi kunne ikke opdatere din adgang. Den senest hentede status vises. Prøv Opdater adgang igen.", error: true });
+      }
+    } finally {
+      if (mounted.current && revision.current <= requestRevision + 1) setChecking(false);
+    }
+  }
+  useEffect(() => { setCurrent(entitlements); }, [entitlements]);
   useEffect(() => {
-    if (Platform.OS === "ios" && connected) void fetchProducts({ skus: [productId], type: "subs" }).catch(() => setMessage("Apple-produktet kunne ikke indlæses endnu."));
+    mounted.current = true;
+    void refresh();
+    const listener = AppState.addEventListener("change", state => { if (state === "active") void refresh(); });
+    return () => { mounted.current = false; listener.remove(); };
+  }, [apiClient]);
+  useEffect(() => {
+    if (Platform.OS !== "ios" || !connected) return;
+    void fetchProducts({ skus: [productId], type: "subs" }).catch(() => {
+      if (mounted.current) setMessage({ text: "Prisen kunne ikke hentes fra App Store. Prøv igen om lidt.", error: true });
+    });
   }, [connected, fetchProducts]);
 
-  useEffect(() => {
-    if (!restorePending || availablePurchases.length === 0) return;
-    setRestorePending(false);
-    void Promise.all(availablePurchases.map((purchase) => syncAndFinish(purchase)));
-  }, [availablePurchases, restorePending, syncAndFinish]);
-
   async function buy() {
-    setMessage(null);
-    try {
-      await requestPurchase({ type: "subs", request: { apple: { sku: productId } } });
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Apple-købet kunne ikke startes.");
-    }
+    if (busy || checking || !verified || subscriptionPresentation(current).pro) return;
+    setBusy(true); setMessage(null);
+    try { await requestPurchase({ type: "subs", request: { apple: { sku: productId } } }); }
+    catch { setBusy(false); setMessage({ text: "Købet kunne ikke startes. Prøv igen om lidt.", error: true }); }
   }
-
   async function restore() {
-    setBusy(true);
-    setMessage(null);
+    if (busy) return;
+    setBusy(true); setMessage(null);
     try {
-      await restorePurchases();
-      await getAvailablePurchases();
-      setRestorePending(true);
-      if (availablePurchases.length === 0) setMessage("Apple undersøger tidligere køb...");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Apple-købene kunne ikke gendannes.");
-    } finally {
-      setBusy(false);
-    }
+      await restorePurchases({ alsoPublishToEventListenerIOS: false, onlyIncludeActiveItemsIOS: true });
+      const purchases = (await getStorePurchases({ alsoPublishToEventListenerIOS: false, onlyIncludeActiveItemsIOS: true })).filter(purchase => purchase.productId === productId);
+      if (!purchases.length) setMessage({ text: "Der blev ikke fundet et aktivt PRO-køb på denne Apple-konto.", error: false });
+      // Oldest first: the newest verified transaction determines the final access state.
+      for (const purchase of purchases.sort((a, b) => a.transactionDate - b.transactionDate)) await sync(purchase);
+    } catch { setMessage({ text: "Dine køb kunne ikke gendannes lige nu. Kontrollér forbindelsen, og prøv igen.", error: true }); }
+    finally { if (mounted.current) setBusy(false); }
   }
-
-  if (Platform.OS !== "ios") {
-    return <View style={styles.stack}><Text style={styles.title}>Abonnement</Text><Text style={styles.body}>Apple-abonnementer kan testes fra en iPhone/iPad-build. Google Play er ikke aktiveret.</Text><Pressable onPress={onBack} style={styles.secondary}><Text style={styles.secondaryText}>Tilbage</Text></Pressable></View>;
+  async function manage() {
+    setBusy(true);
+    try { await deepLinkToSubscriptions({}); }
+    catch { setMessage({ text: "App Store kunne ikke åbnes. Du kan også finde abonnementet under Indstillinger → dit navn → Abonnementer.", error: true }); }
+    finally { if (mounted.current) setBusy(false); }
   }
-
-  return <View style={styles.stack}>
-    <View style={styles.header}><Text style={styles.title}>Abonnement</Text><Pressable onPress={onBack}><Text style={styles.link}>Tilbage</Text></Pressable></View>
-    <Text style={styles.body}>PRO købes gennem App Store. Matriva aktiverer først adgangen, når backend har verificeret Apples signerede transaktion.</Text>
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>Matriva PRO</Text>
-      <Text style={styles.body}>{subscription?.displayPrice ?? "Pris vises fra App Store"}</Text>
-      <Pressable accessibilityRole="button" disabled={busy || !connected || !subscription} onPress={() => void buy()} style={[styles.primary, busy || !connected || !subscription ? styles.disabled : null]}><Text style={styles.primaryText}>{busy ? "Arbejder..." : connected ? "Køb PRO" : "Forbinder til App Store..."}</Text></Pressable>
-      <Pressable accessibilityRole="button" disabled={busy} onPress={() => void restore()} style={styles.secondary}><Text style={styles.secondaryText}>Gendan køb</Text></Pressable>
-    </View>
-    {message ? <Text style={styles.message}>{message}</Text> : null}
-  </View>;
+  async function retryStore() {
+    setBusy(true);
+    try {
+      if (!connected && !(await reconnect())) throw new Error("Store unavailable");
+      await fetchProducts({ skus: [productId], type: "subs" });
+    } catch { setMessage({ text: "App Store er ikke tilgængelig lige nu. Prøv igen senere.", error: true }); }
+    finally { if (mounted.current) setBusy(false); }
+  }
+  return <SubscriptionView entitlements={current} price={subscriptions.find(item => item.id === productId)?.displayPrice}
+    ios={Platform.OS === "ios"} connected={connected} checking={checking} verified={verified} busy={busy} message={message}
+    onBack={onBack} onBuy={() => void buy()} onRestore={() => void restore()} onManage={() => void manage()}
+    onRefresh={() => void refresh()} onRetryStore={() => void retryStore()} />;
 }
-
-const styles = StyleSheet.create({
-  stack: { gap: 16, padding: 20 },
-  header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
-  title: { color: "#17352B", fontSize: 24, fontWeight: "700" },
-  card: { backgroundColor: "#F3F6F4", borderRadius: 16, gap: 12, padding: 18 },
-  cardTitle: { color: "#17352B", fontSize: 18, fontWeight: "700" },
-  body: { color: "#53645D", fontSize: 15, lineHeight: 22 },
-  primary: { alignItems: "center", backgroundColor: "#1C6B4D", borderRadius: 12, padding: 14 },
-  primaryText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
-  secondary: { alignItems: "center", borderColor: "#B6C6BE", borderRadius: 12, borderWidth: 1, padding: 13 },
-  secondaryText: { color: "#1C6B4D", fontSize: 15, fontWeight: "600" },
-  link: { color: "#1C6B4D", fontSize: 15, fontWeight: "600" },
-  message: { color: "#7A3E16", fontSize: 14 },
-  disabled: { opacity: 0.45 }
-});

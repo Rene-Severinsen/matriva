@@ -7,6 +7,7 @@ const repoRoot = process.cwd();
 const mobileRoot = path.join(repoRoot, "apps", "mobile");
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "matriva-testflight-"));
 const buildOnly = process.argv.includes("--build-only");
+const prepareOnly = process.argv.includes("--prepare-only");
 
 function copyProjectFile(relativePath) {
   fs.copyFileSync(path.join(mobileRoot, relativePath), path.join(tempRoot, relativePath));
@@ -56,6 +57,52 @@ function runStreaming(command, args, cwd) {
   });
 }
 
+function writeStandaloneLockfile(mobilePackage) {
+  const lockfile = JSON.parse(fs.readFileSync(path.join(repoRoot, "package-lock.json"), "utf8"));
+  const keptPackages = Object.fromEntries(
+    Object.entries(lockfile.packages).filter(([packagePath]) => (
+      packagePath === ""
+      || packagePath === "packages/shared"
+      || packagePath === "packages/api-client"
+      || packagePath.startsWith("node_modules/")
+    )),
+  );
+
+  for (const packageName of ["admin", "api", "mobile", "website"]) {
+    delete keptPackages[`node_modules/@matriva/${packageName}`];
+  }
+
+  keptPackages[""] = {
+    name: mobilePackage.name,
+    version: mobilePackage.version,
+    workspaces: ["packages/*"],
+    dependencies: mobilePackage.dependencies,
+    devDependencies: mobilePackage.devDependencies,
+    hasInstallScript: true,
+  };
+
+  lockfile.name = mobilePackage.name;
+  lockfile.packages = keptPackages;
+  fs.writeFileSync(path.join(tempRoot, "package-lock.json"), `${JSON.stringify(lockfile, null, 2)}\n`);
+}
+
+function verifyLockedNativeVersions() {
+  const lockfile = JSON.parse(fs.readFileSync(path.join(tempRoot, "package-lock.json"), "utf8"));
+  const packageNames = ["expo", "expo-font", "expo-modules-core", "expo-modules-jsi", "expo-modules-autolinking"];
+  const versions = packageNames.map((packageName) => {
+    const expected = lockfile.packages[`node_modules/${packageName}`]?.version;
+    const installed = JSON.parse(fs.readFileSync(
+      path.join(tempRoot, "node_modules", packageName, "package.json"),
+      "utf8",
+    )).version;
+    if (installed !== expected) {
+      throw new Error(`Locked version mismatch for ${packageName}: expected ${expected}, installed ${installed}`);
+    }
+    return `${packageName}@${installed}`;
+  });
+  console.log(`Locked native versions: ${versions.join(", ")}`);
+}
+
 function createStandaloneProject() {
   fs.mkdirSync(path.join(tempRoot, "packages"), { recursive: true });
   copyProjectDirectory(path.join(mobileRoot, "src"), path.join(tempRoot, "src"));
@@ -75,8 +122,9 @@ function createStandaloneProject() {
   fs.writeFileSync(path.join(tempRoot, "package.json"), `${JSON.stringify(mobilePackage, null, 2)}\n`);
   fs.writeFileSync(path.join(tempRoot, ".gitignore"), "node_modules/\ndist/\n.expo/\n.env*\n.DS_Store\n");
 
-  runSync("npm", ["install", "--package-lock-only", "--ignore-scripts"], tempRoot);
+  writeStandaloneLockfile(mobilePackage);
   runSync("npm", ["ci", "--include=dev"], tempRoot);
+  verifyLockedNativeVersions();
   runSync("git", ["init"], tempRoot);
   runSync("git", ["add", "."], tempRoot);
   runSync("git", ["-c", "user.name=Matriva TestFlight", "-c", "user.email=build@matriva.local", "commit", "-m", "TestFlight build snapshot"], tempRoot);
@@ -87,6 +135,11 @@ async function main() {
   try {
     console.log(`Creating standalone EAS project in ${tempRoot}`);
     createStandaloneProject();
+
+    if (prepareOnly) {
+      console.log("Standalone EAS project prepared successfully.");
+      return;
+    }
 
     const npx = process.platform === "win32" ? "npx.cmd" : "npx";
     const buildOutput = await runStreaming(npx, [
@@ -123,7 +176,7 @@ async function main() {
     ], tempRoot);
     succeeded = true;
   } finally {
-    if (buildOnly || succeeded) {
+    if (buildOnly || prepareOnly || succeeded) {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     } else {
       console.error(`Temporary build project retained for debugging: ${tempRoot}`);

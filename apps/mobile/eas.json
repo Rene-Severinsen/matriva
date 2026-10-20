@@ -22,6 +22,7 @@
       "distribution": "store",
       "autoIncrement": true,
       "env": {
+        "EXPO_USE_PRECOMPILED_MODULES": "0",
         "EXPO_PUBLIC_MATRIVA_API_BASE_URL": "https://api-qa.matriva.dk",
         "EXPO_PUBLIC_MATRIVA_ENVIRONMENT": "QA"
       }

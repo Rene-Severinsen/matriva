@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AppState, Platform } from "react-native";
-import { deepLinkToSubscriptions, getAvailablePurchases as getStorePurchases, useIAP, type Purchase } from "expo-iap";
+import { getAvailablePurchases as getStorePurchases, showManageSubscriptionsIOS, useIAP, type Purchase } from "expo-iap";
 import type { MatrivaApiClient } from "@matriva/api-client";
 import type { Entitlements } from "@matriva/shared";
 import { SubscriptionView } from "./SubscriptionView";
@@ -108,8 +108,13 @@ export function AppleSubscriptionScreen({ apiClient, entitlements, onEntitlement
   }
   async function manage() {
     setBusy(true);
-    try { await deepLinkToSubscriptions({}); }
-    catch { setMessage({ text: "App Store kunne ikke åbnes. Du kan også finde abonnementet under Indstillinger → dit navn → Abonnementer.", error: true }); }
+    try {
+      await showManageSubscriptionsIOS();
+      // Apple may change auto-renewal while the native management UI is open.
+      // Refresh the backend-backed entitlement when the user returns.
+      await refresh();
+    }
+    catch { setMessage({ text: "Apples abonnementsstyring kunne ikke åbnes. Du kan også finde TestFlight-abonnementet under Indstillinger → Udvikler → Sandbox Account → Manage.", error: true }); }
     finally { if (mounted.current) setBusy(false); }
   }
   async function retryStore() {

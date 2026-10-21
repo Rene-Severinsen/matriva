@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { ApiError, applyBillingSubscription, claimBillingEventRetry, createOpaqueId, findBillingUserId, finishBillingEvent, getEntitlementsForUser, getUnmatchedAppleNotifications, recordBillingEvent } from "./db.ts";
+import { ApiError, applyBillingSubscription, claimBillingEventRetry, createOpaqueId, createUserNotification, findBillingUserId, finishBillingEvent, getEntitlementsForUser, getUnmatchedAppleNotifications, recordBillingEvent, pool } from "./db.ts";
 import { appleSubscriptionStatus, verifiedAppleRenewalFromJws, verifiedAppleTransactionFromJws, verifyAppleJws } from "./billing-apple.ts";
 import type { AppleVerifiedRenewal, AppleVerifiedTransaction } from "./billing-apple.ts";
 import type { UserId } from "@matriva/shared";
+import type { NotificationType } from "@matriva/shared";
 
 type Step = Record<string, unknown>;
 const step = (name: string, result: string, detail?: string): Step => ({ name, result, at: new Date().toISOString(), ...(detail ? { detail } : {}) });
@@ -10,6 +11,35 @@ const signedDate = (value: unknown) => typeof value === "number" && Number.isFin
 
 function logBilling(input: Record<string, string | number | boolean | null>) {
   console.info(JSON.stringify({ event: "apple_billing_processing", ...input }));
+}
+
+function subscriptionNotification(
+  eventType: string,
+  subtype: string | null,
+  subscription: ReturnType<typeof subscriptionRecord>
+): { type: NotificationType; title: string; body: string; priority: "normal" | "high" } | null {
+  if (eventType === "SUBSCRIBED") {
+    return { type: "subscription_purchased", title: "PRO er aktiveret", body: "Dit Matriva PRO-abonnement er nu aktiv.", priority: "normal" };
+  }
+  if (eventType === "DID_RENEW") {
+    return { type: "subscription_renewed", title: "PRO er fornyet", body: "Dit Matriva PRO-abonnement er blevet fornyet.", priority: "normal" };
+  }
+  if (eventType === "DID_CHANGE_RENEWAL_STATUS" && subscription.autoRenew === false) {
+    return { type: "subscription_cancelled", title: "PRO er opsagt", body: "Dit PRO-abonnement er opsagt, men din adgang fortsætter indtil udløbsdatoen.", priority: "normal" };
+  }
+  if (eventType === "DID_FAIL_TO_RENEW") {
+    const inGracePeriod = subtype === "GRACE_PERIOD" || subscription.status === "grace_period";
+    return { type: "subscription_billing_issue", title: "Problem med PRO-betalingen", body: inGracePeriod
+      ? "Der er et problem med betalingen. Din PRO-adgang fortsætter midlertidigt."
+      : "Der er et problem med betalingen. Opdatér dine betalingsoplysninger hos Apple.", priority: "high" };
+  }
+  if (eventType === "EXPIRED" || eventType === "GRACE_PERIOD_EXPIRED") {
+    return { type: "subscription_expired", title: "PRO-adgangen er udløbet", body: "Dit Matriva PRO-abonnement er udløbet. Du har nu Free-adgang.", priority: "normal" };
+  }
+  if (eventType === "REFUND" || eventType === "REVOKE") {
+    return { type: "subscription_refunded", title: "PRO-adgangen er fjernet", body: "Dit Matriva PRO-køb er blevet refunderet eller tilbagekaldt.", priority: "high" };
+  }
+  return null;
 }
 
 function subscriptionRecord(transaction: AppleVerifiedTransaction, userId: string, renewal: AppleVerifiedRenewal | null, notificationType: string | null, subtype: string | null, notificationUuid: string | null, appleSignedAt: string | null, serverStatus: number | null) {
@@ -96,6 +126,24 @@ async function processVerifiedEvent(input: {
       (!nextSubscription.currentPeriodEndsAt || new Date(nextSubscription.currentPeriodEndsAt) > new Date() ||
         nextSubscription.status === "grace_period" && Boolean(nextSubscription.gracePeriodExpiresAt && new Date(nextSubscription.gracePeriodExpiresAt) > new Date()));
     steps.push(step("pro_access", applied.applied ? accessActive ? "active" : "removed" : "unchanged"));
+    if (applied.applied) {
+      const notification = subscriptionNotification(eventType, subtype, nextSubscription);
+      if (notification) {
+        await createUserNotification(pool, {
+          userId,
+          houseId: null,
+          type: notification.type,
+          category: "system",
+          title: notification.title,
+          body: notification.body,
+          entityType: "apple_subscription",
+          entityId: transaction.originalTransactionId ?? transaction.transactionId,
+          deepLink: "matriva://more/subscription",
+          priority: notification.priority,
+          deduplicationKey: `apple-subscription:${notification.type}:${input.providerEventId}:${userId}`
+        });
+      }
+    }
     steps.push(step("completed", applied.applied ? "ok" : "ignored_older"));
     await finishBillingEvent(event.id, applied.applied ? "processed" : "ignored_older", steps);
     logBilling({ ...fields, processingStatus: applied.applied ? "processed" : "older_event", durationMs: Date.now() - started });

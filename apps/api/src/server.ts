@@ -255,6 +255,7 @@ import {
 } from "./db.ts";
 import { processAppleNotification, processApplePurchaseSync } from "./billing-apple-flow.ts";
 import { auditAdminBillingPayloadAction, getAdminBillingAudit, getAdminBillingEventDetail } from "./admin-billing.ts";
+import { getAdminAppleNotificationHistory } from "./apple-notification-history.ts";
 import {
   getHousePublicData,
   getHousePublicDataProfile,
@@ -1236,6 +1237,26 @@ const server = createServer((request, response) => {
   const adminBillingEventMatch = /^\/v1\/admin\/users\/([^/?]+)\/billing-events\/([0-9]+)$/.exec((request.url ?? "").split("?")[0] ?? "");
   const adminBillingEventAuditMatch = /^\/v1\/admin\/users\/([^/?]+)\/billing-events\/([0-9]+)\/audit$/.exec((request.url ?? "").split("?")[0] ?? "");
   const adminBillingEventsMatch = /^\/v1\/admin\/users\/([^/?]+)\/billing-events$/.exec((request.url ?? "").split("?")[0] ?? "");
+  const adminAppleNotificationHistoryMatch = /^\/v1\/admin\/users\/([^/?]+)\/apple-notification-history$/.exec((request.url ?? "").split("?")[0] ?? "");
+  if (request.method === "GET" && adminAppleNotificationHistoryMatch) {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        const params = new URL(request.url!, "http://localhost").searchParams;
+        const days = params.get("days");
+        const result = await getAdminAppleNotificationHistory(decodeURIComponent(adminAppleNotificationHistoryMatch[1]!), {
+          environment: params.get("environment") ?? "sandbox",
+          transactionId: params.get("transactionId") ?? undefined,
+          days: days ? Number(days) : 30,
+          onlyFailures: params.get("onlyFailures") === "true",
+          includeRaw: params.get("includeRaw") === "true"
+        });
+        response.setHeader("cache-control", "private, no-store");
+        writeJson(response, 200, result);
+      } catch (error) { writeUnknownApiError(response, error); }
+    })();
+    return;
+  }
   if (request.method === "GET" && adminBillingEventsMatch) {
     void (async () => {
       try {

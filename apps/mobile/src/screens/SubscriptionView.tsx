@@ -4,7 +4,7 @@ import { theme } from "../theme";
 import { subscriptionPresentation } from "./subscriptionPresentation";
 
 export type SubscriptionViewProps = {
-  entitlements: Entitlements; price: string | undefined; ios: boolean; connected: boolean; storeSupported?: boolean;
+  entitlements: Entitlements; monthlyPrice: string | undefined; yearlyPrice: string | undefined; selectedPlan: "monthly" | "yearly"; onSelectPlan: (plan: "monthly" | "yearly") => void; ios: boolean; connected: boolean; storeSupported?: boolean;
   checking: boolean; verified: boolean; busy: boolean;
   message: { text: string; error: boolean } | null;
   onBack: () => void; onBuy: () => void; onRestore: () => void;
@@ -12,12 +12,16 @@ export type SubscriptionViewProps = {
 };
 
 export function SubscriptionView(props: SubscriptionViewProps) {
-  const { entitlements, price, ios, busy, checking, message } = props;
+  const { entitlements, monthlyPrice, yearlyPrice, selectedPlan, ios, busy, checking, message } = props;
   const storeSupported = props.storeSupported ?? ios;
   const state = subscriptionPresentation(entitlements);
-  const date = entitlements.expiresAt ? new Intl.DateTimeFormat("da-DK", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(entitlements.expiresAt)) : null;
+  const formatDate = (value: string | null | undefined) => value ? new Intl.DateTimeFormat("da-DK", { day: "numeric", month: "long", year: "numeric" }).format(new Date(value)) : null;
+  const renewalDate = state.cancelled
+    ? formatDate(entitlements.subscription?.currentPeriodEndsAt ?? entitlements.expiresAt)
+    : formatDate(entitlements.subscription?.renewalDate ?? entitlements.expiresAt);
   const disabled = busy || checking;
-  const buyDisabled = disabled || !props.verified || !props.connected || !price;
+  const selectedPrice = selectedPlan === "yearly" ? yearlyPrice : monthlyPrice;
+  const buyDisabled = disabled || !props.verified || !props.connected || !selectedPrice;
   const usage = entitlements.usage;
   const features = [
     { icon: "⌂", title: state.pro ? "Dine boliger" : "Plads til flere boliger", text: state.pro ? `${usage.houses.active} tilføjet${usage.houses.limit === null ? " · ingen boliggrænse" : ` · plads til ${usage.houses.limit}`}` : `Free: ${usage.houses.limit ?? "ubegrænset antal"} bolig${usage.houses.limit === 1 ? "" : "er"}` },
@@ -31,17 +35,28 @@ export function SubscriptionView(props: SubscriptionViewProps) {
       <Text style={styles.wordmark}>Matriva <Text style={styles.pro}>PRO</Text></Text>
       <Text accessibilityRole="header" style={styles.heroTitle}>{state.title}</Text>
       <Text style={styles.heroBody}>{state.description}</Text>
-      {state.pro ? <View style={styles.heroFooter}><View><Text style={styles.heroLabel}>{state.complimentary ? "Din adgang" : "Dit abonnement"}</Text><Text style={styles.heroValue}>{state.complimentary ? "Gratis PRO" : state.store ? "PRO via App Store" : "PRO-adgang"}</Text></View><View style={styles.dateBlock}><Text style={styles.heroLabel}>{date ? "Adgang indtil" : "Varighed"}</Text><Text style={styles.heroValue}>{date ?? (state.complimentary ? "Permanent" : "Ingen slutdato oplyst")}</Text></View></View> : null}
+      {state.pro ? <View style={styles.heroFooter}><View><Text style={styles.heroLabel}>{state.complimentary ? "Din adgang" : "Dit abonnement"}</Text><Text style={styles.heroValue}>{state.complimentary ? "Gratis PRO" : state.store ? "PRO via App Store" : "PRO-adgang"}</Text></View><View style={styles.dateBlock}><Text style={styles.heroLabel}>{state.complimentary ? "Varighed" : state.cancelled ? "Opsagt — adgang indtil" : renewalDate ? "Fornyes" : "Status"}</Text><Text style={styles.heroValue}>{renewalDate ?? (state.complimentary ? "Permanent" : "Aktivt")}</Text></View></View> : null}
     </View>
     {checking ? <View style={styles.loading}><ActivityIndicator color={theme.primaryPressed} /><Text style={styles.body}>Opdaterer din adgang…</Text></View> : null}
     {state.notice ? <View style={styles.warning}><Text style={styles.warningText}>{state.notice}</Text></View> : null}
     {message ? <View accessibilityLiveRegion="polite" accessibilityRole={message.error ? "alert" : "text"} style={[styles.notice, message.error ? styles.warning : null]}><Text style={message.error ? styles.warningText : styles.noticeText}>{message.text}</Text></View> : null}
     {!state.pro && !state.issue ? <View style={styles.card}>
-      <View style={styles.priceRow}><View><Text style={styles.sectionTitle}>Matriva PRO</Text><Text style={styles.body}>Månedligt abonnement</Text></View><View><Text style={styles.price}>{storeSupported ? price ?? "Henter pris…" : "PRO"}</Text>{storeSupported && price ? <Text style={styles.pricePeriod}>pr. måned</Text> : null}</View></View>
+      <Text style={styles.sectionTitle}>Vælg dit Matriva PRO-abonnement</Text>
       {storeSupported ? <>
-        <Pressable accessibilityRole="button" accessibilityState={{ disabled: buyDisabled }} disabled={buyDisabled} onPress={props.onBuy} style={({ pressed }) => [styles.primary, buyDisabled ? styles.disabled : null, pressed ? styles.pressed : null]}><Text style={styles.primaryText}>{busy ? "Et øjeblik…" : checking ? "Tjekker din adgang…" : price ? "Få Matriva PRO" : "Venter på App Store…"}</Text></Pressable>
-        {!price && !checking ? <Pressable accessibilityRole="button" disabled={disabled} onPress={props.onRetryStore} style={styles.textButton}><Text style={styles.link}>Prøv at hente prisen igen</Text></Pressable> : null}
-        <Text style={styles.finePrint}>Betales via App Store. Abonnementet fornyes automatisk hver måned, indtil du opsiger det. Du kan administrere og opsige det i dine Apple-abonnementer.</Text>
+        <View accessibilityRole="radiogroup" style={styles.planOptions}>
+          {(["monthly", "yearly"] as const).map(plan => {
+            const selected = selectedPlan === plan;
+            const price = plan === "monthly" ? monthlyPrice : yearlyPrice;
+            return <Pressable key={plan} accessibilityRole="radio" accessibilityState={{ checked: selected }} onPress={() => props.onSelectPlan(plan)} style={[styles.planOption, selected ? styles.planOptionSelected : null]}>
+              <View style={styles.planTitleRow}><Text style={styles.planTitle}>{plan === "monthly" ? "Månedligt" : "Årligt"}</Text>{selected ? <Text style={styles.selectedLabel}>VALGT</Text> : null}</View>
+              <Text style={styles.planPrice}>{price ?? "Henter pris…"}</Text>
+              <Text style={styles.body}>{plan === "monthly" ? "Betales hver måned" : "Betales én gang om året"}</Text>
+            </Pressable>;
+          })}
+        </View>
+        <Pressable accessibilityRole="button" accessibilityState={{ disabled: buyDisabled }} disabled={buyDisabled} onPress={props.onBuy} style={({ pressed }) => [styles.primary, buyDisabled ? styles.disabled : null, pressed ? styles.pressed : null]}><Text style={styles.primaryText}>{busy ? "Et øjeblik…" : checking ? "Tjekker din adgang…" : selectedPrice ? "Få Matriva PRO" : "Venter på App Store…"}</Text></Pressable>
+        {(!monthlyPrice || !yearlyPrice) && !checking ? <Pressable accessibilityRole="button" disabled={disabled} onPress={props.onRetryStore} style={styles.textButton}><Text style={styles.link}>Prøv at hente priserne igen</Text></Pressable> : null}
+        <Text style={styles.finePrint}>Betales via App Store. {selectedPlan === "monthly" ? "Abonnementet fornyes automatisk hver måned" : "Abonnementet fornyes automatisk hvert år"}, indtil du opsiger det. Du kan administrere og opsige det i dine Apple-abonnementer.</Text>
       </> : <Text style={styles.body}>{ios ? "Køb og gendannelse er ikke aktiveret i denne udviklingsversion. Brug Matriva fra TestFlight til at teste App Store-køb." : "Køb af PRO er endnu ikke tilgængeligt på denne enhed."}</Text>}
     </View> : null}
     {state.store && ios ? <View style={styles.card}><Text style={styles.sectionTitle}>{state.pro ? "Dit abonnement er samlet hos Apple" : "Se dit abonnement hos Apple"}</Text><Text style={styles.body}>Se betalinger, fornyelse og muligheder for opsigelse i App Store.</Text>{storeSupported ? <Pressable accessibilityRole="button" disabled={disabled} onPress={props.onManage} style={[styles.primary, disabled ? styles.disabled : null]}><Text style={styles.primaryText}>Administrer abonnement ↗</Text></Pressable> : <Text style={styles.body}>Administrer abonnementet i Matriva fra TestFlight eller på din iPhone under Indstillinger → dit navn → Abonnementer.</Text>}</View> : null}
@@ -74,6 +89,7 @@ const styles = StyleSheet.create({
   feature: { flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 8 }, featureBorder: { borderTopWidth: 1, borderTopColor: "#EDF1EE", paddingTop: 19 }, featureIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: "#EDF5EF", alignItems: "center", justifyContent: "center" }, featureSymbol: { color: theme.primaryPressed, fontSize: 24 }, featureCopy: { flex: 1, gap: 4 }, featureTitle: { fontWeight: "600", color: "#234C3E", fontSize: 16 },
   body: { color: "#5F6F67", fontSize: 14, lineHeight: 21 },
   priceRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 14 }, price: { fontSize: 25, fontWeight: "700", color: "#173D32" }, pricePeriod: { fontSize: 12, color: theme.muted, marginTop: 3 },
+  planOptions: { gap: 10 }, planOption: { borderWidth: 1, borderColor: "#DCE7E0", borderRadius: 16, padding: 15, gap: 5 }, planOptionSelected: { borderColor: "#176649", backgroundColor: "#F0F8F3", borderWidth: 2 }, planTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, planTitle: { color: "#173D32", fontSize: 16, fontWeight: "700" }, selectedLabel: { color: "#176649", fontSize: 10, fontWeight: "800", letterSpacing: 0.8 }, planPrice: { color: "#173D32", fontSize: 24, fontWeight: "700", marginTop: 2 },
   primary: { minHeight: 52, borderRadius: 15, backgroundColor: "#176649", justifyContent: "center", alignItems: "center", padding: 15 }, primaryText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700", textAlign: "center" }, pressed: { backgroundColor: "#104D37" }, disabled: { opacity: 0.45 },
   finePrint: { color: "#617168", fontSize: 12, lineHeight: 19 },
   footer: { flexDirection: "row", justifyContent: "center", flexWrap: "wrap", gap: 12 }, textButton: { minHeight: 44, paddingHorizontal: 8, justifyContent: "center" }, link: { color: theme.primaryPressed, fontSize: 14, fontWeight: "600", textAlign: "center" }, footerNote: { fontSize: 12, lineHeight: 19, color: theme.muted, textAlign: "center", paddingHorizontal: 12 },

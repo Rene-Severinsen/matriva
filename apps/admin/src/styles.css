@@ -1463,6 +1463,19 @@ button:disabled {
 .billing-result-received, .billing-result-legacy_unknown { background: #f4f1e5; color: #655413; }
 .billing-result-ignored_older { background: #edf0ed; color: #4a5f53; }
 .billing-error { color: #9b3e1e; }
+.apple-history-panel { border-top: 1px solid #dbe6de; display: grid; gap: 12px; padding-top: 20px; }
+.apple-history-panel h4 { margin: 0; }
+.apple-history-options { color: #53635a; display: flex; flex-wrap: wrap; gap: 16px; font-size: 14px; }
+.apple-history-options input { margin-right: 7px; }
+.apple-history-meta { color: #53635a; font-size: 13px; margin: 0; }
+.apple-history-list { border-left: 2px solid #b9d9c5; display: grid; gap: 12px; list-style: none; margin: 0 0 0 8px; padding: 0 0 0 20px; }
+.apple-history-list li { background: #fbfdfb; border: 1px solid #dbe6de; border-radius: 10px; padding: 15px; position: relative; }
+.apple-history-list li::before { background: #279b71; border: 3px solid #fff; border-radius: 50%; content: ""; height: 12px; left: -29px; position: absolute; top: 19px; width: 12px; }
+.billing-result-delivered { background: #e9f4ec; color: #205c3b; }
+.billing-result-failed { background: #fff1e7; color: #9b3e1e; }
+.apple-history-list details { margin-top: 10px; }
+.apple-history-list summary { cursor: pointer; color: #12543b; font-weight: 700; }
+.apple-history-list textarea { display: block; font-family: ui-monospace, monospace; height: 100px; margin-top: 8px; max-width: 100%; width: 100%; }
 .billing-modal-backdrop { align-items: center; background: #061a1199; display: flex; inset: 0; justify-content: center; padding: 20px; position: fixed; z-index: 200; }
 .billing-modal { background: #fff; border-radius: 14px; display: grid; gap: 18px; max-height: 90vh; max-width: 1100px; overflow: auto; padding: 22px; width: 100%; }
 .billing-modal header { align-items: start; display: flex; justify-content: space-between; gap: 16px; }

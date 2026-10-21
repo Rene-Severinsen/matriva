@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import type { MatrivaAdminApiClient } from "@matriva/api-client";
-import type { AdminBillingAudit, AdminBillingEventDetail, Entitlements } from "@matriva/shared";
+import type { AdminAppleNotificationHistoryResponse, AdminBillingAudit, AdminBillingEventDetail, Entitlements } from "@matriva/shared";
 
 type Event = AdminBillingAudit["events"][number];
 const date = (value: string | null) => value ? new Intl.DateTimeFormat("da-DK", { dateStyle: "medium", timeStyle: "medium", timeZone: "Europe/Copenhagen" }).format(new Date(value)) : "Ikke registreret";
 const environment = (value: string) => value === "sandbox" ? "Sandbox · testkøb uden reel betaling" : "Produktion · butikskøb";
 const statuses: Record<string, string> = { active: "Aktiv", expired: "Udløbet", cancelled: "Opsagt", refunded_revoked: "Refunderet eller tilbagekaldt", trial: "Prøveperiode", grace_period: "Betalingsfrist", billing_issue: "Betalingsproblem" };
 const processingResults: Record<string, string> = { processed: "Behandlet", ignored_older: "Ældre hændelse · adgang uændret", unmatched: "Bruger ikke fundet", failed: "Fejl", received: "Afventer", legacy_unknown: "Ældre hændelse · resultat ukendt" };
+const deliveryResults: Record<string, string> = { delivered: "Apple leverede", failed: "Apple kunne ikke levere", unknown: "Leveringsresultat ukendt" };
 const eventNames: Record<string, string> = {
   PURCHASE_SYNC: "Køb eller gendannelse synkroniseret fra appen", SUBSCRIBED: "Abonnement startet",
   DID_RENEW: "Fornyelse gennemført", DID_FAIL_TO_RENEW: "Betaling kunne ikke fornyes",
@@ -72,6 +73,10 @@ export function BillingAuditPanel({ billing, entitlements, client, userId }: {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "apple" | "errors">("all");
+  const [history, setHistory] = useState<AdminAppleNotificationHistoryResponse | null>(null);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyFailuresOnly, setHistoryFailuresOnly] = useState(false);
+  const [historyRaw, setHistoryRaw] = useState(false);
   useEffect(() => { setEvents(billing?.events ?? []); setNextBeforeId(billing?.nextBeforeId ?? null); setSelected(null); }, [billing, userId]);
   useEffect(() => {
     if (!selected) return;
@@ -99,6 +104,13 @@ export function BillingAuditPanel({ billing, entitlements, client, userId }: {
       setEvents(current => [...current, ...page.events]); setNextBeforeId(page.nextBeforeId);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Flere hændelser kunne ikke indlæses."); }
     finally { setLoadingMore(false); }
+  }
+  async function loadAppleHistory() {
+    setHistoryBusy(true); setMessage(null);
+    try {
+      setHistory(await client.getAdminAppleNotificationHistory(userId, { environment: subscription?.environment === "production" ? "production" : "sandbox", ...(subscription?.originalTransactionId ? { transactionId: subscription.originalTransactionId } : {}), onlyFailures: historyFailuresOnly, includeRaw: historyRaw }));
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Apples leveringshistorik kunne ikke indlæses."); }
+    finally { setHistoryBusy(false); }
   }
   async function copyText(value: string, action: "copy_raw" | "copy_decoded") {
     if (!selected) return;
@@ -152,6 +164,20 @@ export function BillingAuditPanel({ billing, entitlements, client, userId }: {
       <button type="button" className="secondary-action" disabled={busy} onClick={() => void showDetail(event)}>Vis Apple-data</button>
     </li>)}</ol> : <p>Ingen hændelser for det valgte filter.</p>}
     {nextBeforeId ? <button type="button" className="secondary-action" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Indlæser..." : "Indlæs ældre hændelser"}</button> : null}
+    <div className="apple-history-panel">
+      <div className="billing-timeline-heading"><div><h4>Apples leveringshistorik</h4><p>Apples egen historik viser, om Apple forsøgte at sende en servernotifikation til QA. Det er separat fra, om QA modtog og behandlede den.</p></div><button type="button" disabled={historyBusy} onClick={() => void loadAppleHistory()}>{historyBusy ? "Henter..." : "Hent fra Apple"}</button></div>
+      <div className="apple-history-options"><label><input type="checkbox" checked={historyFailuresOnly} onChange={event => setHistoryFailuresOnly(event.target.checked)} /> Kun leveringsfejl</label><label><input type="checkbox" checked={historyRaw} onChange={event => setHistoryRaw(event.target.checked)} /> Medtag rå signerede payloads</label></div>
+      {history && !history.configured ? <p className="billing-error">Apple API-nøglerne er ikke konfigureret på denne backend. Hændelsesloggen ovenfor kan stadig vise det, QA selv har modtaget.</p> : null}
+      {history?.configured ? <>
+        <p className="apple-history-meta">Apple {environment(history.environment)} · {history.records.length} registreringer · kontrolleret {date(history.checkedAt)}{history.hasMore ? " · flere registreringer findes" : ""}</p>
+        {history.records.length ? <ol className="apple-history-list">{history.records.map((record, index) => <li key={`${record.notificationUUID ?? "record"}-${index}`}>
+          <div className="billing-timeline-title"><strong>{eventNames[record.notificationType ?? ""] ?? record.notificationType ?? "Apple-notifikation"}{record.subtype ? ` · ${record.subtype}` : ""}</strong><span className={`billing-result billing-result-${record.deliveryStatus}`}>{deliveryResults[record.deliveryStatus]}</span></div>
+          <div className="billing-timeline-meta"><span>Apple: {date(record.signedDate)}</span><span>Leveringsresultat: {record.firstSendAttemptResult ?? "Ikke leveret af Apple"}</span><span>Transaction ID: {record.transactionId ?? "Ikke registreret"}</span><span>Notification UUID: {record.notificationUUID ?? "Ikke registreret"}</span></div>
+          <div className="billing-timeline-meta"><span>Produkt: {record.productId ?? "Ikke registreret"}</span><span>Udløber: {date(record.expiresDate)}</span><span>Rå payload: {record.signedPayload ? "inkluderet" : "skjult"}</span></div>
+          {record.signedPayload ? <details><summary>Vis rå signerede payload</summary><textarea readOnly value={record.signedPayload} aria-label="Apple notification history signed payload" /></details> : null}
+        </li>)}</ol> : <p>Apple har ingen leveringshistorik for de valgte kriterier.</p>}
+      </> : null}
+    </div>
     {message ? <p role="status" className="state-message">{message}</p> : null}
     {selected ? <div className="billing-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSelected(null); }}><div className="billing-modal" role="dialog" aria-modal="true" aria-label="Apple-hændelsesdata">
       <header><div><h3>Apple-data · hændelse {selected.id}</h3><span>{selected.eventType}{selected.subtype ? ` / ${selected.subtype}` : ""} · {environment(selected.environment)}</span></div><button type="button" onClick={() => setSelected(null)} aria-label="Luk Apple-data">Luk</button></header>

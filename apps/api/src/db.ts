@@ -538,6 +538,36 @@ async function loadEntitlementPolicy(userId: string, executor: DbExecutor = pool
     updated_at: Date;
   }>("select plan, status, source, expires_at, granted_by_user_id, granted_at, reason, updated_at from user_entitlements where user_id = $1", [userId]);
   const assigned = assignment.rows[0];
+  const subscriptionResult = await executor.query<{
+    provider: "apple" | "google";
+    environment: "sandbox" | "production";
+    product_id: string;
+    status: "trial" | "active" | "grace_period" | "billing_issue" | "expired" | "cancelled" | "refunded_revoked";
+    current_period_ends_at: Date | null;
+    auto_renew: boolean | null;
+    renewal_date: Date | null;
+    grace_period_expires_at: Date | null;
+  }>(
+    `select provider, environment, product_id, status, current_period_ends_at,
+            auto_renew, renewal_date, grace_period_expires_at
+       from billing_subscriptions
+      where user_id = $1
+      order by updated_at desc
+      limit 1`,
+    [userId]
+  );
+  const subscription = subscriptionResult.rows[0]
+    ? {
+        provider: subscriptionResult.rows[0].provider,
+        environment: subscriptionResult.rows[0].environment,
+        productId: subscriptionResult.rows[0].product_id,
+        status: subscriptionResult.rows[0].status,
+        currentPeriodEndsAt: subscriptionResult.rows[0].current_period_ends_at?.toISOString() ?? null,
+        autoRenew: subscriptionResult.rows[0].auto_renew,
+        renewalDate: subscriptionResult.rows[0].renewal_date?.toISOString() ?? null,
+        gracePeriodExpiresAt: subscriptionResult.rows[0].grace_period_expires_at?.toISOString() ?? null
+      }
+    : null;
   const configuredPlan = assigned?.plan ?? "free";
   const status = (assigned?.status ?? "free") as Entitlements["status"];
   const source = assigned?.source ?? "default";
@@ -566,6 +596,7 @@ async function loadEntitlementPolicy(userId: string, executor: DbExecutor = pool
     status,
     source,
     complimentaryProGrant,
+    subscription,
     features,
     usage: {
       houses: { active: usage.houses, limit },

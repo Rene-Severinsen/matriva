@@ -6,8 +6,9 @@ export function subscriptionPresentation(entitlements: Entitlements, now = Date.
   const complimentary = entitlements.source === "complimentary";
   const store = entitlements.source === "billing" || entitlements.source === "subscription";
   const issue = entitlements.status === "billing_issue" || entitlements.status === "grace_period";
+  const cancelled = Boolean(store && entitlements.subscription?.autoRenew === false && pro);
   return {
-    pro, complimentary, store, issue,
+    pro, complimentary, store, issue, cancelled,
     badge: pro ? complimentary ? "GRATIS PRO" : "PRO AKTIV" : "MATRIVA FREE",
     title: pro ? "Dit hjem. Fuldt overblik." : "Mere plads til dit hjem.",
     description: pro

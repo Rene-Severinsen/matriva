@@ -5946,6 +5946,12 @@ export default function App() {
         setNotificationCenterVisible(false);
         return;
       }
+      if (notificationPath === "more/subscription") {
+        setActiveTab("more");
+        setMoreView("subscription");
+        setNotificationCenterVisible(false);
+        return;
+      }
       const houseLink = /^houses\/([^/]+)$/.exec(notificationPath);
       if (houseLink) {
         setSelectedHouseId(houseLink[1] as HouseId);

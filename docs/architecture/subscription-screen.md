@@ -8,7 +8,8 @@ displayed as active PRO. The server remains responsible for enforcement.
 
 Active store subscribers see their access period, usage and an Apple subscription
 management action instead of another purchase button. Free users see current Free
-limits, PRO benefits and the localized monthly product price from StoreKit.
+limits, PRO benefits and a choice between monthly and yearly products. Both prices
+come localized from StoreKit, and the selected product ID is the one sent to Apple.
 Complimentary PRO is identified as free access, with permanent or dated access.
 Billing issues direct users to Apple management rather than another purchase.
 Android displays current access but does not offer Google Play purchases.
@@ -27,8 +28,10 @@ synced, oldest first if multiple records are returned.
 No additional backend fields, migrations, permissions, analytics or SDKs.
 Existing entitlement/usage data is presented in plain Danish. No transaction
 tokens are logged. Apple management uses the installed expo-iap management API.
-The configured product remains `matriva.pro.monthly` unless overridden by the
-existing environment variable. The monthly price is never hardcoded in app UI.
+The configured products default to `matriva.pro.monthly` and
+`matriva.pro.yearly`; they can be overridden by `EXPO_PUBLIC_MATRIVA_APPLE_PRO_PRODUCT_ID`
+and `EXPO_PUBLIC_MATRIVA_APPLE_PRO_YEARLY_PRODUCT_ID`. Neither price is hardcoded
+in app UI. The monthly product is selected by default.
 Existing App Store terms and purchase confirmation remain handled by Apple.
 No change to privacy inventory or Google billing support.
 

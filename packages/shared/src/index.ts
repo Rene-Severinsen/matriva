@@ -4259,6 +4259,16 @@ export const entitlementsSchema = z.object({
   status: entitlementStatusSchema,
   source: entitlementSourceSchema,
   complimentaryProGrant: complimentaryProGrantSchema.nullable().default(null),
+  subscription: z.object({
+    provider: z.enum(["apple", "google"]),
+    environment: z.enum(["sandbox", "production"]),
+    productId: z.string().min(1),
+    status: z.enum(["trial", "active", "grace_period", "billing_issue", "expired", "cancelled", "refunded_revoked"]),
+    currentPeriodEndsAt: z.string().datetime().nullable(),
+    autoRenew: z.boolean().nullable(),
+    renewalDate: z.string().datetime().nullable(),
+    gracePeriodExpiresAt: z.string().datetime().nullable()
+  }).nullable().optional(),
   features: entitlementFeatureMapSchema,
   usage: entitlementUsageSchema,
   evaluatedAt: z.string().datetime(),
@@ -4328,6 +4338,43 @@ export const adminBillingEventDetailSchema = z.object({
   signedRenewalInfo: z.string().nullable()
 });
 export type AdminBillingEventDetail = z.infer<typeof adminBillingEventDetailSchema>;
+
+export const adminAppleNotificationHistoryRequestSchema = z.object({
+  environment: z.enum(["sandbox", "production"]).default("sandbox"),
+  transactionId: z.string().trim().min(1).max(64).optional(),
+  days: z.number().int().min(1).max(30).default(30),
+  onlyFailures: z.boolean().default(false),
+  includeRaw: z.boolean().default(false)
+});
+export type AdminAppleNotificationHistoryRequest = z.infer<typeof adminAppleNotificationHistoryRequestSchema>;
+
+export const adminAppleNotificationHistoryRecordSchema = z.object({
+  notificationUUID: z.string().nullable(),
+  notificationType: z.string().nullable(),
+  subtype: z.string().nullable(),
+  signedDate: z.string().datetime().nullable(),
+  environment: z.string().nullable(),
+  bundleId: z.string().nullable(),
+  transactionId: z.string().nullable(),
+  originalTransactionId: z.string().nullable(),
+  productId: z.string().nullable(),
+  expiresDate: z.string().datetime().nullable(),
+  firstSendAttemptResult: z.string().nullable(),
+  deliveryStatus: z.enum(["delivered", "failed", "unknown"]),
+  signedPayload: z.string().nullable()
+});
+
+export const adminAppleNotificationHistoryResponseSchema = z.object({
+  configured: z.boolean(),
+  environment: z.enum(["sandbox", "production"]),
+  transactionId: z.string().nullable(),
+  startDate: z.string().datetime(),
+  endDate: z.string().datetime(),
+  hasMore: z.boolean(),
+  records: z.array(adminAppleNotificationHistoryRecordSchema),
+  checkedAt: z.string().datetime()
+});
+export type AdminAppleNotificationHistoryResponse = z.infer<typeof adminAppleNotificationHistoryResponseSchema>;
 
 export const adminUserEntitlementSchema = z.object({
   userId: userIdSchema,
@@ -4534,7 +4581,13 @@ export const notificationTypeSchema = z.enum([
   "house_invitation_accepted",
   "house_access_requested",
   "house_access_request_approved",
-  "house_access_request_rejected"
+  "house_access_request_rejected",
+  "subscription_purchased",
+  "subscription_renewed",
+  "subscription_cancelled",
+  "subscription_billing_issue",
+  "subscription_expired",
+  "subscription_refunded"
 ]);
 export const notificationPrioritySchema = z.enum(["low", "normal", "high"]);
 export const notificationSchema = z.object({

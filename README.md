@@ -2,10 +2,9 @@
 
 Matriva 2.0 is a clean-sheet native-first homeowner app foundation.
 
-The old prototype repository must not be used as the basis for this codebase. Development in this repository must follow:
-
-* [MATRIVA_RULESET.md](./MATRIVA_RULESET.md)
-* [MATRIVA_SCOPE_V1.md](./MATRIVA_SCOPE_V1.md)
+Product scope and technical principles are described in [MATRIVA_SCOPE_V1.md](./MATRIVA_SCOPE_V1.md)
+and [MATRIVA_RULESET.md](./MATRIVA_RULESET.md). Repository-specific instructions
+for coding agents are in [AGENTS.md](./AGENTS.md).
 
 ## Direction
 

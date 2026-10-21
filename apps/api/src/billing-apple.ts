@@ -176,7 +176,7 @@ export function appleSubscriptionStatus(transaction: AppleVerifiedTransaction, n
   if (serverStatus === 5) return "refunded_revoked" as const;
   if (transaction.revocationDate || notificationType === "REFUND" || notificationType === "REVOKE") return "refunded_revoked" as const;
   if (notificationType === "EXPIRED") return "expired" as const;
-  if (notificationType === "GRACE_PERIOD_EXPIRED") return "billing_issue" as const;
+  if (notificationType === "GRACE_PERIOD_EXPIRED") return "expired" as const;
   if (notificationType === "DID_FAIL_TO_RENEW") {
     return subtype === "GRACE_PERIOD" && renewal?.gracePeriodExpiresDate && renewal.gracePeriodExpiresDate > new Date()
       ? "grace_period" as const : "billing_issue" as const;

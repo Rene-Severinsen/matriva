@@ -6,6 +6,15 @@ const maintenanceDeadlineNotificationTypes = new Set<NotificationType>([
   "maintenance_task_overdue"
 ]);
 
+const subscriptionNotificationTypes = new Set<NotificationType>([
+  "subscription_purchased",
+  "subscription_renewed",
+  "subscription_cancelled",
+  "subscription_billing_issue",
+  "subscription_expired",
+  "subscription_refunded"
+]);
+
 export function notificationDeduplicationKey(
   type: NotificationType,
   entityId: string,
@@ -52,6 +61,7 @@ export function resolveHouseNotificationRecipients(
 }
 
 export function notificationDeepLink(type: NotificationType, houseId: string, entityId: string) {
+  if (subscriptionNotificationTypes.has(type)) return "matriva://more/subscription";
   if (type.startsWith("maintenance_task_")) return `matriva://houses/${houseId}/maintenance/tasks/${entityId}`;
   if (type === "maintenance_recommendation_created") return `matriva://houses/${houseId}/maintenance/recommendations/${entityId}`;
   if (type === "house_invitation_received") return `matriva://house-invitations/${entityId}`;

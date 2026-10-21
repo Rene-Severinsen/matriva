@@ -4,6 +4,7 @@ import {
   adminEntitlementConfigResponseSchema,
   adminBillingAuditSchema,
   adminBillingEventDetailSchema,
+  adminAppleNotificationHistoryResponseSchema,
   adminUserEntitlementResponseSchema,
   updateAdminUserEntitlementRequestSchema,
   adminDashboardPeriodKeySchema,
@@ -80,6 +81,7 @@ import {
   type AdminEntitlementConfigResponse,
   type AdminBillingAudit,
   type AdminBillingEventDetail,
+  type AdminAppleNotificationHistoryResponse,
   type AdminUserEntitlementResponse,
   type UpdateAdminUserEntitlementRequest,
   type AdminDashboardPeriodKey,
@@ -565,6 +567,14 @@ export type MatrivaAdminApiClient = Pick<
   | "updateAdminGuideStatus"
   | "getGuideAsset"
 > & {
+  getAdminAppleNotificationHistory: (userId: string, input?: {
+    environment?: "sandbox" | "production";
+    transactionId?: string;
+    days?: number;
+    onlyFailures?: boolean;
+    includeRaw?: boolean;
+    signal?: AbortSignal;
+  }) => Promise<AdminAppleNotificationHistoryResponse>;
   getAdminNotificationDevices: (userId: string, input?: { signal?: AbortSignal }) => Promise<AdminNotificationDevicesResponse>;
   createAdminNotificationTest: (input: CreateAdminNotificationTestRequest) => Promise<AdminNotificationTest>;
   getAdminNotificationTest: (notificationId: string) => Promise<AdminNotificationTest>;
@@ -709,6 +719,17 @@ export function createMatrivaAdminApiClient(
     async getAdminBillingEventDetail(userId, eventId) {
       const response = await fetcher(`${normalizedBaseUrl}/v1/admin/users/${encodeURIComponent(userId)}/billing-events/${encodeURIComponent(eventId)}`, { headers: authHeaders() });
       return adminBillingEventDetailSchema.parse(await parseApiResponse(response, "Apple-data kunne ikke indlæses."));
+    },
+    async getAdminAppleNotificationHistory(userId, input = {}) {
+      const params = new URLSearchParams({
+        environment: input.environment ?? "sandbox",
+        days: String(input.days ?? 30),
+        onlyFailures: String(input.onlyFailures ?? false),
+        includeRaw: String(input.includeRaw ?? false)
+      });
+      if (input.transactionId) params.set("transactionId", input.transactionId);
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/users/${encodeURIComponent(userId)}/apple-notification-history?${params}`, { headers: authHeaders(), ...(input.signal ? { signal: input.signal } : {}) });
+      return adminAppleNotificationHistoryResponseSchema.parse(await parseApiResponse(response, "Apples leveringshistorik kunne ikke indlæses."));
     },
     async auditAdminBillingPayloadAction(userId, eventId, action) {
       const response = await fetcher(`${normalizedBaseUrl}/v1/admin/users/${encodeURIComponent(userId)}/billing-events/${encodeURIComponent(eventId)}/audit`,

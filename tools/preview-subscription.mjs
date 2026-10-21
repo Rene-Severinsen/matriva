@@ -36,7 +36,7 @@ const free = { plan: "free", configuredPlan: "free", accessPlan: "free", status:
 const paid = { ...free, plan: "pro", configuredPlan: "pro", accessPlan: "pro", status: "active", source: "billing", expiresAt: new Date(Date.now() + 86400000).toISOString(), usage: { houses: { active: 2, limit: null }, documents: { active: 8, limit: null, storageBytes: 0, storageLimitBytes: null }, tasks: { active: 6, limit: null } } };
 const states = { free, pro: paid, complimentary: { ...paid, source: "complimentary", expiresAt: undefined }, expired: { ...free, source: "billing", status: "expired" }, billingIssue: { ...free, source: "billing", status: "billing_issue" } };
 const noop = () => {};
-const render = state => renderToStaticMarkup(React.createElement(SubscriptionView, { entitlements: state, price: "59,00 kr.", ios: true, connected: true, checking: false, verified: true, busy: false, message: null, onBack: noop, onBuy: noop, onRestore: noop, onManage: noop, onRefresh: noop, onRetryStore: noop }));
+const render = state => renderToStaticMarkup(React.createElement(SubscriptionView, { entitlements: state, monthlyPrice: "59,00 kr.", yearlyPrice: "499,00 kr.", selectedPlan: "monthly", onSelectPlan: noop, ios: true, connected: true, checking: false, verified: true, busy: false, message: null, onBack: noop, onBuy: noop, onRestore: noop, onManage: noop, onRefresh: noop, onRetryStore: noop }));
 for (const [name, state] of Object.entries(states)) {
   const html = render(state);
   if (name === "pro" && (html.includes("Få Matriva PRO") || !html.includes("Administrer abonnement"))) throw new Error("Active PRO has incorrect actions");

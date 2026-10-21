@@ -6,7 +6,9 @@ import type { Entitlements } from "@matriva/shared";
 import { SubscriptionView } from "./SubscriptionView";
 import { subscriptionPresentation } from "./subscriptionPresentation";
 
-const productId = process.env.EXPO_PUBLIC_MATRIVA_APPLE_PRO_PRODUCT_ID?.trim() || "matriva.pro.monthly";
+const monthlyProductId = process.env.EXPO_PUBLIC_MATRIVA_APPLE_PRO_PRODUCT_ID?.trim() || "matriva.pro.monthly";
+const yearlyProductId = process.env.EXPO_PUBLIC_MATRIVA_APPLE_PRO_YEARLY_PRODUCT_ID?.trim() || "matriva.pro.yearly";
+const productIds = [monthlyProductId, yearlyProductId];
 
 export function AppleSubscriptionScreen({ apiClient, entitlements, onEntitlementsChanged, onBack }: {
   apiClient: MatrivaApiClient; entitlements: Entitlements; onEntitlementsChanged: (value: Entitlements) => void; onBack: () => void;
@@ -16,6 +18,7 @@ export function AppleSubscriptionScreen({ apiClient, entitlements, onEntitlement
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(true);
   const [verified, setVerified] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<"monthly" | "yearly">("monthly");
   const mounted = useRef(true);
   const revision = useRef(0);
   const onChanged = useRef(onEntitlementsChanged);
@@ -23,7 +26,7 @@ export function AppleSubscriptionScreen({ apiClient, entitlements, onEntitlement
   const pending = useRef(new Map<string, Promise<Entitlements>>());
   const { connected, subscriptions, fetchProducts, requestPurchase, restorePurchases, finishTransaction, reconnect } = useIAP({
     onPurchaseSuccess: purchase => {
-      if (purchase.productId !== productId) return;
+      if (!productIds.includes(purchase.productId)) return;
       setBusy(true);
       void sync(purchase).catch(() => {
         if (mounted.current) setMessage({ text: "Vi kunne ikke bekræfte købet lige nu. Hvis Apple har gennemført det, kan du trykke Gendan køb. Du skal ikke købe igen.", error: true });
@@ -83,7 +86,7 @@ export function AppleSubscriptionScreen({ apiClient, entitlements, onEntitlement
   }, [apiClient]);
   useEffect(() => {
     if (Platform.OS !== "ios" || !connected) return;
-    void fetchProducts({ skus: [productId], type: "subs" }).catch(() => {
+    void fetchProducts({ skus: productIds, type: "subs" }).catch(() => {
       if (mounted.current) setMessage({ text: "Prisen kunne ikke hentes fra App Store. Prøv igen om lidt.", error: true });
     });
   }, [connected, fetchProducts]);
@@ -91,6 +94,7 @@ export function AppleSubscriptionScreen({ apiClient, entitlements, onEntitlement
   async function buy() {
     if (busy || checking || !verified || subscriptionPresentation(current).pro) return;
     setBusy(true); setMessage(null);
+    const productId = selectedPlan === "yearly" ? yearlyProductId : monthlyProductId;
     try { await requestPurchase({ type: "subs", request: { apple: { sku: productId } } }); }
     catch { setBusy(false); setMessage({ text: "Købet kunne ikke startes. Prøv igen om lidt.", error: true }); }
   }
@@ -99,7 +103,7 @@ export function AppleSubscriptionScreen({ apiClient, entitlements, onEntitlement
     setBusy(true); setMessage(null);
     try {
       await restorePurchases({ alsoPublishToEventListenerIOS: false, onlyIncludeActiveItemsIOS: true });
-      const purchases = (await getStorePurchases({ alsoPublishToEventListenerIOS: false, onlyIncludeActiveItemsIOS: true })).filter(purchase => purchase.productId === productId);
+      const purchases = (await getStorePurchases({ alsoPublishToEventListenerIOS: false, onlyIncludeActiveItemsIOS: true })).filter(purchase => productIds.includes(purchase.productId));
       if (!purchases.length) setMessage({ text: "Der blev ikke fundet et aktivt PRO-køb på denne Apple-konto.", error: false });
       // Oldest first: the newest verified transaction determines the final access state.
       for (const purchase of purchases.sort((a, b) => a.transactionDate - b.transactionDate)) await sync(purchase);
@@ -121,11 +125,11 @@ export function AppleSubscriptionScreen({ apiClient, entitlements, onEntitlement
     setBusy(true);
     try {
       if (!connected && !(await reconnect())) throw new Error("Store unavailable");
-      await fetchProducts({ skus: [productId], type: "subs" });
+      await fetchProducts({ skus: productIds, type: "subs" });
     } catch { setMessage({ text: "App Store er ikke tilgængelig lige nu. Prøv igen senere.", error: true }); }
     finally { if (mounted.current) setBusy(false); }
   }
-  return <SubscriptionView entitlements={current} price={subscriptions.find(item => item.id === productId)?.displayPrice}
+  return <SubscriptionView entitlements={current} monthlyPrice={subscriptions.find(item => item.id === monthlyProductId)?.displayPrice} yearlyPrice={subscriptions.find(item => item.id === yearlyProductId)?.displayPrice} selectedPlan={selectedPlan} onSelectPlan={setSelectedPlan}
     ios={Platform.OS === "ios"} connected={connected} checking={checking} verified={verified} busy={busy} message={message}
     onBack={onBack} onBuy={() => void buy()} onRestore={() => void restore()} onManage={() => void manage()}
     onRefresh={() => void refresh()} onRetryStore={() => void retryStore()} />;

@@ -12,7 +12,17 @@ function base64Url(value: string | Buffer) {
 }
 
 function applePrivateKey() {
-  return process.env.MATRIVA_APPLE_PRIVATE_KEY?.replace(/\\n/g, "\n").trim() || null;
+  const configured = process.env.MATRIVA_APPLE_PRIVATE_KEY?.replace(/\\n/g, "\n").trim();
+  if (!configured) return null;
+  if (configured.includes("BEGIN PRIVATE KEY") || configured.includes("BEGIN EC PRIVATE KEY")) return configured;
+
+  // Some hosting secret editors remove PEM headers and fold the body into
+  // whitespace-separated text. Rebuild a standard PKCS#8 PEM without ever
+  // logging or returning the key material.
+  const body = configured.replace(/\s+/g, "");
+  if (!/^[A-Za-z0-9+/=]+$/.test(body)) return configured;
+  const lines = body.match(/.{1,64}/g)?.join("\n");
+  return lines ? `-----BEGIN PRIVATE KEY-----\n${lines}\n-----END PRIVATE KEY-----` : configured;
 }
 
 function createAppleApiToken() {

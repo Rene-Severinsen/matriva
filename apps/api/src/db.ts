@@ -577,15 +577,35 @@ async function loadEntitlementPolicy(userId: string, executor: DbExecutor = pool
   });
 }
 
-export async function recordBillingEvent(input: BillingEvent, userId: string | null = null) {
+export type BillingEventEvidence = {
+  subtype?: string | null;
+  appleSignedAt?: string | null;
+  originalTransactionId?: string | null;
+  productId?: string | null;
+  signedPayload?: string | null;
+  signedTransactionInfo?: string | null;
+  signedRenewalInfo?: string | null;
+  decodedTransaction?: Record<string, unknown> | null;
+  decodedRenewal?: Record<string, unknown> | null;
+  verification?: Record<string, boolean>;
+  processingSteps?: Array<Record<string, unknown>>;
+  correlationId?: string;
+};
+
+export async function recordBillingEvent(input: BillingEvent, userId: string | null = null, evidence: BillingEventEvidence = {}) {
   const client = await pool.connect();
   try {
-    const result = await client.query<{ id: string }>(
+    const result = await client.query<{ id: string; processing_status: string; processing_attempt_count: number }>(
       `insert into billing_events
-        (provider, environment, provider_event_id, event_type, provider_subscription_id, user_id, occurred_at, payload)
-       values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+        (provider, environment, provider_event_id, event_type, provider_subscription_id, user_id, occurred_at, payload,
+         notification_subtype, apple_signed_at, original_transaction_id, product_id, raw_signed_payload,
+         raw_signed_transaction_info, raw_signed_renewal_info, decoded_transaction, decoded_renewal,
+         verification, processing_steps, processing_status, processing_started_at, processing_attempt_count, correlation_id)
+       values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb,
+         $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17::jsonb,
+         $18::jsonb, $19::jsonb, 'received', now(), 1, $20)
        on conflict (provider, environment, provider_event_id) do nothing
-       returning id`,
+       returning id::text, processing_status, processing_attempt_count`,
       [
         input.provider,
         input.environment,
@@ -594,43 +614,106 @@ export async function recordBillingEvent(input: BillingEvent, userId: string | n
         input.providerSubscriptionId,
         userId,
         input.occurredAt,
-        JSON.stringify(input.payload)
+        JSON.stringify(input.payload), evidence.subtype ?? null, evidence.appleSignedAt ?? null,
+        evidence.originalTransactionId ?? null, evidence.productId ?? null, evidence.signedPayload ?? null,
+        evidence.signedTransactionInfo ?? null, evidence.signedRenewalInfo ?? null,
+        JSON.stringify(evidence.decodedTransaction ?? null), JSON.stringify(evidence.decodedRenewal ?? null),
+        JSON.stringify(evidence.verification ?? {}), JSON.stringify(evidence.processingSteps ?? []),
+        evidence.correlationId ?? null
       ]
     );
-    return { duplicate: result.rowCount === 0, id: result.rows[0]?.id ?? null };
+    if (result.rows[0]) return { duplicate: false, id: result.rows[0].id, processingStatus: result.rows[0].processing_status };
+    const existing = await client.query<{ id: string; processing_status: string; user_id: string | null }>(
+      `select id::text, processing_status, user_id from billing_events where provider = $1 and environment = $2 and provider_event_id = $3`,
+      [input.provider, input.environment, input.providerEventId]
+    );
+    if (userId && existing.rows[0]?.user_id && existing.rows[0].user_id !== userId) {
+      throw new ApiError(409, "billing_transaction_owned", "Apple-transaktionen er allerede knyttet til en anden konto.");
+    }
+    return { duplicate: true, id: existing.rows[0]?.id ?? null, processingStatus: existing.rows[0]?.processing_status ?? "unknown" };
   } finally {
     client.release();
   }
 }
 
-export async function applyBillingSubscription(subscription: BillingSubscription) {
+export async function claimBillingEventRetry(eventId: string, userId: string | null) {
+  const result = await pool.query<{ processing_attempt_count: number }>(
+    `update billing_events set processing_status = 'received', processing_started_at = now(),
+      processing_attempt_count = processing_attempt_count + 1, processing_error = null,
+      user_id = coalesce($2, user_id)
+     where id = $1 and processing_status not in ('processed', 'ignored_older') and
+       (processing_status <> 'received' or processing_started_at < now() - interval '5 minutes')
+     returning processing_attempt_count`, [eventId, userId]
+  );
+  return result.rows[0]?.processing_attempt_count ?? null;
+}
+
+export async function finishBillingEvent(eventId: string, status: "processed" | "ignored_older" | "unmatched" | "failed", steps: Array<Record<string, unknown>>, error: string | null = null) {
+  await pool.query(
+    `update billing_events set processing_status = $2, processed_at = now(), processing_error = $3,
+      processing_steps = $4::jsonb where id = $1`, [eventId, status, error, JSON.stringify(steps)]
+  );
+}
+
+export type BillingSubscriptionRenewal = {
+  autoRenewProductId?: string | null; renewalDate?: string | null; renewalPrice?: number | null;
+  currency?: string | null; gracePeriodExpiresAt?: string | null;
+  isInBillingRetryPeriod?: boolean | null; expirationIntent?: string | null;
+  priceIncreaseStatus?: string | null; lastAppleNotificationUuid?: string | null;
+  lastAppleSignedAt?: string | null;
+};
+
+export async function applyBillingSubscription(subscription: BillingSubscription & BillingSubscriptionRenewal) {
   const client = await pool.connect();
   try {
     await client.query("begin");
-    const existing = await client.query<{ id: string }>(
-      `select id from billing_subscriptions
-       where provider = $1 and provider_subscription_id = $2
-       for update`,
-      [subscription.provider, subscription.providerSubscriptionId]
+    const existing = await client.query<{ id: string; last_apple_signed_at: Date | null }>(
+      `select id, last_apple_signed_at from billing_subscriptions
+       where provider = $1 and environment = $2 and
+         (provider_subscription_id = $3 or ($4::text is not null and original_transaction_id = $4))
+       order by updated_at desc limit 1 for update`,
+      [subscription.provider, subscription.environment, subscription.providerSubscriptionId, subscription.originalTransactionId]
     );
+    if (existing.rows[0]?.last_apple_signed_at && subscription.lastAppleSignedAt &&
+        existing.rows[0].last_apple_signed_at > new Date(subscription.lastAppleSignedAt)) {
+      await client.query("commit");
+      return { applied: false, reason: "older_apple_event" as const, subscriptionId: existing.rows[0].id, foundExisting: true };
+    }
     const values = [subscription.userId, subscription.provider, subscription.providerSubscriptionId, subscription.productId,
       subscription.plan, subscription.status, subscription.environment, subscription.originalTransactionId,
-      subscription.currentPeriodStartsAt, subscription.currentPeriodEndsAt, subscription.autoRenew, subscription.lastVerifiedAt];
+      subscription.currentPeriodStartsAt, subscription.currentPeriodEndsAt, subscription.autoRenew, subscription.lastVerifiedAt,
+      subscription.autoRenewProductId ?? null, subscription.renewalDate ?? null, subscription.renewalPrice ?? null,
+      subscription.currency ?? null, subscription.gracePeriodExpiresAt ?? null,
+      subscription.isInBillingRetryPeriod ?? null, subscription.expirationIntent ?? null,
+      subscription.priceIncreaseStatus ?? null, subscription.lastAppleNotificationUuid ?? null,
+      subscription.lastAppleSignedAt ?? null];
     if (existing.rows[0]) {
       await client.query(
         `update billing_subscriptions set
-          user_id = $1, product_id = $4, plan = $5, status = $6, environment = $7,
+          user_id = $1, provider = $2, provider_subscription_id = $3,
+          product_id = $4, plan = $5, status = $6, environment = $7,
           original_transaction_id = $8, current_period_starts_at = $9, current_period_ends_at = $10,
-          auto_renew = $11, last_verified_at = $12, updated_at = now()
-         where id = $13`,
+          auto_renew = coalesce($11, auto_renew), last_verified_at = $12,
+          auto_renew_product_id = coalesce($13, auto_renew_product_id),
+          renewal_date = coalesce($14, renewal_date), renewal_price = coalesce($15, renewal_price),
+          renewal_currency = coalesce($16, renewal_currency), grace_period_expires_at = coalesce($17, grace_period_expires_at),
+          is_in_billing_retry_period = coalesce($18, is_in_billing_retry_period),
+          expiration_intent = coalesce($19, expiration_intent), price_increase_status = coalesce($20, price_increase_status),
+          last_apple_notification_uuid = coalesce($21, last_apple_notification_uuid),
+          last_apple_signed_at = coalesce($22, last_apple_signed_at), updated_at = now()
+         where id = $23`,
         [...values, existing.rows[0].id]
       );
     } else {
       await client.query(
         `insert into billing_subscriptions
           (id, user_id, provider, provider_subscription_id, product_id, plan, status, environment,
-           original_transaction_id, current_period_starts_at, current_period_ends_at, auto_renew, last_verified_at, updated_at)
-         values ($13, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now())`,
+           original_transaction_id, current_period_starts_at, current_period_ends_at, auto_renew, last_verified_at,
+           auto_renew_product_id, renewal_date, renewal_price, renewal_currency, grace_period_expires_at,
+           is_in_billing_retry_period, expiration_intent, price_increase_status, last_apple_notification_uuid,
+           last_apple_signed_at, updated_at)
+         values ($23, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+           $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, now())`,
         [...values, subscription.id]
       );
     }
@@ -646,10 +729,12 @@ export async function applyBillingSubscription(subscription: BillingSubscription
            starts_at = excluded.starts_at,
            expires_at = excluded.expires_at,
            updated_at = now()`,
-        [subscription.userId, subscription.status, subscription.currentPeriodStartsAt, subscription.currentPeriodEndsAt]
+        [subscription.userId, subscription.status, subscription.currentPeriodStartsAt,
+          subscription.status === "grace_period" ? subscription.gracePeriodExpiresAt ?? subscription.currentPeriodEndsAt : subscription.currentPeriodEndsAt]
       );
     }
     await client.query("commit");
+    return { applied: true, subscriptionId: existing.rows[0]?.id ?? subscription.id, foundExisting: Boolean(existing.rows[0]) };
   } catch (error) {
     await client.query("rollback");
     throw error;
@@ -658,14 +743,25 @@ export async function applyBillingSubscription(subscription: BillingSubscription
   }
 }
 
-export async function findBillingUserId(provider: "apple" | "google", providerSubscriptionId: string, originalTransactionId: string | null) {
+export async function findBillingUserId(provider: "apple" | "google", environment: "sandbox" | "production", providerSubscriptionId: string, originalTransactionId: string | null) {
   const result = await pool.query<{ user_id: string }>(
     `select user_id from billing_subscriptions
-     where provider = $1 and (provider_subscription_id = $2 or ($3 is not null and original_transaction_id = $3))
+     where provider = $1 and environment = $2 and (provider_subscription_id = $3 or ($4::text is not null and original_transaction_id = $4))
      order by updated_at desc limit 1`,
-    [provider, providerSubscriptionId, originalTransactionId]
+    [provider, environment, providerSubscriptionId, originalTransactionId]
   );
   return result.rows[0]?.user_id ?? null;
+}
+
+export async function getUnmatchedAppleNotifications(environment: "sandbox" | "production", originalTransactionId: string) {
+  const result = await pool.query<{ raw_signed_payload: string }>(
+    `select raw_signed_payload from billing_events
+     where provider = 'apple' and environment = $1 and original_transaction_id = $2
+       and processing_status = 'unmatched' and raw_signed_payload is not null
+     order by coalesce(apple_signed_at, created_at), id limit 100`,
+    [environment, originalTransactionId]
+  );
+  return result.rows.map(row => row.raw_signed_payload);
 }
 
 function assertLimit(feature: FeatureKey, current: number, next: number, limit: number | null, details: EntitlementDetails = {}) {

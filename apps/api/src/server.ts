@@ -170,10 +170,7 @@ import {
   getAdminUserEntitlements,
   updateAdminUserEntitlement,
   getEntitlementsForUser,
-  applyBillingSubscription,
   createOpaqueId,
-  findBillingUserId,
-  recordBillingEvent,
   getAdminGuide,
   getGuideAsset,
   getPublishedGuide,
@@ -256,7 +253,8 @@ import {
   pool,
   validateAuthRuntimeConfig
 } from "./db.ts";
-import { appleSubscriptionStatus, verifiedAppleTransactionFromJws, verifyAppleJws } from "./billing-apple.ts";
+import { processAppleNotification, processApplePurchaseSync } from "./billing-apple-flow.ts";
+import { auditAdminBillingPayloadAction, getAdminBillingAudit, getAdminBillingEventDetail } from "./admin-billing.ts";
 import {
   getHousePublicData,
   getHousePublicDataProfile,
@@ -532,26 +530,6 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   }
 
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-}
-
-function appleSubscriptionRecord(transaction: ReturnType<typeof verifiedAppleTransactionFromJws>, userId: string) {
-  const status = appleSubscriptionStatus(transaction);
-  return {
-    id: createOpaqueId("bsub"),
-    userId: userId as UserId,
-    provider: "apple" as const,
-    providerSubscriptionId: transaction.transactionId,
-    productId: transaction.productId,
-    plan: "pro" as const,
-    status,
-    environment: transaction.environment,
-    originalTransactionId: transaction.originalTransactionId,
-    currentPeriodStartsAt: transaction.purchaseDate?.toISOString() ?? null,
-    currentPeriodEndsAt: transaction.expiresDate?.toISOString() ?? null,
-    autoRenew: null,
-    lastVerifiedAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
 }
 
 function mediaExtension(mimeType: string) {
@@ -878,24 +856,9 @@ const server = createServer((request, response) => {
           writeApiError(response, 400, "apple_purchase_invalid", "Apple-købet mangler den signerede transaktion.");
           return;
         }
-        const transaction = verifiedAppleTransactionFromJws(parsed.data.signedTransactionInfo);
-        const event = await recordBillingEvent({
-          provider: "apple",
-          environment: transaction.environment,
-          providerEventId: parsed.data.eventId ?? transaction.transactionId,
-          eventType: "PURCHASE_SYNC",
-          providerSubscriptionId: transaction.transactionId,
-          occurredAt: transaction.purchaseDate?.toISOString() ?? null,
-          payload: transaction.rawPayload
-        }, userId);
-        await applyBillingSubscription(appleSubscriptionRecord(transaction, userId));
-        writeJson(response, 200, billingSyncResponseSchema.parse({
-          accepted: true,
-          duplicate: event.duplicate,
-          provider: "apple",
-          providerSubscriptionId: transaction.transactionId,
-          entitlement: await getEntitlementsForUser(userId)
-        }));
+        writeJson(response, 200, billingSyncResponseSchema.parse(await processApplePurchaseSync(
+          userId, parsed.data.signedTransactionInfo, parsed.data.eventId
+        )));
       } catch (error) {
         writeUnknownApiError(response, error);
       }
@@ -911,30 +874,10 @@ const server = createServer((request, response) => {
           writeApiError(response, 400, "apple_notification_invalid", "Apple-notifikationen mangler signedPayload.");
           return;
         }
-        const notification = verifyAppleJws(parsed.data.signedPayload);
-        const data = notification.data && typeof notification.data === "object" && !Array.isArray(notification.data)
-          ? notification.data as Record<string, unknown>
-          : null;
-        const signedTransactionInfo = typeof data?.signedTransactionInfo === "string" ? data.signedTransactionInfo : null;
-        if (!signedTransactionInfo) {
-          writeApiError(response, 400, "apple_notification_invalid", "Apple-notifikationen mangler signedTransactionInfo.");
-          return;
-        }
-        const transaction = verifiedAppleTransactionFromJws(signedTransactionInfo);
-        const userId = await findBillingUserId("apple", transaction.transactionId, transaction.originalTransactionId);
-        const event = await recordBillingEvent({
-          provider: "apple",
-          environment: transaction.environment,
-          providerEventId: typeof notification.notificationUUID === "string" ? notification.notificationUUID : transaction.transactionId,
-          eventType: typeof notification.notificationType === "string" ? notification.notificationType : "UNKNOWN",
-          providerSubscriptionId: transaction.transactionId,
-          occurredAt: transaction.purchaseDate?.toISOString() ?? null,
-          payload: notification
-        }, userId);
-        if (userId) {
-          await applyBillingSubscription(appleSubscriptionRecord(transaction, userId));
-        }
-        writeJson(response, userId ? 200 : 202, { accepted: Boolean(userId), duplicate: event.duplicate });
+        const result = await processAppleNotification(parsed.data.signedPayload);
+        // Apple treats a 2xx as successful delivery. An unmatched or still-running
+        // notification must not be acknowledged as processed.
+        writeJson(response, result.accepted ? 200 : 503, result);
       } catch (error) {
         writeUnknownApiError(response, error);
       }
@@ -1286,6 +1229,49 @@ const server = createServer((request, response) => {
       } catch (error) {
         writeUnknownApiError(response, error);
       }
+    })();
+    return;
+  }
+
+  const adminBillingEventMatch = /^\/v1\/admin\/users\/([^/?]+)\/billing-events\/([0-9]+)$/.exec((request.url ?? "").split("?")[0] ?? "");
+  const adminBillingEventAuditMatch = /^\/v1\/admin\/users\/([^/?]+)\/billing-events\/([0-9]+)\/audit$/.exec((request.url ?? "").split("?")[0] ?? "");
+  const adminBillingEventsMatch = /^\/v1\/admin\/users\/([^/?]+)\/billing-events$/.exec((request.url ?? "").split("?")[0] ?? "");
+  if (request.method === "GET" && adminBillingEventsMatch) {
+    void (async () => {
+      try {
+        await requireAdminUser(getBearerToken(request));
+        const before = new URL(request.url!, "http://localhost").searchParams.get("before");
+        if (before && !/^[0-9]+$/.test(before)) throw new ApiError(400, "billing_cursor_invalid", "Hændelsescursor er ugyldig.");
+        response.setHeader("cache-control", "private, no-store");
+        writeJson(response, 200, await getAdminBillingAudit(decodeURIComponent(adminBillingEventsMatch[1]!), before));
+      } catch (error) { writeUnknownApiError(response, error); }
+    })();
+    return;
+  }
+  if (request.method === "GET" && adminBillingEventMatch) {
+    void (async () => {
+      try {
+        const admin = await requireAdminUser(getBearerToken(request));
+        response.setHeader("cache-control", "private, no-store");
+        writeJson(response, 200, await getAdminBillingEventDetail(
+          decodeURIComponent(adminBillingEventMatch[1]!), adminBillingEventMatch[2]!, admin.userId
+        ));
+      } catch (error) { writeUnknownApiError(response, error); }
+    })();
+    return;
+  }
+  if (request.method === "POST" && adminBillingEventAuditMatch) {
+    void (async () => {
+      try {
+        const admin = await requireAdminUser(getBearerToken(request));
+        const body = await readJsonBody(request) as { action?: unknown };
+        if (body.action !== "copy_raw" && body.action !== "copy_decoded" && body.action !== "download") {
+          throw new ApiError(400, "billing_audit_action_invalid", "Audit-handlingen er ugyldig.");
+        }
+        await auditAdminBillingPayloadAction(decodeURIComponent(adminBillingEventAuditMatch[1]!),
+          adminBillingEventAuditMatch[2]!, admin.userId, body.action);
+        writeJson(response, 200, { recorded: true });
+      } catch (error) { writeUnknownApiError(response, error); }
     })();
     return;
   }

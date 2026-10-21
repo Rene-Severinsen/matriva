@@ -4292,17 +4292,42 @@ export const adminBillingAuditSchema = z.object({
     productId: z.string(), status: z.string(), originalTransactionId: z.string().nullable(),
     transactionId: z.string().nullable(), periodStartsAt: z.string().datetime().nullable(),
     periodEndsAt: z.string().datetime().nullable(), autoRenew: z.boolean().nullable(),
-    lastVerifiedAt: z.string().datetime().nullable(), createdAt: z.string().datetime(), updatedAt: z.string().datetime()
+    lastVerifiedAt: z.string().datetime().nullable(), createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
+    autoRenewProductId: z.string().nullable(), renewalDate: z.string().datetime().nullable(),
+    gracePeriodExpiresAt: z.string().datetime().nullable(), isInBillingRetryPeriod: z.boolean().nullable(),
+    expirationIntent: z.string().nullable(), lastAppleNotificationUuid: z.string().nullable(),
+    lastAppleSignedAt: z.string().datetime().nullable()
   })),
   events: z.array(z.object({
     id: z.string(), provider: z.enum(["apple", "google"]), environment: z.enum(["sandbox", "production"]),
     eventId: z.string(), eventType: z.string(), transactionId: z.string().nullable(),
     occurredAt: z.string().datetime().nullable(), receivedAt: z.string().datetime(),
-    processedAt: z.string().datetime().nullable(), processingError: z.string().nullable()
+    processedAt: z.string().datetime().nullable(), processingError: z.string().nullable(),
+    subtype: z.string().nullable(), appleSignedAt: z.string().datetime().nullable(),
+    originalTransactionId: z.string().nullable(), productId: z.string().nullable(),
+    subscriptionId: z.string().nullable(), processingStatus: z.string(),
+    processingAttemptCount: z.number().int().nonnegative(), correlationId: z.string().nullable()
   })),
-  eventLimit: z.number().int().positive()
+  eventLimit: z.number().int().positive(), nextBeforeId: z.string().nullable()
 });
 export type AdminBillingAudit = z.infer<typeof adminBillingAuditSchema>;
+
+export const adminBillingEventDetailSchema = z.object({
+  id: z.string(), userId: userIdSchema.nullable(), eventType: z.string(), subtype: z.string().nullable(),
+  environment: z.enum(["sandbox", "production"]), eventId: z.string(),
+  receivedAt: z.string().datetime(), appleSignedAt: z.string().datetime().nullable(),
+  occurredAt: z.string().datetime().nullable(), processedAt: z.string().datetime().nullable(),
+  processingStatus: z.string(), processingError: z.string().nullable(),
+  processingAttemptCount: z.number().int().nonnegative(), correlationId: z.string().nullable(),
+  transaction: z.record(z.string(), z.unknown()).nullable(),
+  renewal: z.record(z.string(), z.unknown()).nullable(),
+  notification: z.record(z.string(), z.unknown()).nullable(),
+  verification: z.record(z.string(), z.unknown()),
+  processingSteps: z.array(z.record(z.string(), z.unknown())),
+  signedPayload: z.string().nullable(), signedTransactionInfo: z.string().nullable(),
+  signedRenewalInfo: z.string().nullable()
+});
+export type AdminBillingEventDetail = z.infer<typeof adminBillingEventDetailSchema>;
 
 export const adminUserEntitlementSchema = z.object({
   userId: userIdSchema,

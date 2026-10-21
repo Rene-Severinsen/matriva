@@ -2,6 +2,8 @@ import {
   addressSearchResponseSchema,
   adminBootstrapResponseSchema,
   adminEntitlementConfigResponseSchema,
+  adminBillingAuditSchema,
+  adminBillingEventDetailSchema,
   adminUserEntitlementResponseSchema,
   updateAdminUserEntitlementRequestSchema,
   adminDashboardPeriodKeySchema,
@@ -76,6 +78,8 @@ import {
   type AddressSearchResponse,
   type AdminBootstrapResponse,
   type AdminEntitlementConfigResponse,
+  type AdminBillingAudit,
+  type AdminBillingEventDetail,
   type AdminUserEntitlementResponse,
   type UpdateAdminUserEntitlementRequest,
   type AdminDashboardPeriodKey,
@@ -323,6 +327,9 @@ export type MatrivaApiClient = {
     userId: string,
     input?: { signal?: AbortSignal }
   ) => Promise<AdminUserEntitlementResponse>;
+  getAdminBillingEvents: (userId: string, before?: string | null) => Promise<AdminBillingAudit>;
+  getAdminBillingEventDetail: (userId: string, eventId: string) => Promise<AdminBillingEventDetail>;
+  auditAdminBillingPayloadAction: (userId: string, eventId: string, action: "copy_raw" | "copy_decoded" | "download") => Promise<void>;
   updateAdminUserEntitlement: (
     userId: string,
     input: UpdateAdminUserEntitlementRequest
@@ -533,6 +540,9 @@ export type MatrivaAdminApiClient = Pick<
   | "getAdminUsers"
   | "getAdminUser"
   | "getAdminUserEntitlements"
+  | "getAdminBillingEvents"
+  | "getAdminBillingEventDetail"
+  | "auditAdminBillingPayloadAction"
   | "updateAdminUserEntitlement"
   | "getAdminEntitlementConfig"
   | "updateAdminEntitlementConfig"
@@ -690,6 +700,20 @@ export function createMatrivaAdminApiClient(
       return adminUserEntitlementResponseSchema.parse(
         await parseApiResponse(response, "Kunne ikke indlæse brugerens entitlements.")
       );
+    },
+    async getAdminBillingEvents(userId, before = null) {
+      const params = before ? `?before=${encodeURIComponent(before)}` : "";
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/users/${encodeURIComponent(userId)}/billing-events${params}`, { headers: authHeaders() });
+      return adminBillingAuditSchema.parse(await parseApiResponse(response, "Abonnementshændelser kunne ikke indlæses."));
+    },
+    async getAdminBillingEventDetail(userId, eventId) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/users/${encodeURIComponent(userId)}/billing-events/${encodeURIComponent(eventId)}`, { headers: authHeaders() });
+      return adminBillingEventDetailSchema.parse(await parseApiResponse(response, "Apple-data kunne ikke indlæses."));
+    },
+    async auditAdminBillingPayloadAction(userId, eventId, action) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/users/${encodeURIComponent(userId)}/billing-events/${encodeURIComponent(eventId)}/audit`,
+        { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ action }) });
+      await parseApiResponse(response, "Brugen af Apple-data kunne ikke registreres.");
     },
     async updateAdminUserEntitlement(userId, input) {
       updateAdminUserEntitlementRequestSchema.parse(input);
@@ -1194,6 +1218,20 @@ export function createMatrivaApiClient(
       return adminUserEntitlementResponseSchema.parse(
         await parseApiResponse(response, "Kunne ikke indlæse brugerens entitlements.")
       );
+    },
+    async getAdminBillingEvents(userId, before = null) {
+      const params = before ? `?before=${encodeURIComponent(before)}` : "";
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/users/${encodeURIComponent(userId)}/billing-events${params}`, { headers: authHeaders() });
+      return adminBillingAuditSchema.parse(await parseApiResponse(response, "Abonnementshændelser kunne ikke indlæses."));
+    },
+    async getAdminBillingEventDetail(userId, eventId) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/users/${encodeURIComponent(userId)}/billing-events/${encodeURIComponent(eventId)}`, { headers: authHeaders() });
+      return adminBillingEventDetailSchema.parse(await parseApiResponse(response, "Apple-data kunne ikke indlæses."));
+    },
+    async auditAdminBillingPayloadAction(userId, eventId, action) {
+      const response = await fetcher(`${normalizedBaseUrl}/v1/admin/users/${encodeURIComponent(userId)}/billing-events/${encodeURIComponent(eventId)}/audit`,
+        { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ action }) });
+      await parseApiResponse(response, "Brugen af Apple-data kunne ikke registreres.");
     },
     async updateAdminUserEntitlement(userId, input) {
       updateAdminUserEntitlementRequestSchema.parse(input);

@@ -582,7 +582,7 @@ function UserEntitlementPanel({ client, userId, onAuthorizationError }: { client
     catch (error) { if (!(await onAuthorizationError(error))) setMessage(errorMessage(error, "Gratis PRO kunne ikke fjernes.")); }
     finally { setSaving(false); }
   }
-  return <><BillingAuditPanel billing={state.data.entitlement.billing} /><DetailGrid title="Entitlement-status" subtitle="Backend-evalueret adgang og forbrug" rows={[
+  return <><BillingAuditPanel billing={state.data.entitlement.billing} entitlements={entitlements} client={client} userId={userId} /><DetailGrid title="Entitlement-status" subtitle="Backend-evalueret adgang og forbrug" rows={[
     ["Plan", `${entitlements.plan} (konfigureret: ${entitlements.configuredPlan})`],
     ["Status", entitlements.status],
     ["Adgangskilde", entitlements.source === "billing" ? "Apple billing" : entitlements.source === "subscription" ? "Abonnement" : entitlements.source === "complimentary" ? "Gratis PRO" : "Free"],

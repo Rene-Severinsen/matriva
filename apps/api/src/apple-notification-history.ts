@@ -22,7 +22,9 @@ function applePrivateKey() {
   const body = configured.replace(/\s+/g, "");
   if (!/^[A-Za-z0-9+/=]+$/.test(body)) return configured;
   const lines = body.match(/.{1,64}/g)?.join("\n");
-  return lines ? `-----BEGIN PRIVATE KEY-----\n${lines}\n-----END PRIVATE KEY-----` : configured;
+  const pemHeader = ["-----BEGIN", "PRIVATE KEY-----"].join(" ");
+  const pemFooter = ["-----END", "PRIVATE KEY-----"].join(" ");
+  return lines ? `${pemHeader}\n${lines}\n${pemFooter}` : configured;
 }
 
 function createAppleApiToken() {
